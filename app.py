@@ -1,4 +1,4 @@
-from flask import Flask, session, request, render_template, redirect, url_for
+from flask import Flask, jsonify, session, request, render_template, redirect, url_for
 from flask.cli import with_appcontext
 import click
 from forms import ScopeForm, SearchForm, ResetDbForm
@@ -69,24 +69,21 @@ def scope(scope_id):
     return redirect(url_for("projects"))
 
 
-@app.route("/add_scope", methods=["GET", "POST"])
+@app.route('/add_scope', methods=['GET', 'POST'])
 def add_scope():
     scope_form = ScopeForm()
-    # Logic for adding scope
     if scope_form.validate_on_submit():
-        scope = Scope(name=scope_form.name.data)
-        db.session.add(scope)
+        # Find the highest rank
+        max_rank = Scope.query.order_by(Scope.rank.desc()).first()
+        new_rank = 1 if max_rank is None else max_rank.rank + 1
+
+        # Create a new scope with the next rank
+        new_scope = Scope(name=scope_form.name.data, rank=new_rank)
+        db.session.add(new_scope)
         db.session.commit()
-        return redirect(url_for("scopes"))
-    scopes = Scope.query.all()
-    return render_template(
-        "scopes.html",
-        scopes=scopes,
-        # scope_form=scope_form,
-        # modal_title="Add Scope",
-        # form_action=url_for("add_scope"),
-        # action_button_text="Add",
-    )
+
+        return redirect(url_for('scopes'))
+    return render_template('add_scope.html', scope_form=scope_form)
 
 @app.route("/scopes/edit/<int:scope_id>", methods=["GET", "POST"])
 def edit_scope(scope_id):
@@ -97,7 +94,8 @@ def edit_scope(scope_id):
         db.session.commit()
         return redirect(url_for("scopes"))
     scopes = Scope.query.all()
-    return render_template('scopes.html', scope_form=scope_form)
+    return render_template("scopes.html", scope_form=scope_form)
+
 
 @app.route("/scopes", methods=["GET", "POST"])
 def scopes():
@@ -112,6 +110,16 @@ def delete_scope(scope_id):
     db.session.delete(scope)
     db.session.commit()
     return redirect(url_for("scopes"))
+
+
+@app.route("/update_scope_rank", methods=["POST"])
+def update_scope_rank():
+    scopes_data = request.json["scopes"]
+    for scope_data in scopes_data:
+        scope = Scope.query.get(scope_data["id"])
+        scope.rank = scope_data["newRank"]
+        db.session.commit()
+    return jsonify({"success": True})
 
 
 @app.route("/reset-db", methods=["POST"])

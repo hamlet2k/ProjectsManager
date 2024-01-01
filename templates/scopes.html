@@ -4,14 +4,24 @@
 
 {% block title %}Manage Scopes{% endblock %}
 
+{% block css %}
+
+{% endblock %}
+<style>
+    #scopesList .list-group-item {
+        cursor: move; /* Change cursor to indicate movability */
+    }
+</style>
 {% block content %}
 
 <button type="button" class="btn btn-primary" id="addBtn" data-bs-toggle="modal" data-bs-target="#scopeModal">
     Add Scope
 </button>
-<ul class="list-group">
+
+<ul id="scopesList" class="list-group">
     {% for scope in scopes %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
+    <li class="list-group-item d-flex justify-content-between align-items-center" data-scope-id="{{ scope.id }}">
+        <i class="fas fa-grip-lines mr-2"></i> <!-- Grip Icon -->
         {{ scope.name }}
         <div>
             <!-- Edit Button -->
@@ -135,6 +145,42 @@
     var confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
     confirmationModal.show();
 }
+
+var el = document.getElementById('scopesList');
+var sortable = Sortable.create(el, {
+    handle: ".fa-grip-lines", // Only allow drag using the grip icon
+    onEnd: function (/**Event*/evt) {
+        var itemEl = evt.item;  // dragged HTMLElement
+        updateRank();  // Call a function to update the rank in the backend
+    }
+});
+
+function updateRank() {
+    var orderedIds = [];
+    document.querySelectorAll('#scopesList .list-group-item').forEach(function(item, index) {
+        orderedIds.push({
+            id: item.getAttribute('data-scope-id'),
+            newRank: index + 1  // Assuming rank starts at 1
+        });
+    });
+
+    fetch('/update_scope_rank', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.getElementById('csrf_token').value // Include CSRF token
+        },
+        body: JSON.stringify({ scopes: orderedIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Rank updated successfully');
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
 
 </script>
 {% endblock %}
