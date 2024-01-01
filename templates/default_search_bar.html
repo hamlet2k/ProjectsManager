@@ -1,0 +1,5 @@
+<form method="POST" action="{{ url_for('search') }}">
+    {{ search_form.hidden_tag() }}
+    {{ search_form.search.label }} {{ search_form.search() }}
+    {{ search_form.submit() }}
+</form>

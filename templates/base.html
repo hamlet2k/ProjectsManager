@@ -1,0 +1,50 @@
+<!-- templates/base.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %} Welcome {% endblock %} - Projects Manager</title>
+    <!-- Default common stylesheets -->
+    {% include 'default_css.html' %}
+    <!-- Additional stylesheets -->
+    {% block css %}
+    {% endblock %}
+</head>
+
+<body>
+    {% if config.DEBUG %}
+    <!-- Developer Tools -->
+    {% include 'developer_tools.html' %}
+    {% endif %}
+
+    <!-- Navigation bar -->
+    {% block navigation_bar %}
+    {% include 'default_navigation_bar.html' %}
+    {% endblock %}
+
+    <!-- Main content -->
+    <main role="main" class="container">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Modals -->
+    {% block modals %}
+    {% endblock %}
+
+    <!-- Footer -->
+    {% block footer %}
+    {% include 'default_footer.html' %}
+    {% endblock %}
+
+    <!-- Default common scripts -->
+    {% include 'default_scripts.html' %}
+    {% block scripts %}
+    <!-- Additional scripts -->
+    {% endblock %}
+</body>
+
+</html>

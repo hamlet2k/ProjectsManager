@@ -1,0 +1,26 @@
+<!-- templates/home.html -->
+
+{% extends 'base.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+<div class="container mt-5">
+    <h1>Welcome to ProjectsManager!</h1>
+    <h2>Select your Scope</h2>
+    <div class="row justify-content-center">
+        {% for scope in scopes %}
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3 mb-4 d-flex justify-content-center">
+            <a href="{{ url_for('scope', scope_id=scope.id) }}"
+                class="btn btn-primary d-flex align-items-center justify-content-center"
+                style="height: 150px; width: 150px; font-size: 20px; text-align: center;">
+                {{ scope.name }}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    <a href="{{ url_for('scopes') }}">Manage Scopes</a>
+</div>
+
+{% endblock %}

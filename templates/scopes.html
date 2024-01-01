@@ -1,0 +1,140 @@
+<!-- templates/scopes.html -->
+
+{% extends 'base.html' %}
+
+{% block title %}Manage Scopes{% endblock %}
+
+{% block content %}
+
+<button type="button" class="btn btn-primary" id="addBtn" data-bs-toggle="modal" data-bs-target="#scopeModal">
+    Add Scope
+</button>
+<ul class="list-group">
+    {% for scope in scopes %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ scope.name }}
+        <div>
+            <!-- Edit Button -->
+            <button type="button" class="btn btn-sm btn-info edit-btn" data-bs-toggle="modal"
+                data-bs-target="#scopeModal" data-scope-id="{{ scope.id }}" data-scope-name="{{ scope.name }}">
+                Edit
+            </button>
+            <!-- Delete Button -->
+            <!-- Note: The delete operation should be handled carefully -->
+            {# <form action="{{ url_for('delete_scope', scope_id=scope.id) }}" method="post" class="d-inline"> #}
+                {# To use with SweetAlerts:
+                <button class="btn btn-sm btn-danger"
+                    onclick="confirmDeletion(event, '{{ url_for('delete_scope', scope_id=scope.id) }}')">Delete</button>
+                #}
+                <button class="btn btn-sm btn-danger"
+                    onclick="showConfirmationModal('{{ url_for('delete_scope', scope_id=scope.id) }}')">Delete</button>
+
+
+            {# </form> #}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% endblock %}
+
+{% block modals %}
+<!-- Add/Edit Scope Modal -->
+<div class="modal fade" id="scopeModal" tabindex="-1" aria-labelledby="scopeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scopeModalLabel">Add Scope</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="scopeForm" method="post">
+                    {{ scope_form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ scope_form.name.label }}
+                        {{ scope_form.name(class="form-control") }}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="scopeModalSubmitButton">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                Are you sure you want to perform this action?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.querySelectorAll('.edit-btn').forEach(item => {
+        item.addEventListener('click', event => {
+            let scopeId = item.getAttribute('data-scope-id');
+            let scopeName = item.getAttribute('data-scope-name');
+            let baseUrl = "{{ url_for('edit_scope', scope_id=0) }}";
+            let actionUrl = baseUrl.replace("/0", "/" + scopeId);
+
+            // Populate the fields
+            document.querySelector('#scopeForm input[name="name"]').value = scopeName;
+            // Update the modal title and button text for editing
+            document.getElementById('scopeModalLabel').textContent = 'Edit Scope';
+            document.getElementById('scopeModalSubmitButton').textContent = 'Save Changes';
+            // Update the form action
+            document.querySelector('#scopeForm').action = actionUrl;
+        });
+    })
+    document.getElementById('addBtn').addEventListener('click', event => {
+        // Clear the form fields
+        document.querySelector('#scopeForm input[name="name"]').value = '';
+        // Update the modal title and button text for adding
+        document.getElementById('scopeModalLabel').textContent = 'Add Scope';
+        document.getElementById('scopeModalSubmitButton').textContent = 'Add New';
+        // Set the form action to the add route
+        document.querySelector('#scopeForm').action = '{{url_for("add_scope")}}';
+    });
+
+    function showConfirmationModal(deleteUrl) {
+    const confirmButton = document.getElementById('confirmButton');
+
+    confirmButton.onclick = function() {
+        fetch(deleteUrl, {
+            method: 'POST',
+            // Optional: Headers, body, etc., if needed
+        })
+        .then(response => {
+            if (response.ok) {
+                window.location.reload(); // or redirect as needed
+            } else {
+                throw new Error('Something went wrong');
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    };
+
+    // Show the modal
+    var confirmationModal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+    confirmationModal.show();
+}
+
+</script>
+{% endblock %}
