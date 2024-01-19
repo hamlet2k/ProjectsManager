@@ -1,0 +1,34 @@
+<form method="post" action="{{ url_for('signup')}}" class="form-floating mt-4">
+    {{ signup_form.hidden_tag() }}
+    <div class="form-floating mb-3">
+        {{ signup_form.username(class="form-control"+ (" is-invalid" if signup_form.username.errors else ""), placeholder="Username") }}
+        {{ signup_form.username.label(class="form-label") }}
+        {% for error in signup_form.username.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ signup_form.name(class="form-control"+ (" is-invalid" if signup_form.name.errors else ""), placeholder="Name") }}
+        {{ signup_form.name.label(class="form-label") }}
+        {% for error in signup_form.name.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ signup_form.email(class="form-control"+ (" is-invalid" if signup_form.email.errors else ""), placeholder="Email") }}
+        {{ signup_form.email.label(class="form-label") }}
+        {% for error in signup_form.email.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ signup_form.password(class="form-control"+ (" is-invalid" if signup_form.password.errors else ""), placeholder="Password") }}
+        {{ signup_form.password.label(class="form-label") }}
+        {% for error in signup_form.password.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="d-grid">
+        {{ signup_form.submit(class="btn btn-primary") }}
+    </div>
+</form>

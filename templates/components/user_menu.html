@@ -1,0 +1,29 @@
+<li class="nav-item dropdown">
+    {% if 'user' in session %}
+      <a class="nav-link dropdown-toggle"
+        href="#"
+        id="navbarDropdown"
+        role="button"
+        data-bs-toggle="dropdown"
+        aria-expanded="false"
+      >
+        {{ session['user'] }}
+      </a>
+      <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
+        <li>
+          <a class="dropdown-item" href="{{ url_for('user') }}">Settings</a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a>
+        </li>
+      </ul>
+    {% else %}
+      <button
+        class="btn btn-link nav-link"
+        data-bs-toggle="modal"
+        data-bs-target="#loginModal"
+      >
+        Login
+      </button>
+    {% endif %}
+  </li>

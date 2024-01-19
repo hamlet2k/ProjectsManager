@@ -1,2 +1,2 @@
-# ProjectsManager
-Application to create family projects and track them
+# Projects Manager
+Application to create projects and track them

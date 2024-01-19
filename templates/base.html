@@ -1,5 +1,3 @@
-<!-- templates/base.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -7,43 +5,50 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %} Welcome {% endblock %} - Projects Manager</title>
-    <!-- Default common stylesheets -->
-    {% include 'default_css.html' %}
-    <!-- Additional stylesheets -->
+    
     {% block css %}
+        <!-- Default Stylesheets -->
+        {% include 'assets/css.html' %}
+        <!-- Additional Stylesheets -->
     {% endblock %}
+    <link rel="icon" href="{{ url_for('static', filename='images/fav-big.ico') }}" type="image/x-icon">
 </head>
 
-<body>
-    {% if config.DEBUG %}
-    <!-- Developer Tools -->
-    {% include 'developer_tools.html' %}
-    {% endif %}
-
-    <!-- Navigation bar -->
-    {% block navigation_bar %}
-    {% include 'default_navigation_bar.html' %}
+<body data-bs-theme="{{ session.theme }}">
+    {# {% include "components/devtools.html" %} #}
+    <!-- Navigation Bar -->
+    {% block navbar %}
+        {% include 'components/navbar.html' %}
     {% endblock %}
+    
+    <!-- Flash messages -->
+    {% include "components/flash.html" %}
 
-    <!-- Main content -->
+    <!-- Main Content -->
     <main role="main" class="container">
         {% block content %}
         {% endblock %}
     </main>
-
-    <!-- Modals -->
+        
     {% block modals %}
+        <!-- Default Modals -->
+        <!-- Login Modal -->
+        {% include 'modals/login_modal.html' %}
+        <!-- Confirmation Modal -->
+        {% include "modals/confirmation_modal.html" %}
+        <!-- Additional Modals -->
     {% endblock %}
 
-    <!-- Footer -->
+    
     {% block footer %}
-    {% include 'default_footer.html' %}
+        <!-- Footer -->
+        {% include 'components/footer.html' %}
     {% endblock %}
 
-    <!-- Default common scripts -->
-    {% include 'default_scripts.html' %}
     {% block scripts %}
-    <!-- Additional scripts -->
+        <!-- Default Scripts -->
+        {% include 'assets/scripts.html' %}
+        <!-- Additional Scripts -->
     {% endblock %}
 </body>
 

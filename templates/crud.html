@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block title %} {{get_current_menu().name}} {%endblock %}
+
+{% block css %}
+{{ super() }}
+<style>
+  #itemList .list-group-item {
+    cursor: move;
+    /* Change cursor to indicate movability */
+  }
+</style>
+{% endblock %} 
+
+{% block content %} 
+<button
+  id="addBtn"
+  class="btn btn-primary"
+  data-bs-toggle="modal"
+  data-bs-target="#itemModal"
+>
+  Add {{get_current_menu().name}}
+</button>
+
+<ul id="itemList" class="list-group">
+  {% for item, data_attrs in zip(items, items_data) %}
+  <li
+    data-item-id="{{ item.id }}"
+    class="list-group-item d-flex justify-content-between align-items-center"
+  >
+    <!-- Grip Icon -->
+    <i class="bi bi-grip-vertical"></i>
+    
+    {{ item.name }}
+    <div>
+      <!-- Edit Button -->
+      <button
+        class="btn btn-sm edit-btn btn-secondary"
+        data-bs-toggle="modal"
+        data-bs-target="#itemModal"
+        data-item-id="{{ item.id }}"
+        {% for attr, value in data_attrs.items() %}
+            {{ attr }}="{{ value }}"
+
+            {# In case I need to do any data type manipulation at this level
+            {% if 'DateTimeLocalField' in attr %}
+                {{ attr }}="{{ value.isoformat() }}"
+            {% else %}
+                {{ attr }}="{{ value }}"
+            {% endif %} 
+            #}
+        {% endfor %}
+      >
+        Edit
+      </button>
+      <!-- Delete Button -->
+      <!-- Note: The delete operation should be handled carefully -->
+      <button
+        class="btn btn-sm btn-primary"
+        onclick="showConfirmationModal('{{url_for('delete_item',item_type=get_current_menu().item_type, id=item.id)}}','Confirm Action','Are you sure?')"
+      >
+        Delete
+      </button>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}
+
+{% block modals %}
+{{ super() }}
+  <!-- Add/Edit Modal -->
+  {% include "modals/crud_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    var el = document.getElementById("itemList");
+
+    var sortable = Sortable.create(el, {
+      handle: ".bi-grip-vertical", // Only allow drag using the grip icon
+      onEnd: function (/**Event*/ evt) {
+        var itemEl = evt.item; // dragged HTMLElement
+        updateRank(); // Call a function to update the rank in the backend
+      },
+    });
+  
+    function updateRank() {
+      var orderedIds = [];
+      document
+        .querySelectorAll("#itemList .list-group-item")
+        .forEach(function (item, index) {
+          orderedIds.push({
+            id: item.getAttribute("data-item-id"),
+            newRank: index + 1, // Assuming rank starts at 1
+          });
+        });
+  
+      fetch("{{ url_for('update_item_rank',item_type=get_current_menu().item_type )}}", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.getElementById("csrf_token").value, // Include CSRF token
+        },
+        body: JSON.stringify({ items: orderedIds }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.success) {
+            console.log("Rank updated successfully");
+          }
+        })
+        .catch((error) => console.error("Error:", error));
+    }
+</script>
+{% endblock %}

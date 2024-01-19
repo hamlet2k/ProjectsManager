@@ -1,0 +1,100 @@
+<form id="itemForm" method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {% for field in form %}
+        {% if field.name != 'csrf_token' %}
+            <div class="form-group form-floating mb-3">
+                {{ field(class_='form-control'+ (' is-invalid' if field.errors else ''), placeholder_=field.name) }}
+                {{ field.label(class="form-label") }}
+                {% if field.errors %}
+                    <div class="invalid-feedback">
+                        {% for error in field.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% endfor %}
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+      Cancel
+    </button>
+    <button type="submit" class="btn btn-primary" id="itemModalSubmitButton">
+      Action TBD
+    </button>
+  </div>
+</form>
+<script>
+    // Update the form action when the ADD button is clicked
+    // Clears the form fields
+    document.getElementById("addBtn").addEventListener("click", (event) => {
+        actionUrl = '{{ url_for("add_item",item_type=get_current_menu(**params).item_type) }}';
+        document.querySelector("#itemForm").action = actionUrl;
+        
+        clearFormFields();
+    });
+
+    // Update the modal form action when the EDIT button is clicked
+    // Populate the form with the values associated to the EDIT button
+    document.querySelectorAll(".edit-btn").forEach((item) => {
+        item.addEventListener("click", (event) => {
+            {% for field in form %}
+                {% if field.name == 'csrf_token' %}
+                {% elif field.type == 'DateTimeLocalField' %}
+                    document.getElementById('{{ field.name }}').value = convertToLocal(item.getAttribute("data-item-{{ field.name }}"));
+                {% else %}
+                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-item-{{ field.name }}");
+                {% endif %}
+            {% endfor %}
+
+            let baseUrl = '{{ url_for("edit_item",item_type=get_current_menu(**params).item_type, id=0) }}';
+            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-item-id"));
+            document.querySelector("#itemForm").action = actionUrl;
+        });
+    });
+
+    function clearFormFields(){
+        {% for field in form %}
+            {% if field.name != 'csrf_token' %}
+                document.getElementById('{{ field.name }}').value = "";
+            {% endif %}
+        {% endfor %}
+    };
+
+    // Convert DateTimeLocalField to UTC before to to submit the form
+    document.getElementById('itemForm').addEventListener('submit', function(event) {
+        event.preventDefault();  // Prevent the default form submission
+        {% for field in form %}
+            {% if field.type == 'DateTimeLocalField' %}
+                if (document.getElementById('{{ field.name }}').value != '') {
+                    document.getElementById('{{ field.name }}').value = convertToUTC(document.getElementById('{{ field.name }}').value)
+                }
+            {% endif %}
+        {% endfor %}
+        this.submit();
+    });
+
+    function convertToUTC(dateString){
+        var localDateTime = new Date(dateString);
+        return localDateTime.toISOString().slice(0, 16);
+    };
+
+    function convertToLocal(utcDateString){
+        // Parse the UTC date string to a Date object
+        var date = new Date(utcDateString + 'z'); //add zulu time since datetime-local doesnt have it
+
+        // Format the date to a local datetime-local string
+        function pad(number) {
+            return number < 10 ? '0' + number : number;
+        }
+        var yyyy = date.getFullYear();
+        var MM = pad(date.getMonth() + 1); // Months are 0-based in JavaScript
+        var dd = pad(date.getDate());
+        var hh = pad(date.getHours());
+        var mm = pad(date.getMinutes());
+
+        return yyyy + '-' + MM + '-' + dd + 'T' + hh + ':' + mm;
+    };
+</script>

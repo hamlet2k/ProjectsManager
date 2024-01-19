@@ -1,0 +1,44 @@
+<nav class="navbar navbar-expand-lg mx-2 my-2 bg-body-tertiary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('home') }}">
+      <img src="{{url_for('static',filename='images/fav-big.png')}}" alt="" width="30" height="30" class="d-inline-block align-text-middle">
+      Projects Manager
+    </a>
+    <button
+      class="navbar-toggler"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#navbarNav"
+      aria-controls="navbarNav"
+      aria-expanded="false"
+      aria-label="Toggle navigation"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav">
+        {% for menu in menus %}
+        <li class="nav-item">
+          <a class="nav-link{% if menu.route == request.endpoint %} active{% endif %}"
+            {% if menu.route != "request.endpoint" %}
+              href="{{ menu.get_link() }}"
+            {% endif %}>
+            {{ menu.name }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <ul class="navbar-nav ms-md-auto">
+        <!-- Separator -->
+        {% include "components/separator_menu.html" %}
+        <!-- User Menu -->
+        {% include "components/user_menu.html" %}
+        <!-- Separator -->
+        {% include "components/separator_menu.html" %}
+        <!-- Theme selector -->
+        {% include "components/theme_menu.html" %}
+      </ul>
+    </div>
+  </div>
+</nav>

@@ -1,0 +1,62 @@
+<div
+  class="modal fade"
+  id="confirmationModal"
+  tabindex="-1"
+  aria-labelledby="confirmationModalTitle"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="confirmationModalTitle">Title TBD</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body" id="confirmationModalBody">Message TBD</div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-danger" id="confirmButton">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Display the ACTION confitmation modal
+  function showConfirmationModal(action_url, title, message) {
+    // Update the modal tittle and message
+    document.getElementById("confirmationModalTitle").textContent = title;
+    document.getElementById("confirmationModalBody").textContent = message;
+
+    const confirmButton = document.getElementById("confirmButton");
+
+    confirmButton.onclick = function () {
+      fetch(action_url, {
+        method: "POST",
+        // Optional: Headers, body, etc., if needed
+      })
+        .then((response) => {
+          if (response.ok) {
+            window.location.reload(); // or redirect as needed
+          } else {
+            throw new Error("Something went wrong");
+          }
+        })
+        .catch((error) => console.error("Error:", error));
+    };
+
+    // Show the modal
+    var confirmationModal = new bootstrap.Modal(
+      document.getElementById("confirmationModal")
+    );
+    confirmationModal.show();
+  }
+</script>

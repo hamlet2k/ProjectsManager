@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %} {{get_current_menu().name}}{%endblock %}
+
+{% block content %} 
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card mt-5">
+                <div class="card-body">
+                    <h5 class="card-title">Login</h5>
+                    {% include 'forms/login_form.html' %}
+                </div>
+                <div class="card-footer">
+                    <a href="{{ url_for('signup') }}">Register</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

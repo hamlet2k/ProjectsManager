@@ -1,0 +1,17 @@
+{% extends 'app.html' %}
+{% block title %}User Settings{%endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title text-center">User Settings</h2>
+                    {% include "forms/user_form.html" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

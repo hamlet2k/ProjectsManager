@@ -1,0 +1,48 @@
+<form method="post" action="{{ url_for('user')}}" class="form-floating mt-4">
+    {{ user_form.hidden_tag() }}
+    <div class="form-floating mb-3">
+        {{ user_form.username(class="form-control"+ (" is-invalid" if user_form.username.errors else ""), placeholder="Username") }}
+        {{ user_form.username.label(class="form-label") }}
+        {% for error in user_form.username.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ user_form.name(class="form-control"+ (" is-invalid" if user_form.name.errors else ""), placeholder="Name") }}
+        {{ user_form.name.label(class="form-label") }}
+        {% for error in user_form.name.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ user_form.email(class="form-control"+ (" is-invalid" if user_form.email.errors else ""), placeholder="Email") }}
+        {{ user_form.email.label(class="form-label") }}
+        {% for error in user_form.email.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ user_form.password(class="form-control"+ (" is-invalid" if user_form.password.errors else ""), placeholder="Password") }}
+        {{ user_form.password.label(class="form-label") }}
+        {% for error in user_form.password.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ user_form.theme(class="form-control"+ (" is-invalid" if user_form.theme.errors else ""), placeholder="Theme") }}
+        {{ user_form.theme.label(class="form-label") }}
+        {% for error in user_form.theme.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="form-floating mb-3">
+        {{ user_form.role(class="form-control"+ (" is-invalid" if user_form.role.errors else ""), placeholder="Role") }}
+        {{ user_form.role.label(class="form-label") }}
+        {% for error in user_form.role.errors %}
+            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+        {% endfor %}
+    </div>
+    <div class="d-grid">
+        {{ user_form.submit(class="btn btn-primary") }}
+    </div>
+</form>

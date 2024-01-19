@@ -1,0 +1,30 @@
+<div class="alert alert-dismissible small">
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    DEV Tools
+    <div class="accordion" id="accordionExample">
+        <div class="accordion-item">
+        <h2 class="accordion-header" id="headingOne">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+            Sessions
+            </button>
+        </h2>
+        <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#accordionExample" style="">
+            <div class="accordion-body">
+                {% for var in session %}
+                    <p><code class="small">{{ var }} : {{ session[var]}} </code>
+                    <a href="{{url_for('delete_session_var', var=var) }}"><span class="bi bi-x"></span></a>
+                    </p>
+                {% endfor %}
+            </div>
+        </div>
+        </div>
+    </div>
+</div>
+
+{#
+    <form method="POST" action="{{ url_for('reset_db') }}">
+        {{ reset_db_form.hidden_tag() }}
+        {{ reset_db_form.submit(onclick="return confirm('Are you sure you want to reset the database? This action cannot
+        be undone.');") }}
+    </form> 
+#}

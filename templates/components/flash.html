@@ -1,0 +1,17 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %} 
+        {% for category, message in messages %}
+            {% if category %}
+                <div class="alert alert-dismissible alert-{{ category }}">
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                {{ message }}
+                </div>
+            {% else %}
+                <div class="alert alert-dismissible alert-secondary">
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                {{ message }}
+                </div>
+            {% endif %}
+        {% endfor %} 
+    {% endif %} 
+{% endwith %}

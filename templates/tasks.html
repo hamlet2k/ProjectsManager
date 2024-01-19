@@ -1,11 +1,10 @@
 {% extends 'app.html' %}
 
-{% block title %}Home{% endblock %}
+{% block title %}Tasks{% endblock %}
 
 {% block content %}
 <div class="container mt-5">
     <div class="row g-3 justify-content-center">
-    {# {% for scope in scopes %} #}
     {% for item, data_attrs in zip(items, items_data) %}
         <div class="col">
             <div class="card border-secondary" >
@@ -36,11 +35,6 @@
     </div>
 </div>
 {% endblock %}
-
-{% block modals %}
-    {{ super() }}
-    {% include "modals/crud_modal.html" %}
-{% endblock modals %}
 
 
       
