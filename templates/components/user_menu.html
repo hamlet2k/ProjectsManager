@@ -1,29 +1,19 @@
-<li class="nav-item dropdown">
+<li class="nav-item">
     {% if 'user' in session %}
-      <a class="nav-link dropdown-toggle"
-        href="#"
-        id="navbarDropdown"
-        role="button"
-        data-bs-toggle="dropdown"
-        aria-expanded="false"
-      >
-        {{ session['user'] }}
-      </a>
-      <ul class="dropdown-menu" aria-labelledby="navbarDropdown">
-        <li>
-          <a class="dropdown-item" href="{{ url_for('user') }}">Settings</a>
-        </li>
-        <li>
-          <a class="dropdown-item" href="{{ url_for('logout') }}">Logout</a>
-        </li>
-      </ul>
+        <span class="d-none d-lg-flex align-items-center">{{ session['user']}}</span>
+        {% include "components/separator_menu.html" %}
+        <a href="{{ url_for('user') }}" class="dropdown-item d-flex align-items-center">
+            <i class="bi bi-gear"></i>
+            <span class="d-lg-none ms-2">User Settings</span>
+        </a>
+        {% include "components/separator_menu.html" %}
+        <a href="{{ url_for('logout') }}" class="dropdown-item d-flex align-items-center">
+            <i class="bi bi-power"></i>
+            <span class="d-lg-none ms-2">Logout</span>
+        </a>
     {% else %}
-      <button
-        class="btn btn-link nav-link"
-        data-bs-toggle="modal"
-        data-bs-target="#loginModal"
-      >
+        <a href="{{ url_for('login') }}" class="dropdown-item d-flex align-items-center">
         Login
-      </button>
+        </a>
     {% endif %}
-  </li>
+</li>

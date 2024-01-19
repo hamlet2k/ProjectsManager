@@ -1,18 +1,13 @@
-<li class="nav-item dropdown">
-    <a class="nav-link dropdown-toggle d-flex align-items-center" href="#" id="theme-menu" aria-expanded="false" data-bs-toggle="dropdown" data-bs-display="static" aria-label="Toggle theme">
-        <i class="bi bi-circle-half"></i>
-        <span class="d-lg-none ms-2">Toggle theme</span>
-    </a>
-    <ul class="dropdown-menu dropdown-menu-end">
-        <li>
-            <a href="{{ url_for('change_theme',theme='light') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="light" aria-pressed="false">
-                <i class="bi bi-sun-fill"></i><span class="ms-2">Light</span>
-            </a>
-        </li>
-        <li>
-            <a href="{{ url_for('change_theme',theme='dark') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="dark" aria-pressed="true">
-                <i class="bi bi-moon-stars-fill"></i><span class="ms-2">Dark</span>
-            </a>
-        </li>
-    </ul>
+<li>
+    {% if session.theme == 'dark'%}
+        <a href="{{ url_for('change_theme',theme='light') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="light" aria-pressed="false">
+            <i class="bi bi-sun-fill"></i><span></span>
+            <span class="d-lg-none ms-2">Light theme</span>
+        </a>
+    {% else %}
+        <a href="{{ url_for('change_theme',theme='dark') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="dark" aria-pressed="true">
+            <i class="bi bi-moon-stars-fill"></i><span></span>
+            <span class="d-lg-none ms-2">Dark Theme</span>
+        </a>
+    {% endif %}
 </li>
