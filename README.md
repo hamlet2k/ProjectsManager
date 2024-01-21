@@ -4,7 +4,7 @@ Application to create projects and track them
 ## Local Installation Instructions
 
 There is no release or package of the application yet.
-In case you want to test the application in the curretn state, or you want to collaborate with development:
+In case you want to test the application locally, or you want to collaborate with development:
 This are the instructions to run the application locally.
 
 To set up and run this Python application, please follow the steps below:
