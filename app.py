@@ -354,19 +354,19 @@ def home():
 
 # Scopes
 # ------------------------------
-scope_exempt_routes = ["home", "scope", "user"] + login_exempt_routes
+# scope_exempt_routes = ["home", "scope", "user"] + login_exempt_routes
 
 
-@app.before_request
-def require_scope():
-    scope_selected = session.get("selected_scope")
-    if scope_selected:
-        g.scope = Scope.query.get(scope_selected)
-    else:
-        g.scope = None
-        if request.endpoint and request.endpoint not in scope_exempt_routes:
-            flash("Please select a scope", "info")
-            return redirect(url_for("home"))
+# @app.before_request
+# def require_scope():
+#     scope_selected = session.get("selected_scope")
+#     if scope_selected:
+#         g.scope = Scope.query.get(scope_selected)
+#     else:
+#         g.scope = None
+#         if request.endpoint and request.endpoint not in scope_exempt_routes:
+#             flash("Please select a scope", "info")
+#             return redirect(url_for("home"))
 
 
 def scope_required(f):
@@ -531,12 +531,15 @@ def add_item(item_type, template=None):
                 else:
                     setattr(item, field_name, field_object.data)
                 # Add more elif blocks for other field types as needed
-        db.session.add(item)
-        db.session.commit()
-        flash(item_type + " added!", "success")
-        form = form_class()
+        try:
+            db.session.add(item)
+            db.session.commit()
+            flash(item_type + " added!", "success")
+            form = form_class()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            flash(f"An error occurred: {str(e)}", "error")
         return redirect(request.referrer or url_for("home"))
-        # return redirect(endpoint)
     else:
         show_modal = True
     # TODO: This needs to be tested
@@ -546,7 +549,7 @@ def add_item(item_type, template=None):
 
 
 @app.route("/items/<string:item_type>/edit/<int:id>", methods=["GET", "POST"])
-def edit_item(item_type, id):
+def edit_item(item_type, id, template=None):
     try:
         item_class = get_class(item_type)
         item = item_class.query.get_or_404(id)
@@ -556,7 +559,6 @@ def edit_item(item_type, id):
     except ValueError as e:
         return str(e), 404
 
-    endpoint = url_for("items", item_type=item_type)
     show_modal = False
 
     if form.validate_on_submit():
@@ -567,17 +569,22 @@ def edit_item(item_type, id):
                     setattr(item, field_name, field_object.data)
                 else:
                     setattr(item, field_name, field_object.data)
-        db.session.commit()
-        flash(item_type + " edited!", "success")
-        form = form_class()
-        return redirect(url_for("items", item_type=item_type))
+        try:
+            db.session.commit()
+            flash(item_type + " edited!", "success")
+            form = form_class()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            flash(f"An error occurred: {str(e)}", "error")
+        
     else:
         show_modal = True
-    return render_template(endpoint, form=form, show_modal=show_modal, items=items_list)
+    # TODO: This needs to be tested
+    return render_template(template or "items.html", form=form, show_modal=show_modal, items=items_list)
 
 
 @app.route("/items/<string:item_type>/delete/<int:id>", methods=["POST"])
-def delete_item(item_type, id):
+def delete_item(item_type, id, template=None):
     try:
         item_class = get_class(item_type)
         item = item_class.query.get_or_404(id)
@@ -585,7 +592,9 @@ def delete_item(item_type, id):
         db.session.commit()
     except ValueError as e:
         return str(e), 404
-    return redirect(url_for("items", item_type=item_type))
+    endpoint = template or request.referrer or url_for("items", item_type=item_type) or url_for("home")
+    print(endpoint)
+    return redirect(endpoint)
 
 
 @app.route("/items/<string:item_type>/rank", methods=["POST"])
