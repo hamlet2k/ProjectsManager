@@ -17,20 +17,18 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav">
-        {% for menu in menus %}
         <li class="nav-item">
-          <a class="nav-link{% if menu.route == request.endpoint %} active{% endif %}"
-            {% if menu.route != "request.endpoint" %}
-              href="{{ menu.get_link() }}"
-            {% endif %}>
-            {{ menu.name }}
-          </a>
+          <a class="nav-link{% if 'home' in request.endpoint %} active{% endif %}"
+            href="{{ url_for('home') }}">Home</a>
         </li>
-        {% endfor %}
       </ul>
 
       <ul class="navbar-nav ms-md-auto me-2">
-        
+        {% if g.user.role == 'admin' %}
+          <!-- Admin Menu -->
+          {% include "components/devtools.html" %}
+          {% include "components/separator_menu.html" %}
+        {% endif %}
         <!-- User Menu -->
         {% include "components/user_menu.html" %}
         <!-- Separator -->

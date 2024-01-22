@@ -1,19 +1,21 @@
-<li class="nav-item">
     {% if 'user' in session %}
-        <span class="d-none d-lg-flex align-items-center">{{ session['user']}}</span>
+        <li class="nav-item">
+            <a href="{{ url_for('user') }}" class="nav-link d-flex">
+                <i class="bi bi-gear"></i>
+                <span class="d-lg-none ms-2">User Settings</span>
+            </a>
+        </li>
         {% include "components/separator_menu.html" %}
-        <a href="{{ url_for('user') }}" class="dropdown-item d-flex align-items-center">
-            <i class="bi bi-gear"></i>
-            <span class="d-lg-none ms-2">User Settings</span>
-        </a>
-        {% include "components/separator_menu.html" %}
-        <a href="{{ url_for('logout') }}" class="dropdown-item d-flex align-items-center">
-            <i class="bi bi-power"></i>
-            <span class="d-lg-none ms-2">Logout</span>
-        </a>
+        <li class="nav-item">
+            <a href="{{ url_for('logout') }}" class="nav-link d-flex">
+                <i class="bi bi-power"></i>
+                <span class="d-lg-none ms-2">Logout</span>
+            </a>
+        </li>
     {% else %}
-        <a href="{{ url_for('login') }}" class="dropdown-item d-flex align-items-center">
-        Login
-        </a>
+        <li class="nav-item">
+            <a href="{{ url_for('login') }}" class="nav-link d-flex">
+            Login
+            </a>
+        </li>
     {% endif %}
-</li>

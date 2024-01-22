@@ -1,11 +1,11 @@
 <li>
     {% if session.theme == 'dark'%}
-        <a href="{{ url_for('change_theme',theme='light') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="light" aria-pressed="false">
+        <a href="{{ url_for('change_theme',theme='light') }}" class="nav-link d-flex">
             <i class="bi bi-sun-fill"></i><span></span>
             <span class="d-lg-none ms-2">Light theme</span>
         </a>
     {% else %}
-        <a href="{{ url_for('change_theme',theme='dark') }}" type="button" class="dropdown-item d-flex align-items-center" data-bs-theme-value="dark" aria-pressed="true">
+        <a href="{{ url_for('change_theme',theme='dark') }}" class="nav-link d-flex">
             <i class="bi bi-moon-stars-fill"></i><span></span>
             <span class="d-lg-none ms-2">Dark Theme</span>
         </a>

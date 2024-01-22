@@ -15,7 +15,6 @@
 </head>
 
 <body data-bs-theme="{{ session.theme }}">
-    {# {% include "components/devtools.html" %} #}
     <!-- Navigation Bar -->
     {% block navbar %}
         {% include 'components/navbar.html' %}
@@ -32,11 +31,7 @@
         
     {% block modals %}
         <!-- Default Modals -->
-        {# 
-        <!-- Login Modal -->
-        {% include 'modals/login_modal.html' %}
         <!-- Confirmation Modal --> 
-        #}
         {% include "modals/confirmation_modal.html" %}
         <!-- Additional Modals -->
     {% endblock %}
