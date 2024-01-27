@@ -12,6 +12,7 @@ A User can complete any Task that belong to any Scope he has access to
 A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 
 """
+from datetime import datetime
 from database import db
 
 class Task(db.Model):
@@ -23,8 +24,16 @@ class Task(db.Model):
     rank = db.Column(db.Integer, nullable=False, default=0)
     parent_task_id = db.Column(db.Integer, db.ForeignKey("task.id"), nullable=True)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    completed = db.Column(db.Boolean, default=False, nullable=False)
+    completed_date = db.Column(db.DateTime, nullable=True)
 
     subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True)
+    
+    def complete_task(self):
+        self.completed = True
+        self.completed_date = datetime.utcnow()
+        for subtask in self.subtasks:
+            subtask.complete_task()
 
     def __repr__(self):
         return f"<Task {self.name}>"

@@ -1,0 +1,52 @@
+{% extends 'app.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+
+<div class="d-flex justify-content-end mx-2">
+    <button id="add-scope-btn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#scope-modal">
+        Add Scope
+    </button>
+</div>
+    
+
+<div class="container mt-5">
+    <div class="row g-3 justify-content-center">
+    {% for scope in scopes %}
+        <div class="col">
+            <div class="card border-secondary" >
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <a href="{{url_for('scope',id=scope.id)}}">{{scope.name}}</a>
+                    <div>
+                        <i class="bi bi-pencil-fill edit-scope-btn clickable-icon"
+                            data-bs-toggle="modal"
+                            data-bs-target="#scope-modal"
+                            data-scope-id="{{ scope.id }}"
+                            data-scope-name="{{ scope.name }}"
+                            data-scope-description="{{ scope.description }}"></i>
+                        <i class="bi bi-trash3-fill clickable-icon" 
+                            onclick="showConfirmationModal('{{url_for('delete_scope', id=scope.id)}}','Confirm Action','Are you sure?')"></i>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {# <h5 class="card-title"></h5> #}
+                    <p class="card-text small">{{scope.description}}</p>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+    {{ super() }}
+    {% include "modals/scope_modal.html" %}
+{% endblock modals %}
+
+
+{% block scripts %}
+    {{ super() }}
+{% endblock scripts %}

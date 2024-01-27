@@ -16,17 +16,14 @@
             {% include "components/breadcrumb.html" %}
         </div>
     </div>
-    <div class="d-flex justify-content-end mx-2">
-        <button id="addBtn" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#itemModal">
-            Add Scope
-        </button>
-    </div>
 {% endblock navbar %}
 
 {% block modals %}
     {{ super() }}
 {% endblock modals %}
 
-
+{% block scripts %}
+    {{ super() }}
+{% endblock scripts %}
 
 

@@ -24,11 +24,13 @@
       </ul>
 
       <ul class="navbar-nav ms-md-auto me-2">
+        {# 
         {% if g.user.role == 'admin' %}
           <!-- Admin Menu -->
           {% include "components/devtools.html" %}
           {% include "components/separator_menu.html" %}
-        {% endif %}
+        {% endif %} 
+        #}
         <!-- User Menu -->
         {% include "components/user_menu.html" %}
         <!-- Separator -->

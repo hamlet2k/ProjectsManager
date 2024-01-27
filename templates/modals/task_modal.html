@@ -1,0 +1,90 @@
+<div class="modal fade" id="task-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            
+            <div class="modal-header">
+                <h5 class="modal-title" id="task-modal-title">{{ action }} Task</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <form id="task-form" method="post">
+            {{ task_form.hidden_tag() }}
+            
+            <div class="modal-body">
+                <div class="form-floating mb-3">
+                    {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_=task_form.name.name) }}
+                    {{ task_form.name.label(class="form-label") }}
+                    {% if task_form.name.errors %}
+                        {% for error in task_form.name.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                <div class="form-floating mb-3">
+                    {{ task_form.description(class_='form-control'+ (' is-invalid' if task_form.description.errors else ''), placeholder_=task_form.description.name) }}
+                    {{ task_form.description.label(class="form-label") }}
+                    {% if task_form.description.errors %}
+                        {% for error in task_form.description.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                <div class="form-floating mb-3">
+                    {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_=task_form.end_date.name) }}
+                    {{ task_form.end_date.label(class="form-label") }}
+                    {% if task_form.end_date.errors %}
+                        {% for error in task_form.end_date.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                Cancel
+                </button>
+                {{ task_form.submit(class="btn btn-primary") }}
+            </div>
+                
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Display the modal based on the flag.
+    // Used when validation of the form fails to display the modal by default.
+    // Sets the modal butons depending on the action clicked (ADD or EDIT)
+    document.addEventListener('DOMContentLoaded', (event) => {
+        {% if show_modal %}
+            var modal = new bootstrap.Modal(document.getElementById('{{show_modal}}'));
+            modal.show();
+        {% endif %}
+    });
+
+    // Update the form action when the ADD button is clicked
+    // Clears the form fields
+    document.getElementById("add-task-btn").addEventListener("click", (event) => {
+        actionUrl = '{{ url_for("add_task") }}';
+        document.querySelector("#task-form").action = actionUrl;
+        document.getElementById("task-form").reset();
+    });
+
+    // Update the modal form action when the EDIT button is clicked
+    // Populate the form with the values associated to the EDIT button
+    document.querySelectorAll(".edit-task-btn").forEach((item) => {
+        item.addEventListener("click", (event) => {
+            {% for field in task_form %}
+                {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
+                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-task-{{ field.name }}");
+                {% endif %}
+            {% endfor %}
+
+            let baseUrl = '{{ url_for("edit_task", id=0) }}';
+            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-task-id"));
+            document.querySelector("#task-form").action = actionUrl;
+        });
+    });
+</script>
