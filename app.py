@@ -216,7 +216,7 @@ app.jinja_env.filters["dateformat"] = dateformat
 # ------------------------------
 @app.route("/")
 def home():
-    return redirect(url_for("scopes"))
+    return redirect(url_for("scope"))
 
 
 # Themes
@@ -288,53 +288,29 @@ def scope_required(f):
     return decorated_function
 
 
-def set_scope(scope_id):
-    """Store selected scope in session"""
-    session["selected_scope"] = scope_id
-
-
-def get_scope():
-    """Retrieve the user scope from session"""
-    return session.get("selected_scope")
-
-
 @app.route("/scope/<int:id>")
-def scope(id):
-    set_scope(id)
-    return redirect(url_for("tasks"))
-
-
-@app.route("/<string:item_type>/rank", methods=["POST"])
-def scope_rank(item_type):
-    try:
-        # TODO: This may need to be adjusted for CamelCase
-        item_class = globals().get(item_type.capitalize())
-    except ValueError as e:
-        return ValueError(f"Model class for '{item_type}' not found.\n'{str(e)}"), 404
-    
-    items = request.json["items"]
-    for data in items:
-        try:
-            item = item_class.query.get_or_404(data["id"])
-            item.rank = data["newRank"]
-            db.session.commit()
-        except ValueError as e:
-            return str(e), 404
-    return jsonify({"success": True})
+def set_scope(id):
+    session["selected_scope"] = id
+    return redirect(url_for("task"))
 
 
 @app.route("/scope")
-def scopes():
+def scope():
     items = g.user.owned_scopes + g.user.scopes
+    items.sort(key=lambda item: item.rank)
     form = ScopeForm()
-    return render_template("scopes.html", scopes=items, scope_form=form)
+    session.pop("selected_scope", None)
+    g.scope = None
+    return render_template("scope.html", scopes=items, scope_form=form)
 
 @app.route("/task")
 @scope_required
-def tasks():
-    items = [task for task in g.scope.tasks if not task.completed]
+def task():
+    show_completed = request.args.get('show_completed', 'false').lower() == 'true'
+    items = [task for task in g.scope.tasks if show_completed or not task.completed]
+    items.sort(key=lambda item: item.rank)
     form = TaskForm()
-    return render_template("tasks.html", tasks=items, task_form=form, scope=g.scope)
+    return render_template("task.html", tasks=items, task_form=form, scope=g.scope, show_completed=show_completed)
 
 def get_max_rank(item_type):
     try:
@@ -358,12 +334,15 @@ def add_scope():
 
     if form.validate_on_submit():
         # Set the data for the new scope
+        item.owner_id = g.user.id
         item.rank = get_max_rank('scope') + 1
-        item.owner_id = session.get("user_id")
 
         item.name = form.name.data
         item.description = form.description.data
         
+        # will use the following line when a user shares a scope with another user
+        # g.user.scopes.append(item)
+
         try:
             db.session.add(item)
             db.session.commit()
@@ -372,11 +351,11 @@ def add_scope():
         except SQLAlchemyError as e:
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("scopes"))
+        return redirect(request.referrer or url_for("scope"))
     else:
         show_modal = "scope-modal"
     # TODO: This needs to be tested
-    return render_template('scopes.html', scope_form=form, show_modal=show_modal, scopes=items)
+    return render_template('scope.html', scope_form=form, show_modal=show_modal, scopes=items)
 
 @app.route("/task/add", methods=["GET", "POST"])
 @scope_required
@@ -386,16 +365,19 @@ def add_task():
     form = TaskForm()
     items = [item for item in g.scope.tasks if not item.completed]
     show_modal = False
-
+    print(form.errors)
     if form.validate_on_submit():
+        print('after form validate on submit')
         # Set the data for the new scope
+        item.owner_id = g.user.id
         item.rank = get_max_rank('task') + 1
-        item.owner_id = session.get("user_id")
         item.start_date = datetime.fromisoformat(datetime.utcnow().strftime("%Y-%m-%dT%H:%M"))
         
         item.name = form.name.data
         item.description = form.description.data
         item.end_date = form.end_date.data
+        
+        g.scope.tasks.append(item)
 
         try:
             db.session.add(item)
@@ -405,11 +387,11 @@ def add_task():
         except SQLAlchemyError as e:
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("tasks"))
+        return redirect(request.referrer or url_for("task"))
     else:
         show_modal = "task-modal"
     # TODO: This needs to be tested
-    return render_template('tasks.html', task_form=form, show_modal=show_modal, tasks=items)
+    return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items, scope=g.scope)
 
 
 @app.route("/scope/edit/<int:id>", methods=["GET", "POST"])
@@ -429,10 +411,10 @@ def edit_scope(id):
         except SQLAlchemyError as e:
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("scopes"))
+        return redirect(request.referrer or url_for("scope"))
     else:
         show_modal = "scope-modal"
-    return render_template('scopes.html', scope_form=form, show_modal=show_modal, scopes=items)
+    return render_template('scope.html', scope_form=form, show_modal=show_modal, scopes=items)
 
 
 @app.route("/task/edit/<int:id>", methods=["GET", "POST"])
@@ -454,42 +436,61 @@ def edit_task(id):
         except SQLAlchemyError as e:
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("tasks"))
+        return redirect(request.referrer or url_for("task"))
     else:
         show_modal = "task-modal"
-    return render_template('tasks.html', task_form=form, show_modal=show_modal, tasks=items)
+    return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items)
 
-    
-def delete_item(item_type,id):
+
+@app.route("/<string:item_type>/delete/<int:id>", methods=["POST"])
+def delete_item(item_type, id):
+    if item_type == "scope" or item_type == "task":
+        try:
+            # TODO: This may need to be adjusted for CamelCase
+            item_class = globals().get(item_type.capitalize())
+            item = item_class.query.get_or_404(id)
+                
+            db.session.delete(item)
+            db.session.commit()
+            flash(f"{item_class.__name__} deleted!", "success")
+            return jsonify({'success': True, 'message': f"{item_class.__name__} deleted!"})
+        except ValueError as e:
+            db.session.rollback()
+            flash(f"An error occurred: {str(e)}", "error")
+            return jsonify({'success': False, 'message': f"An error occurred: {str(e)}"}), 500
+        # return redirect(request.referrer or url_for(item_type))
+    return "Invalid item type", 404
+
+
+@app.route("/complete_task/<int:id>")
+@scope_required
+def complete_task(id):
     try:
-        # TODO: This may need to be adjusted for CamelCase
-        item_class = globals().get(item_type.capitalize())
-        item = item_class.query.get_or_404(id)
-        
-        if item_type == "scope":
-            subitems = item.tasks
-        elif item_type == "task":
-            subitems = item.subtasks
-        
-        for subitem in subitems:
-            db.session.delete(subitem)
-            
-        db.session.delete(item)
+        item = Task.query.get_or_404(id)
+        if item.completed:
+            item.uncomplete_task()
+        else:
+            item.complete_task()
         db.session.commit()
-    except ValueError as e:
+    except SQLAlchemyError as e:
         db.session.rollback()
         flash(f"An error occurred: {str(e)}", "error")
-        
-@app.route("/scope/delete/<int:id>", methods=["POST"])
-def delete_scope(id):
-    delete_item("scope", id)
-    return redirect(request.referrer or url_for("scopes"))
+    return redirect(request.referrer or url_for("task"))
 
-@app.route("/task/delete/<int:id>", methods=["POST"])
-@scope_required
-def delete_task(id):
-    delete_item("task", id)
-    return redirect(request.referrer or url_for("tasks"))
+
+@app.route("/<string:item_type>/rank", methods=["POST"])
+def update_item_rank(item_type):
+    items_list = request.json["items"]
+    for data in items_list:
+        try:
+            item_class = globals().get(item_type.capitalize())
+            item = item_class.query.get_or_404(data["id"])
+            item.rank = data["newRank"]
+            db.session.commit()
+        except ValueError as e:
+            return str(e), 404
+    return jsonify({"success": True})
+
 
 # Beadcrumbs
 # ------------------------------

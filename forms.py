@@ -48,7 +48,7 @@ class TaskForm(FlaskForm):
     name = StringField("Name", [DataRequired()])
     description = TextAreaField("Description")
     end_date = DateTimeLocalField("End Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
-    completed = SelectField("Completed", choices=[(True, "Yes"), (False, "No")], coerce=bool)
+    # completed = SelectField("Completed", choices=[(True, "Yes"), (False, "No")], coerce=bool)
     # rank = IntegerField("Rank")
     
     # Assuming 'parent_task_id' refers to another task
@@ -57,7 +57,7 @@ class TaskForm(FlaskForm):
     # )
     # Populate choices in the view
     # Add submit button if needed
-    submit = SubmitField("Save Task")
+    # submit = SubmitField("Save Task")
 
 
 class SearchForm(FlaskForm):

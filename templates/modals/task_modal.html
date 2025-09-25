@@ -38,14 +38,15 @@
                         {% endfor %}
                     {% endif %}
                 </div>
-
             </div>
 
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                 Cancel
                 </button>
-                {{ task_form.submit(class="btn btn-primary") }}
+                <button type="submit" class="btn btn-primary" name="submitTaskButton" id="submitTaskButton">
+                Save Task
+                </button>
             </div>
                 
             </form>
@@ -70,6 +71,7 @@
         actionUrl = '{{ url_for("add_task") }}';
         document.querySelector("#task-form").action = actionUrl;
         document.getElementById("task-form").reset();
+        //clearFormFields();
     });
 
     // Update the modal form action when the EDIT button is clicked
@@ -87,4 +89,31 @@
             document.querySelector("#task-form").action = actionUrl;
         });
     });
+
+    function clearFormFields(){
+        {% for field in task_form %}
+            {% if field.name != 'csrf_token' %}
+                document.getElementById('{{ field.name }}').value = "";
+            {% endif %}
+        {% endfor %}
+    };
+
+    // Convert DateTimeLocalField to UTC before to to submit the form
+    document.getElementById('task-form').addEventListener('submit', function(event) {
+        event.preventDefault();  // Prevent the default form submission
+        {% for field in task_form %}
+            {% if field.type == 'DateTimeLocalField' %}
+                if (document.getElementById('{{ field.name }}').value != '') {
+                    document.getElementById('{{ field.name }}').value = convertToUTC(document.getElementById('{{ field.name }}').value)
+                }
+            {% endif %}
+        {% endfor %}
+        this.submit();
+    });
+
+    function convertToUTC(dateString){
+        var localDateTime = new Date(dateString);
+        return localDateTime.toISOString().slice(0, 16);
+    };
+
 </script>

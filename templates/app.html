@@ -3,27 +3,89 @@
 {% block css %}
 {{ super() }}
 <style>
-  .clickable-icon {
+.sketchy-border {
+    border-radius: 25px 25px 55px 5px/5px 55px 25px 25px; 
+    border: 1.2px solid #6b6b6b;
+}
+.no-visited:visited {
+    color: inherit;
+}
+.clickable-icon {
     cursor: pointer;
-  }
+}
+#grip {
+    cursor: move; /* Change cursor to indicate movability */
+}
+
+.alert {
+    transition: opacity 1s ease-out, height 1s ease-out, padding 1s ease-out, margin 1s ease-out;
+    opacity: 1; /* Initial opacity */
+    overflow: hidden; /* Prevent content from spilling during height transition */
+}
+
 </style>
-{% endblock %} 
+{% endblock css %} 
 
-{% block navbar %}
-    {{ super() }}
-    <div class="row mx-1">
-        <div class="col">
-            {% include "components/breadcrumb.html" %}
-        </div>
-    </div>
-{% endblock navbar %}
-
-{% block modals %}
-    {{ super() }}
-{% endblock modals %}
 
 {% block scripts %}
     {{ super() }}
-{% endblock scripts %}
+
+<script>
+    function expandAccordionItem(accordionItemId) {
+        var toggleElement = document.querySelector(`[data-bs-target="#${accordionItemId}"]`);
+        if (toggleElement && toggleElement.classList.contains('collapsed')) {
+            toggleElement.click();
+        }
+    }
 
 
+    function collapseAccordionItem(accordionItemId) {
+        var toggleElement = document.querySelector(`[data-bs-target="#${accordionItemId}"]`);
+        if (toggleElement && !toggleElement.classList.contains('collapsed')) {
+            toggleElement.click();
+        }
+    }
+
+
+    function initializeSortable(listId, itemType) {
+        var el = document.getElementById(listId);
+
+        if (!el) return; // Exit if element is not found
+
+        var sortable = Sortable.create(el, {
+            handle: "#grip", // Only allow drag using the grip icon
+            onEnd: function () {
+                updateRank(listId, itemType); // Pass accordionId and itemType
+            },
+        });
+    }
+
+    function updateRank(listId, itemType) {
+        var orderedIds = [];
+        document.querySelectorAll(`#${listId} #grip`)
+            .forEach(function (item, index) {
+                orderedIds.push({
+                    id: item.getAttribute("data-item-id"),
+                    newRank: index + 1, // Assuming rank starts at 1
+                });
+            });
+
+        fetch(`/${itemType}/rank`, { // Use the itemType in the URL
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.getElementById("csrf_token").value, // Include CSRF token
+            },
+            body: JSON.stringify({ items: orderedIds }),
+        })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                console.log("Rank updated successfully");
+            }
+        })
+        .catch((error) => console.error("Error:", error));
+    }
+
+</script>
+{% endblock %}

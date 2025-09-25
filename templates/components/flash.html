@@ -1,17 +1,44 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %} 
+    {% if messages %}
         {% for category, message in messages %}
             {% if category %}
-                <div class="alert alert-dismissible alert-{{ category }}">
+            <div class="alert alert-dismissible alert-{{ category }}" {% if category=='info' or category=='success' %}
+                data-auto-dismiss{% endif %}>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 {{ message }}
-                </div>
+            </div>
             {% else %}
-                <div class="alert alert-dismissible alert-secondary">
+            <div class="alert alert-dismissible alert-secondary">
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 {{ message }}
-                </div>
+            </div>
             {% endif %}
-        {% endfor %} 
-    {% endif %} 
+        {% endfor %}
+    {% endif %}
 {% endwith %}
+
+<script>
+    window.addEventListener('load', () => {
+        const alerts = document.querySelectorAll('.alert[data-auto-dismiss]');
+
+        alerts.forEach(alert => {
+            setTimeout(() => {
+                alert.style.opacity = '0'; // Start fading out
+                const alertHeight = alert.offsetHeight; // Get the current height of the alert
+                alert.style.height = `${alertHeight}px`; // Set a fixed height
+                setTimeout(() => {
+                    alert.style.height = '0'; // Transition to height 0
+                    alert.style.paddingTop = '0';
+                    alert.style.paddingBottom = '0';
+                    alert.style.marginBottom = '0';
+                }, 100); // Start collapsing shortly after fade out begins
+
+                // Finally, hide completely
+                setTimeout(() => {
+                    alert.style.display = 'none';
+                }, 1100); // This should be after the height transition is complete
+            }, 5000); // Time before fade-out starts
+        });
+    });
+
+</script>
