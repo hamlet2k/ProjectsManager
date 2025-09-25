@@ -1,9 +1,10 @@
-<nav class="navbar navbar-expand-lg mx-2 my-2 bg-body-tertiary">
+<nav class="navbar navbar-expand-lg mx-2 my-2 bg-body-tertiary" style="border-color: #6b6b6b">
   <div class="container-fluid">
     <a class="navbar-brand" href="{{ url_for('home') }}">
-      <img src="{{url_for('static',filename='images/fav-big.png')}}" alt="" width="30" height="30" class="d-inline-block align-text-middle">
-      Projects Manager
+      <img src="{{url_for('static',filename='images/fav-big.png')}}" alt="Home" width="30" height="30" class="d-inline-block align-text-middle">
+      {{ g.scope.name if g.scope else 'Projects Manager' }}
     </a>
+
     <button
       class="navbar-toggler"
       type="button"
@@ -16,12 +17,14 @@
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
+      {# 
       <ul class="navbar-nav">
         <li class="nav-item">
           <a class="nav-link{% if 'home' in request.endpoint %} active{% endif %}"
             href="{{ url_for('home') }}">Home</a>
         </li>
-      </ul>
+      </ul> 
+      #}
 
       <ul class="navbar-nav ms-md-auto me-2">
         {# 

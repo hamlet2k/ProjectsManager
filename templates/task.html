@@ -1,0 +1,202 @@
+{% extends 'app.html' %}
+
+{% block title %}Tasks{% endblock %}
+
+{% block content %}
+
+<div class="container">
+    <form action="{{ url_for('task') }}" method="get">
+        <div class="row g-3">
+            <div class="col form-floating">
+                <select class="form-select form-select-sm" name="sort_by" onchange="this.form.submit()">
+                    <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
+                    <option value="due_date" {{ 'selected' if sort_by == 'due_date' else '' }}>Due Date</option>
+                    <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
+                </select>
+                <label for="sort_by" class="form-label">Sort by</label>
+            </div>
+            <div class="col form-floating">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" onchange="this.form.submit()" {{ 'checked' if show_completed else '' }}>
+                    <label class="form-check-label" for="filter-completed">Show completed Tasks</label>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="container mt-2">
+    <form id="task-form" method="post" action="{{ url_for('add_task') }}">
+        {{ task_form.hidden_tag() }}
+        <div  class="accordion" id="quick-item-accordion">
+            <div class="input-group mb-3">
+                <span class="input-group-text clickable-icon collapsed" data-bs-toggle="collapse" data-bs-target="#detailed-item-container">
+                    <i class="bi bi-chevron-down text-muted"></i>
+                </span>
+                {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_="Add new task...") }}
+                <button id="quick-add-btn" class="btn btn-primary" type="submit">
+                    <i class="bi bi-floppy"></i>
+                </button>
+                <button id="quick-cancel-btn" class="btn btn-secondary" type="reset">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+                {% if task_form.name.errors %}
+                    {% for error in task_form.name.errors %}
+                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+        <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
+            <div class="accordion-body">
+                <div class="form-floating mb-3">
+                {{ task_form.description(class_='form-control') }}
+                {{ task_form.description.label(class_='form-label') }}
+                {% if task_form.description.errors %}
+                    {% for error in task_form.description.errors %}
+                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                    {% endfor %}
+                {% endif %}
+                </div>
+                <div class="form-floating mb-3">
+                {{ task_form.end_date(class_='form-control') }}
+                {{ task_form.end_date.label(class_='form-label') }}
+                {% if task_form.end_date.errors %}
+                    {% for error in task_form.end_date.errors %}
+                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                    {% endfor %}
+                {% endif %}
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="container mt-2">
+    <div class="accordion" id="tasks-accordion">
+        {% for task in tasks %}
+            <div class="m-1 px-2 sketchy-border">
+                <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ task.id }}">
+                    <a href="#" class="text-decoration-none no-visited" data-bs-toggle="collapse" data-bs-target="#collapse{{ task.id }}">
+                        <div class="col d-flex">
+                            <i class="bi bi-grip-vertical text-muted" id="grip" data-item-id="{{ task.id }}"></i>
+                            <span class="{{'text-decoration-line-through text-muted' if task.completed}}">
+                                {{task.name}}
+                            </span>
+                            {% if task.has_info() %}
+                            <a href="#" data-bs-toggle="collapse" data-bs-target="#collapse{{ task.id }}">
+                                <i class="bi bi-caret-down clickable-icon mx-1"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </a>
+                    <div class="col-auto d-flex justify-content-between align-items-center">
+                        <a href="{{url_for('complete_task',id=task.id)}}">
+                            <i class="bi bi-check2-circle mx-1" 
+                                {% if task.completed %}
+                                    style="color: green;"
+                                {% endif %} 
+                                data-bs-toggle="tooltip" 
+                                title="Complete Task"></i>
+                        </a>
+                        <i class="bi bi-pencil edit-task-btn clickable-icon text-muted mx-1" onclick="expandAccordionItem('detailed-item-container');"
+                            data-task-id="{{task.id}}"
+                            data-task-name="{{task.name}}"
+                            data-task-end_date="{{task.end_date}}"
+                            data-task-description="{{task.description}}"></i>
+                        <i class="bi bi-trash3 clickable-icon text-muted mx-1" 
+                            onclick="showConfirmationModal('{{url_for('delete_item',item_type='task', id=task.id)}}','Confirm Action','Are you sure?')"></i>
+                    </div>
+                </div>
+                {% if task.has_info() %}
+                <div id="collapse{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#tasks-accordion">
+                    <div class="accordion-body py-0">
+                        {% if task.end_date %}
+                            <i class="bi bi-calendar3 small text-muted" utc-date="{{ task.end_date }}"></i>
+                        {% endif %}
+                        <p class="small">{{ task.description }}</p>
+                        <!-- Display subtasks -->
+                        {% for subtask in task.subtasks %}
+                            <div class="ms-3">
+                                <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
+                                <!-- Subtask actions here -->
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+    <!-- Button to add a new task -->
+</div>
+{% endblock %}
+
+{% block modals %}
+    {{ super() }}
+    {# {% include "modals/task_modal.html" %} #}
+{% endblock modals %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+
+    initializeSortable('tasks-accordion', 'task');
+
+    // Update the form action to ADD when the form is reset
+    document.getElementById("quick-cancel-btn").addEventListener("click", (event) => {
+        actionUrl = '{{ url_for("add_task") }}';
+        document.querySelector("#task-form").action = actionUrl;
+        collapseAccordionItem('detailed-item-container');
+    });
+
+    // Update the form action to EDIT and the ID of the task
+    // Populate the form with the data-task-* attributes in the EDIT button
+    document.querySelectorAll(".edit-task-btn").forEach((item) => {
+        item.addEventListener("click", (event) => {
+            {% for field in task_form %}
+                {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
+                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-task-{{ field.name }}");
+                {% endif %}
+            {% endfor %}
+
+            let baseUrl = '{{ url_for("edit_task", id=0) }}';
+            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-task-id"));
+            document.querySelector("#task-form").action = actionUrl;
+            expandAccordionItem('detailed-item-container');
+        });
+    });
+
+    document.querySelectorAll(".bi-calendar3").forEach((item) => {
+        local_date = convertToLocal(item.getAttribute("utc-date"));
+        formated_date = new Date(local_date).toLocaleDateString(undefined, {
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric', 
+            hour: 'numeric', 
+            minute: 'numeric'
+        });
+        //item.setAttribute("data-bs-original-title", 'Due: ' + formated_date);
+        //item.setAttribute("title", 'Due: ' + formated_date);
+        item.setAttribute("aria-label", 'Due: ' + formated_date);
+        item.innerHTML = ' Due: ' + formated_date;
+    });
+
+    function convertToLocal(utcDateString){
+        // Parse the UTC date string to a Date object
+        var date = new Date(utcDateString + 'z'); //add zulu time since datetime-local doesnt have it
+
+        // Format the date to a local datetime-local string
+        function pad(number) {
+            return number < 10 ? '0' + number : number;
+        }
+        var yyyy = date.getFullYear();
+        var MM = pad(date.getMonth() + 1); // Months are 0-based in JavaScript
+        var dd = pad(date.getDate());
+        var hh = pad(date.getHours());
+        var mm = pad(date.getMinutes());
+
+        return yyyy + '-' + MM + '-' + dd + 'T' + hh + ':' + mm;
+    };
+</script>
+{% endblock  %}

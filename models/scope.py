@@ -10,8 +10,6 @@ A User can only delete a Scope he owns
 
 """
 from database import db
-from models.task_scope_association import task_scope_association
-
 
 class Scope(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -19,8 +17,8 @@ class Scope(db.Model):
     description = db.Column(db.Text, nullable=True)
     rank = db.Column(db.Integer, nullable=False, default=1)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-
-    tasks = db.relationship("Task", secondary=task_scope_association, lazy="subquery", backref=db.backref("scopes", lazy=True))
+    
+    tasks = db.relationship("Task", backref="scope", lazy=True, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Scope {self.name}>"

@@ -2,7 +2,6 @@
 
 A Task can contain multiple Tasks (sub-taks)
 A Task can be considered a project if it contains multiple sub-tasks.
-A Task must belong to one or multiple Scopes
 A Task cannot be completed if all its subtasks are not completed
 A User can create multiple Tasks
 A User is the owner of the Task he creates
@@ -26,14 +25,27 @@ class Task(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     completed = db.Column(db.Boolean, default=False, nullable=False)
     completed_date = db.Column(db.DateTime, nullable=True)
-
-    subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True)
+    
+    scope_id = db.Column(db.Integer, db.ForeignKey('scope.id'), nullable=True)
+    subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True, cascade="all, delete-orphan")
     
     def complete_task(self):
         self.completed = True
         self.completed_date = datetime.utcnow()
         for subtask in self.subtasks:
             subtask.complete_task()
+            
+    def uncomplete_task(self):
+        self.completed = False
+        self.completed_date = None
+        for subtask in self.subtasks:
+            subtask.uncomplete_task()
+            
+    def has_info(self):
+        if self.description or self.end_date or self.subtasks:
+            return True
+        else:
+            return False
 
     def __repr__(self):
         return f"<Task {self.name}>"
