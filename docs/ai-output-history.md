@@ -64,6 +64,7 @@ The ProjectsManager is a functional Flask-based web application for small teams 
 
 The application has a solid foundation but requires attention to security and bug fixes before production deployment. Consider the modernization goals outlined in `Contexto del proyecto.txt` for long-term maintainability.
 --------------------------------------------------------
+2025-09-26 – Docs: added Goals & Roadmap to project-context; expanded todo with sync/wrappers/voice AI items; no code changes.
 --------------------------------------------------------
 --------------------------------------------------------
 --------------------------------------------------------

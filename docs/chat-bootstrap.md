@@ -20,6 +20,7 @@ This note is meant to live in this ChatGPT project’s **Instructions**. It tell
 
 ## How assistants should operate (TL;DR)
 1. **Load context first**: Read `/docs/project-context.md` and `/docs/ai-output-history.md` (and for non-trivial tasks also `/docs/project-flows.md` and `/docs/data-model.md`) before proposing changes.
+   - **Check current repo version**: Before editing design docs (`/docs/project-context.md`, `/docs/project-flows.md`, `/docs/data-model.md`, `/docs/todo.md`), always review the existing file contents in the repository to avoid overwriting or dropping sections.
 2. **Cost-aware tools**: Prefer low-cost agents first; escalate only after two failed attempts or when complexity requires it.
 3. **Deliverables for each change**:
    - Complete file diffs or full file contents (no placeholders).
@@ -95,3 +96,30 @@ Deliverables:
 - `flask db upgrade` is clean (when models change).
 - Docs in `/docs/` updated when structure/DB/flows change.
 - A history entry was appended to `docs/ai-output-history.md`.
+
+---
+
+### File & Snippet Delivery Expectations
+- Always provide either:
+  1. Full updated file (in a code block with the correct source language, e.g., ```python, ```markdown, etc.),
+  2. Or update the file inside the Canvas,
+  3. Or attach a downloadable link to the full updated file.
+- Partial snippets are allowed **as long as they are in proper source-language fenced blocks** (e.g., ```python, ```markdown, ```json, ```bash).
+- Never provide “floating” text without code fences when the user might need to copy/paste.
+- Keep `/docs/` files as the **single source of truth** for project context, flows, and history.
+
+### Handling Code Blocks and Rendering Issues
+- When showing code fences **inside another fenced block** (e.g., ```markdown containing ```python), always escape the backticks so they render properly. Example:
+
+  ```markdown
+  \`\`\`python
+  example code
+  \`\`\`
+- Alternatively, use indentation (4 spaces) to represent nested code fences:
+    ```python
+    example code
+    ```
+- For large files with many nested fences, prefer delivering via:
+   1. Canvas update, or
+   2. Downloadable file link.
+

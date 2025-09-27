@@ -32,6 +32,26 @@ This file gives **stable, high-signal context** for IDE-based AI agents (Copilot
 
 > Agents: When proposing non-trivial changes (models, endpoints, structure), read both files above first and include migration+diff deliverables in your answer.
 
+## Goals & Roadmap
+
+### Short-Term (MVP)
+- Keep the ChatGPT bootstrap current (paste-ready prompts for Copilot / Kilo Code / Coding Agent).
+- Ensure core CRUD flows are clean; migrations via Flask-Migrate stay green.
+- Maintain docs hygiene across `/docs/project-context.md`, `/docs/project-flows.md`, `/docs/data-model.md`, and `/docs/ai-output-history.md`.
+
+### Medium-Term
+- Expand entities & relationships (projects ↔ tasks/notes/flows); introduce tags/metadata/hierarchy.
+- Automate routine tasks (append AI history, generate migrations/templates).
+- Improve repo tooling (lint/tests/CI, DB reset & fixtures, simple search/filters).
+- Define early **sync model** (local-first with optional cloud upload of selected scopes/tasks); capture decisions in `/docs`.
+
+### Long-Term Vision
+- **Deployment flexibility:** Web app that can also run locally and be wrapped for desktop/mobile (Electron for desktop; Capacitor/Flutter options for mobile).  
+- **Hybrid local/cloud:** Offline-capable; users choose which scopes/tasks sync to a group in the cloud for collaboration.  
+- **Hands-free AI:** Push-to-talk or always-listening; AI parses intent → calls backend APIs → confirms or asks for clarifications.  
+- **Collaboration & roles:** Gradual move to multi-user groups, permissions/roles, and AI-assisted conflict resolution for offline edits.  
+- **Tech enablers:** Clear API surface for AI orchestration; STT + NLU pipeline; idempotent endpoints and machine-friendly responses.
+
 ## Setup (reference)
 ```bash
 python -m venv .venv

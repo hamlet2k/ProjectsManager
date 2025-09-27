@@ -22,6 +22,10 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 - [ ] **UI polish**: introduce Bootstrap; unify form layout and flash messaging.
 - [ ] **Search/filters**: add simple search by project name/status on list page.
 - [ ] **Import/Export CSV**: minimal CSV export of projects; optional CSV import.
+- [ ] **Hybrid sync design**: define selective sync of scopes/tasks, groups, and basic permissions; document flows in `/docs/project-flows.md`.
+- [ ] **Wrappers research**: compare Electron (desktop) vs. Capacitor / Flutter (mobile); capture pros/cons & packaging steps in `/docs/project-context.md`.
+- [ ] **AI voice prototype**: push-to-talk + STT selection; intent → API mapping → confirmation loop; log ambiguities and ask follow-ups.
+- [ ] **API surface for AI**: ensure endpoints for projects/tasks/notes are idempotent and machine-friendly; draft a minimal OpenAPI or endpoints table.
 
 ---
 
@@ -33,6 +37,10 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 - [ ] **Project detail page**: show project with related tasks.
 - [ ] **Role-based access**: owner/admin permissions for edit/delete.
 - [ ] **Export data model diagram**: auto-generate ER from SQLAlchemy (optional).
+- [ ] **Offline conflict resolution**: policy + UX; AI-assisted merge prompts when edits diverge.
+- [ ] **Roles & permissions**: model access for local/cloud groups.
+- [ ] **Packaging pipelines**: build scripts for desktop/mobile wrappers; env/config strategy.
+- [ ] **Proactive assistant**: suggestions, blockers, and flow-changing prompts based on context.
 
 ---
 
