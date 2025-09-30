@@ -2,6 +2,65 @@
 
 {% block title %}Tasks{% endblock %}
 
+{% block css %}
+{{ super() }}
+<style>
+    .tag-chip,
+    .tag-pill {
+        border-radius: 999px;
+        padding: 0.25rem 0.75rem;
+        font-size: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border: 1px solid var(--bs-border-color);
+        transition: all 0.15s ease-in-out;
+    }
+
+    .tag-chip {
+        cursor: pointer;
+        background-color: transparent;
+        color: var(--bs-body-color);
+    }
+
+    .tag-chip:hover {
+        background-color: var(--bs-tertiary-bg);
+    }
+
+    .tag-chip.active,
+    .tag-chip.assigned {
+        background-color: var(--bs-primary);
+        border-color: var(--bs-primary);
+        color: var(--bs-white);
+    }
+
+    .tag-chip.assigned:not(.active) {
+        background-color: var(--bs-secondary);
+        border-color: var(--bs-secondary);
+    }
+
+    .tag-pill {
+        background-color: var(--bs-tertiary-bg);
+        border-color: transparent;
+        color: var(--bs-secondary-color, var(--bs-secondary));
+    }
+
+    .tag-section-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--bs-secondary-color, var(--bs-secondary));
+    }
+
+    .tag-filter-toolbar {
+        background-color: var(--bs-body-bg);
+        border-radius: 0.75rem;
+        border: 1px solid var(--bs-border-color);
+        padding: 0.75rem 1rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 
 <div class="container">
@@ -23,6 +82,25 @@
             </div>
         </div>
     </form>
+</div>
+
+<div class="container mt-2">
+    <div class="tag-filter-toolbar d-flex flex-column flex-lg-row gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="tag-section-label">Filter by tags</span>
+            <a href="#" class="small text-decoration-none" id="tag-filter-all">all</a>
+            <span class="text-muted small">/</span>
+            <a href="#" class="small text-decoration-none" id="tag-filter-none">none</a>
+        </div>
+        <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
+            {% for tag in available_tags %}
+                <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</button>
+            {% endfor %}
+        </div>
+        <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
+            No tags yet. Add tags to tasks to start filtering.
+        </p>
+    </div>
 </div>
 
 <div class="container mt-2">
@@ -75,7 +153,7 @@
 <div class="container mt-2">
     <div class="accordion" id="tasks-accordion">
         {% for task in tasks %}
-            <div class="m-1 px-2 sketchy-border">
+            <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
                 <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ task.id }}">
                     <a href="#" class="text-decoration-none no-visited" data-bs-toggle="collapse" data-bs-target="#collapse{{ task.id }}">
                         <div class="col d-flex">
@@ -91,11 +169,15 @@
                         </div>
                     </a>
                     <div class="col-auto d-flex justify-content-between align-items-center">
+                        <i class="bi bi-hash tag-manager-btn clickable-icon text-muted mx-1"
+                            data-task-id="{{ task.id }}"
+                            data-task-name="{{ task.name | e }}"
+                            title="Manage tags"></i>
                         <a href="{{url_for('complete_task',id=task.id)}}">
-                            <i class="bi bi-check2-circle mx-1" 
+                            <i class="bi bi-check2-circle mx-1"
                                 {% if task.completed %}
                                     style="color: green;"
-                                {% endif %} 
+                                {% endif %}
                                 data-bs-toggle="tooltip" 
                                 title="Complete Task"></i>
                         </a>
@@ -111,10 +193,17 @@
                 {% if task.has_info() %}
                 <div id="collapse{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#tasks-accordion">
                     <div class="accordion-body py-0">
+                        <div class="mb-2 d-flex flex-wrap gap-2" id="task-tags-{{ task.id }}">
+                            {% for tag in task.tags %}
+                                <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</span>
+                            {% endfor %}
+                        </div>
                         {% if task.end_date %}
                             <i class="bi bi-calendar3 small text-muted" utc-date="{{ task.end_date }}"></i>
                         {% endif %}
-                        <p class="small">{{ task.description }}</p>
+                        {% if task.description %}
+                            <p class="small">{{ task.description }}</p>
+                        {% endif %}
                         <!-- Display subtasks -->
                         {% for subtask in task.subtasks %}
                             <div class="ms-3">
@@ -134,7 +223,29 @@
 
 {% block modals %}
     {{ super() }}
-    {# {% include "modals/task_modal.html" %} #}
+    <div class="modal fade" id="tagManagerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Manage tags</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2" id="tag-modal-task-name"></p>
+                    <div class="mb-3">
+                        <div class="d-flex flex-wrap gap-2" id="tag-modal-available"></div>
+                        <p class="text-muted small mb-0 d-none" id="tag-modal-empty">No tags yet. Create one below.</p>
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text">#</span>
+                        <input type="text" class="form-control" id="new-tag-input" placeholder="Create a new tag">
+                        <button class="btn btn-outline-primary" id="create-tag-btn" type="button">Add</button>
+                    </div>
+                    <div class="invalid-feedback d-none" id="new-tag-feedback">Please enter a tag name.</div>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock modals %}
 
 {% block scripts %}
@@ -198,5 +309,337 @@
 
         return yyyy + '-' + MM + '-' + dd + 'T' + hh + ':' + mm;
     };
+
+    const csrfTokenInput = document.querySelector('#task-form input[name="csrf_token"]');
+    const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
+
+    const tagModalElement = document.getElementById('tagManagerModal');
+    const tagModal = tagModalElement ? new bootstrap.Modal(tagModalElement) : null;
+    const tagModalAvailable = document.getElementById('tag-modal-available');
+    const tagModalEmpty = document.getElementById('tag-modal-empty');
+    const tagModalTaskName = document.getElementById('tag-modal-task-name');
+    const newTagInput = document.getElementById('new-tag-input');
+    const newTagFeedback = document.getElementById('new-tag-feedback');
+    const createTagBtn = document.getElementById('create-tag-btn');
+
+    const filterContainer = document.getElementById('tag-filter-container');
+    const filterAll = document.getElementById('tag-filter-all');
+    const filterNone = document.getElementById('tag-filter-none');
+    const filterEmptyMessage = document.getElementById('tag-filter-empty');
+
+    let availableTagsMap = new Map();
+    let currentTaskId = null;
+    let currentTaskTags = new Map();
+
+    function hydrateAvailableTagsFromFilter() {
+        if (!filterContainer) {
+            return;
+        }
+        availableTagsMap = new Map();
+        filterContainer.querySelectorAll('[data-tag-id]').forEach((button) => {
+            availableTagsMap.set(button.dataset.tagId, {
+                id: Number(button.dataset.tagId),
+                name: button.dataset.tagName,
+            });
+        });
+        if (filterEmptyMessage) {
+            filterEmptyMessage.classList.toggle('d-none', availableTagsMap.size > 0);
+        }
+    }
+
+    function ensureTagInFilter(tag) {
+        if (!filterContainer || !tag) {
+            return;
+        }
+        const tagId = String(tag.id);
+        if (!availableTagsMap.has(tagId)) {
+            availableTagsMap.set(tagId, tag);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn btn-sm tag-chip tag-filter-button';
+            button.dataset.tagId = tagId;
+            button.dataset.tagName = tag.name;
+            button.textContent = `#${tag.name}`;
+            button.addEventListener('click', handleFilterToggle);
+            filterContainer.appendChild(button);
+        }
+        if (filterEmptyMessage) {
+            filterEmptyMessage.classList.add('d-none');
+        }
+    }
+
+    function updateTaskTagDisplay(taskId, tags) {
+        const container = document.getElementById(`task-tags-${taskId}`);
+        if (container) {
+            container.innerHTML = '';
+            tags.forEach((tag) => {
+                const pill = document.createElement('span');
+                pill.className = 'tag-pill';
+                pill.dataset.tagId = tag.id;
+                pill.dataset.tagName = tag.name;
+                pill.textContent = `#${tag.name}`;
+                container.appendChild(pill);
+            });
+        }
+
+        const taskWrapper = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
+        if (taskWrapper) {
+            const tagIds = tags.map((tag) => tag.id);
+            taskWrapper.dataset.tagIds = tagIds.join(',');
+        }
+    }
+
+    function renderTagOptions() {
+        if (!tagModalAvailable) {
+            return;
+        }
+
+        // Ensure tags from filters are included before rendering
+        hydrateAvailableTagsFromFilter();
+        currentTaskTags.forEach((tag) => ensureTagInFilter(tag));
+
+        tagModalAvailable.innerHTML = '';
+        const tags = Array.from(availableTagsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+        if (tags.length === 0) {
+            if (tagModalEmpty) {
+                tagModalEmpty.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (tagModalEmpty) {
+            tagModalEmpty.classList.add('d-none');
+        }
+
+        tags.forEach((tag) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'btn btn-sm tag-chip';
+            chip.dataset.tagId = tag.id;
+            chip.textContent = `#${tag.name}`;
+            if (currentTaskTags.has(String(tag.id))) {
+                chip.classList.add('active', 'assigned');
+            }
+            chip.addEventListener('click', () => toggleTagAssignment(tag));
+            tagModalAvailable.appendChild(chip);
+        });
+    }
+
+    function toggleTagAssignment(tag) {
+        const tagId = String(tag.id);
+        if (currentTaskTags.has(tagId)) {
+            updateTagAssignment(tagId, false);
+        } else {
+            updateTagAssignment(tagId, true);
+        }
+    }
+
+    function updateTagAssignment(tagId, assign) {
+        if (!currentTaskId || !csrfToken) {
+            return;
+        }
+
+        const url = assign ? `/tasks/${currentTaskId}/tags` : `/tasks/${currentTaskId}/tags/${tagId}`;
+        const options = {
+            method: assign ? 'POST' : 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+        };
+
+        if (assign) {
+            options.body = JSON.stringify({ tag_id: Number(tagId) });
+        }
+
+        fetch(url, options)
+            .then((response) => {
+                if (!response.ok) {
+                    throw response;
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (data && data.tag) {
+                    const tag = data.tag;
+                    const tagKey = String(tag.id);
+                    if (assign) {
+                        currentTaskTags.set(tagKey, tag);
+                        ensureTagInFilter(tag);
+                    } else {
+                        currentTaskTags.delete(tagKey);
+                    }
+                    updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
+                    renderTagOptions();
+                    applyTagFilters();
+                }
+            })
+            .catch((error) => {
+                console.error('Unable to update tag assignment', error);
+            });
+    }
+
+    function handleCreateTag() {
+        if (!newTagInput || !csrfToken || !currentTaskId) {
+            return;
+        }
+
+        const rawValue = newTagInput.value.trim();
+        const normalized = rawValue.replace(/^#+/, '').trim();
+
+        if (!normalized) {
+            if (newTagFeedback) {
+                newTagFeedback.textContent = 'Please enter a tag name.';
+                newTagFeedback.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (newTagFeedback) {
+            newTagFeedback.classList.add('d-none');
+        }
+
+        fetch('/tags', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ name: normalized }),
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    return response.json().then((data) => Promise.reject(data));
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (!data || !data.tag) {
+                    return;
+                }
+                const tag = data.tag;
+                const tagKey = String(tag.id);
+                availableTagsMap.set(tagKey, tag);
+                ensureTagInFilter(tag);
+                newTagInput.value = '';
+                renderTagOptions();
+                updateTagAssignment(tagKey, true);
+            })
+            .catch((error) => {
+                if (newTagFeedback) {
+                    const message = error && error.error ? error.error : 'Unable to create tag.';
+                    newTagFeedback.textContent = message;
+                    newTagFeedback.classList.remove('d-none');
+                }
+            });
+    }
+
+    function handleFilterToggle(event) {
+        event.preventDefault();
+        const button = event.currentTarget;
+        button.classList.toggle('active');
+        applyTagFilters();
+    }
+
+    function applyTagFilters() {
+        const activeTags = filterContainer
+            ? Array.from(filterContainer.querySelectorAll('.tag-chip.active')).map((button) => button.dataset.tagId)
+            : [];
+
+        document.querySelectorAll('.task-item').forEach((taskElement) => {
+            const taskTags = (taskElement.dataset.tagIds || '').split(',').filter(Boolean);
+            const matches = activeTags.every((tagId) => taskTags.includes(tagId));
+            taskElement.style.display = matches ? '' : 'none';
+        });
+    }
+
+    function attachFilterListeners() {
+        if (!filterContainer) {
+            return;
+        }
+        filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
+            button.addEventListener('click', handleFilterToggle);
+        });
+
+        if (filterAll) {
+            filterAll.addEventListener('click', (event) => {
+                event.preventDefault();
+                filterContainer.querySelectorAll('.tag-chip').forEach((button) => {
+                    button.classList.add('active');
+                });
+                applyTagFilters();
+            });
+        }
+
+        if (filterNone) {
+            filterNone.addEventListener('click', (event) => {
+                event.preventDefault();
+                filterContainer.querySelectorAll('.tag-chip').forEach((button) => {
+                    button.classList.remove('active');
+                });
+                applyTagFilters();
+            });
+        }
+    }
+
+    function attachTagManagerListeners() {
+        document.querySelectorAll('.tag-manager-btn').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (!tagModal) {
+                    return;
+                }
+
+                currentTaskId = button.dataset.taskId;
+                currentTaskTags = new Map();
+
+                if (tagModalTaskName) {
+                    tagModalTaskName.textContent = `Tags for "${button.dataset.taskName || ''}"`;
+                }
+
+                const tagContainer = document.getElementById(`task-tags-${currentTaskId}`);
+                if (tagContainer) {
+                    tagContainer.querySelectorAll('[data-tag-id]').forEach((pill) => {
+                        const id = String(pill.dataset.tagId);
+                        currentTaskTags.set(id, {
+                            id: Number(id),
+                            name: pill.dataset.tagName || pill.textContent.replace('#', '').trim(),
+                        });
+                    });
+                }
+
+                renderTagOptions();
+
+                if (newTagInput) {
+                    newTagInput.value = '';
+                    newTagInput.focus({ preventScroll: true });
+                }
+
+                if (newTagFeedback) {
+                    newTagFeedback.classList.add('d-none');
+                }
+
+                tagModal.show();
+            });
+        });
+    }
+
+    attachFilterListeners();
+    hydrateAvailableTagsFromFilter();
+    attachTagManagerListeners();
+
+    if (createTagBtn) {
+        createTagBtn.addEventListener('click', handleCreateTag);
+    }
+
+    if (newTagInput) {
+        newTagInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleCreateTag();
+            }
+        });
+    }
 </script>
 {% endblock  %}

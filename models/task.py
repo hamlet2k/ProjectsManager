@@ -13,6 +13,7 @@ A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 """
 from datetime import datetime
 from database import db
+from .tag import task_tags
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -28,6 +29,12 @@ class Task(db.Model):
     
     scope_id = db.Column(db.Integer, db.ForeignKey('scope.id'), nullable=True)
     subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True, cascade="all, delete-orphan")
+    tags = db.relationship(
+        "Tag",
+        secondary=task_tags,
+        back_populates="tasks",
+        lazy="selectin",
+    )
     
     def complete_task(self):
         self.completed = True
@@ -42,7 +49,7 @@ class Task(db.Model):
             subtask.uncomplete_task()
             
     def has_info(self):
-        if self.description or self.end_date or self.subtasks:
+        if self.description or self.end_date or self.subtasks or self.tags:
             return True
         else:
             return False

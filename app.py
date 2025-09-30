@@ -3,6 +3,7 @@ from functools import wraps
 
 from flask import (
     Flask,
+    abort,
     flash,
     jsonify,
     session,
@@ -15,7 +16,7 @@ from flask import (
 
 from flask_migrate import Migrate
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import db
 
 
@@ -32,6 +33,7 @@ db.init_app(app)
 
 # Models import should be after initializing db
 from models.scope import Scope
+from models.tag import Tag
 from models.task import Task
 from models.user import User
 
@@ -310,7 +312,114 @@ def task():
     items = [task for task in g.scope.tasks if show_completed or not task.completed]
     items.sort(key=lambda item: item.rank)
     form = TaskForm()
-    return render_template("task.html", tasks=items, task_form=form, scope=g.scope, show_completed=show_completed)
+    available_tags = (
+        Tag.query.join(Tag.tasks)
+        .filter(Task.scope_id == g.scope.id)
+        .distinct()
+        .order_by(Tag.name.asc())
+        .all()
+    )
+    return render_template(
+        "task.html",
+        tasks=items,
+        task_form=form,
+        scope=g.scope,
+        show_completed=show_completed,
+        available_tags=available_tags,
+    )
+
+
+@app.route("/tags", methods=["GET"])
+@scope_required
+def list_tags():
+    tags = (
+        Tag.query.join(Tag.tasks)
+        .filter(Task.scope_id == g.scope.id)
+        .distinct()
+        .order_by(Tag.name.asc())
+        .all()
+    )
+    return jsonify({"tags": [tag.to_dict() for tag in tags]})
+
+
+@app.route("/tags", methods=["POST"])
+def create_tag():
+    payload = request.get_json(silent=True) or {}
+    raw_name = payload.get("name", "")
+    normalized_name = raw_name.lstrip("#").strip().lower()
+
+    if not normalized_name:
+        return jsonify({"error": "Tag name is required."}), 400
+
+    tag = Tag(name=normalized_name)
+    try:
+        db.session.add(tag)
+        db.session.commit()
+        created = True
+    except IntegrityError:
+        db.session.rollback()
+        tag = Tag.query.filter_by(name=normalized_name).first()
+        if tag is None:
+            return jsonify({"error": "Unable to create tag."}), 500
+        created = False
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"tag": tag.to_dict(), "created": created})
+
+
+def _get_task_in_scope_or_404(task_id):
+    task = Task.query.get_or_404(task_id)
+    if g.scope is None or task.scope_id != g.scope.id:
+        abort(404)
+    return task
+
+
+@app.route("/tasks/<int:task_id>/tags", methods=["GET"])
+@scope_required
+def get_task_tags(task_id):
+    task = _get_task_in_scope_or_404(task_id)
+    return jsonify({"tags": [tag.to_dict() for tag in task.tags]})
+
+
+@app.route("/tasks/<int:task_id>/tags", methods=["POST"])
+@scope_required
+def add_tag_to_task(task_id):
+    payload = request.get_json(silent=True) or {}
+    tag_id = payload.get("tag_id")
+    if not tag_id:
+        return jsonify({"error": "Tag id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+
+    if tag not in task.tags:
+        try:
+            task.tags.append(tag)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"tag": tag.to_dict(), "assigned": True})
+
+
+@app.route("/tasks/<int:task_id>/tags/<int:tag_id>", methods=["DELETE"])
+@scope_required
+def remove_tag_from_task(task_id, tag_id):
+    task = _get_task_in_scope_or_404(task_id)
+    tag = Tag.query.get_or_404(tag_id)
+
+    if tag in task.tags:
+        try:
+            task.tags.remove(tag)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"tag": tag.to_dict(), "assigned": False})
 
 def get_max_rank(item_type):
     try:
