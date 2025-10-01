@@ -1,0 +1,107 @@
+<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}'>
+    {% set ns = namespace(has_tasks=false) %}
+    {% for group in task_groups %}
+        {% if group.tasks %}
+            {% set ns.has_tasks = true %}
+        {% endif %}
+        <div class="task-group mb-4" data-group-dom-id="{{ group.dom_id }}" {% if group.tag_id is defined %}data-tag-id="{{ group.tag_id }}"{% endif %}>
+            {% if group.title %}
+                <h6 class="text-uppercase text-muted small mb-2">{{ group.title }}</h6>
+            {% endif %}
+            <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
+                {% if group.tasks %}
+                    {% for task in group.tasks %}
+                        {% set has_details = task.has_info() or task.completed_date %}
+                        <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
+                            <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
+                                <div class="d-flex align-items-center flex-grow-1">
+                                    <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
+                                    {% if has_details %}
+                                        <a href="#" class="text-decoration-none no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
+                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
+                                            <div class="flex-grow-1">
+                                                {% if task.completed %}
+                                                    <del>{{ task.name }}</del>
+                                                {% else %}
+                                                    {{ task.name }}
+                                                {% endif %}
+                                            </div>
+                                        </a>
+                                    {% else %}
+                                        <div class="mx-2">
+                                            {% if task.completed %}
+                                                <del>{{ task.name }}</del>
+                                            {% else %}
+                                                {{ task.name }}
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-auto d-flex justify-content-end align-items-center">
+                                    <a class="btn btn-pastel-success mx-1" href="{{ url_for('complete_task', id=task.id) }}">
+                                        {% if task.completed %}
+                                            <i class="bi bi-arrow-counterclockwise"></i>
+                                        {% else %}
+                                            <i class="bi bi-check"></i>
+                                        {% endif %}
+                                    </a>
+                                    <button type="button" class="btn btn-outline-secondary tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
+                                        <i class="bi bi-tags"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary mx-1 edit-task-btn"
+                                        data-task-id="{{ task.id }}"
+                                        data-task-name="{{ task.name | e }}"
+                                        data-task-description="{{ task.description | default('') | e }}"
+                                        data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
+                                        data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
+                                    >
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-pastel-danger" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="collapse{{ group.dom_id }}-{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ group.dom_id }}">
+                                {% if has_details %}
+                                <div class="accordion-body d-flex flex-column gap-2">
+                                    {% if task.description %}
+                                        <p class="small task-description mb-0">{{ task.description | replace('\n', '<br>') | safe }}</p>
+                                    {% endif %}
+                                    {% if task.end_date %}
+                                        <div class="task-meta d-inline-flex align-items-center gap-2">
+                                            <i class="bi bi-calendar3"></i>
+                                            <span class="due-date" data-utc-date="{{ task.end_date.isoformat() }}"></span>
+                                        </div>
+                                    {% endif %}
+                                    {% if task.completed_date %}
+                                        <div class="task-meta d-inline-flex align-items-center gap-2">
+                                            <i class="bi bi-flag"></i>
+                                            <span class="completed-date" data-completed-date="{{ task.completed_date.isoformat() }}"></span>
+                                        </div>
+                                    {% endif %}
+                                    <div class="d-flex flex-wrap gap-2 task-tags" id="task-tags-{{ task.id }}">
+                                        {% for tag in task.tags %}
+                                            <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% for subtask in task.subtasks %}
+                                        <div class="ms-3">
+                                            <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted small mb-0">No tasks in this group.</p>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+    {% if not ns.has_tasks %}
+        <p class="text-muted fst-italic">No tasks match the selected filters.</p>
+    {% endif %}
+</div>

@@ -25,7 +25,11 @@ class Tag(db.Model):
     )
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "task_count": len(self.tasks) if self.tasks is not None else 0,
+        }
 
     def __repr__(self):
         return f"<Tag #{self.name}>"
