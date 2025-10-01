@@ -64,6 +64,95 @@
         cursor: default !important;
         pointer-events: none;
     }
+
+    .btn-pastel-success,
+    .btn-pastel-danger {
+        border-width: 1px;
+        border-style: solid;
+        transition: all 0.15s ease-in-out;
+    }
+
+    .btn-pastel-success {
+        color: rgba(var(--bs-success-rgb), 0.85);
+        border-color: rgba(var(--bs-success-rgb), 0.35);
+        background-color: rgba(var(--bs-success-rgb), 0.12);
+    }
+
+    .btn-pastel-success:hover,
+    .btn-pastel-success:focus {
+        color: rgba(var(--bs-success-rgb), 0.9);
+        border-color: rgba(var(--bs-success-rgb), 0.55);
+        background-color: rgba(var(--bs-success-rgb), 0.2);
+    }
+
+    .btn-pastel-danger {
+        color: rgba(var(--bs-danger-rgb), 0.85);
+        border-color: rgba(var(--bs-danger-rgb), 0.35);
+        background-color: rgba(var(--bs-danger-rgb), 0.12);
+    }
+
+    .btn-pastel-danger:hover,
+    .btn-pastel-danger:focus {
+        color: rgba(var(--bs-danger-rgb), 0.9);
+        border-color: rgba(var(--bs-danger-rgb), 0.55);
+        background-color: rgba(var(--bs-danger-rgb), 0.2);
+    }
+
+    .task-chevron {
+        transition: transform 0.2s ease-in-out;
+    }
+
+    .task-chevron-rotated {
+        transform: rotate(90deg);
+    }
+
+    .task-description {
+        white-space: pre-wrap;
+    }
+
+    .inline-tag-input-group .form-control {
+        min-height: 2.5rem;
+    }
+
+    #tag-filter-clear {
+        border: none;
+        background: transparent;
+        color: var(--bs-secondary-color, var(--bs-secondary));
+        display: inline-flex;
+        align-items: center;
+        padding: 0;
+    }
+
+    #tag-filter-clear:hover,
+    #tag-filter-clear:focus {
+        color: var(--bs-body-color);
+    }
+
+    .task-meta {
+        font-size: 0.8rem;
+        color: var(--bs-secondary-color, var(--bs-secondary));
+    }
+
+    .task-tags:empty {
+        display: none;
+    }
+
+    .inline-tag-chip {
+        border-radius: 999px;
+        padding: 0.25rem 0.75rem;
+        border: 1px solid var(--bs-border-color);
+        background-color: var(--bs-body-bg);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .inline-tag-chip.active {
+        background-color: var(--bs-primary);
+        color: var(--bs-white);
+        border-color: var(--bs-primary);
+    }
 </style>
 {% endblock %}
 
@@ -71,10 +160,10 @@
 
 <div class="container">
     <div class="tag-filter-toolbar d-flex flex-column gap-3">
-        <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end">
+        <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end" id="task-filter-form">
             <div class="col-12 col-md-4">
                 <label for="search" class="form-label">Search tasks</label>
-                <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description">
+                <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description" autocomplete="off">
             </div>
             <div class="col-12 col-md-3">
                 <label for="sort_by" class="form-label">Sort by</label>
@@ -91,18 +180,17 @@
                     <label class="form-check-label" for="filter-completed">Show completed tasks</label>
                 </div>
             </div>
-            <div class="col-12 col-md-2">
-                <button type="submit" class="btn btn-outline-secondary w-100">Apply</button>
-            </div>
         </form>
         <div class="d-flex flex-column flex-lg-row gap-2 align-items-lg-center">
             <div class="d-flex align-items-center gap-2">
-                <span class="tag-section-label mb-0">Filter by tags</span>
-                <a href="#" class="small text-decoration-none" id="tag-filter-clear">clear</a>
+                <span class="tag-section-label mb-0">Tags:</span>
+                <button type="button" class="btn btn-sm" id="tag-filter-clear" aria-label="Clear tag filters">
+                    <i class="bi bi-x-circle"></i>
+                </button>
             </div>
             <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
                 {% for tag in available_tags %}
-                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</button>
+                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</button>
                 {% endfor %}
             </div>
             <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
@@ -115,6 +203,7 @@
 <div class="container mt-2">
     <form id="task-form" method="post" action="{{ url_for('add_task') }}">
         {{ task_form.hidden_tag() }}
+        {{ task_form.tags() }}
         <div  class="accordion" id="quick-item-accordion">
             <div class="input-group mb-3">
                 <span class="input-group-text clickable-icon collapsed" data-bs-toggle="collapse" data-bs-target="#detailed-item-container">
@@ -137,22 +226,33 @@
         <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
             <div class="accordion-body">
                 <div class="form-floating mb-3">
-                {{ task_form.description(class_='form-control') }}
-                {{ task_form.description.label(class_='form-label') }}
-                {% if task_form.description.errors %}
-                    {% for error in task_form.description.errors %}
-                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
-                    {% endfor %}
-                {% endif %}
+                    {{ task_form.description(class_='form-control auto-resize-textarea', rows=3, placeholder_='Add more details') }}
+                    {{ task_form.description.label(class_='form-label') }}
+                    {% if task_form.description.errors %}
+                        {% for error in task_form.description.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
                 </div>
                 <div class="form-floating mb-3">
-                {{ task_form.end_date(class_='form-control') }}
-                {{ task_form.end_date.label(class_='form-label') }}
-                {% if task_form.end_date.errors %}
-                    {% for error in task_form.end_date.errors %}
-                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
-                    {% endfor %}
-                {% endif %}
+                    {{ task_form.end_date(class_='form-control') }}
+                    {{ task_form.end_date.label(class_='form-label') }}
+                    {% if task_form.end_date.errors %}
+                        {% for error in task_form.end_date.errors %}
+                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Tags</label>
+                    <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
+                    <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
+                    <div class="input-group input-group-sm inline-tag-input-group">
+                        <span class="input-group-text">#</span>
+                        <input type="text" class="form-control" id="task-inline-tag-input" placeholder="Add a tag and press Enter">
+                        <button class="btn btn-outline-primary" type="button" id="task-inline-tag-add">Add</button>
+                    </div>
+                    <div class="invalid-feedback d-none" id="task-inline-tag-feedback">Please enter a tag name.</div>
                 </div>
             </div>
         </div>
@@ -172,58 +272,80 @@
             <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
                 {% if group.tasks %}
                     {% for task in group.tasks %}
+                        {% set has_details = task.has_info() or task.completed_date %}
                         <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
                             <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
-                                <a href="#" class="text-decoration-none no-visited flex-grow-1" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}">
-                                    <div class="col d-flex">
-                                        <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
+                                <div class="d-flex align-items-center flex-grow-1">
+                                    <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
+                                    {% if has_details %}
+                                        <a href="#" class="text-decoration-none no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
+                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
+                                            <div class="flex-grow-1">
+                                                {% if task.completed %}
+                                                    <del>{{ task.name }}</del>
+                                                {% else %}
+                                                    {{ task.name }}
+                                                {% endif %}
+                                            </div>
+                                        </a>
+                                    {% else %}
                                         <div class="mx-2">
                                             {% if task.completed %}
                                                 <del>{{ task.name }}</del>
                                             {% else %}
                                                 {{ task.name }}
                                             {% endif %}
-                                            <div class="d-flex flex-wrap gap-2 mt-1" id="task-tags-{{ task.id }}">
-                                                {% for tag in task.tags %}
-                                                    <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</span>
-                                                {% endfor %}
-                                            </div>
                                         </div>
-                                    </div>
-                                </a>
-                                <div class="col-4 d-flex justify-content-end">
-                                    <a class="btn btn-outline-success mx-1" href="{{ url_for('complete_task', id=task.id) }}">
+                                    {% endif %}
+                                </div>
+                                <div class="col-auto d-flex justify-content-end align-items-center">
+                                    <a class="btn btn-pastel-success mx-1" href="{{ url_for('complete_task', id=task.id) }}">
                                         {% if task.completed %}
                                             <i class="bi bi-arrow-counterclockwise"></i>
                                         {% else %}
                                             <i class="bi bi-check"></i>
                                         {% endif %}
                                     </a>
-                                    <button type="button" class="btn btn-outline-secondary tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name }}">
+                                    <button type="button" class="btn btn-outline-secondary tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
                                         <i class="bi bi-tags"></i>
                                     </button>
-                                    <button type="button" class="btn btn-outline-primary mx-1 edit-task-btn"
+                                    <button type="button" class="btn btn-outline-secondary mx-1 edit-task-btn"
                                         data-task-id="{{ task.id }}"
-                                        data-task-name="{{ task.name }}"
-                                        data-task-description="{{ task.description }}"
-                                        data-task-end_date="{{ task.end_date }}"
+                                        data-task-name="{{ task.name | e }}"
+                                        data-task-description="{{ task.description | default('') | e }}"
+                                        data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
+                                        data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    <button type="button" class="btn btn-outline-danger" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
+                                    <button type="button" class="btn btn-pastel-danger" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
                             </div>
                             <div id="collapse{{ group.dom_id }}-{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ group.dom_id }}">
-                                {% if task.description or task.end_date %}
-                                <div class="accordion-body">
-                                    {% if task.end_date %}
-                                        <i class="bi bi-calendar3 small text-muted" utc-date="{{ task.end_date }}"></i>
-                                    {% endif %}
+                                {% if has_details %}
+                                <div class="accordion-body d-flex flex-column gap-2">
                                     {% if task.description %}
-                                        <p class="small">{{ task.description }}</p>
+                                        <p class="small task-description mb-0">{{ task.description | replace('\n', '<br>') | safe }}</p>
                                     {% endif %}
+                                    {% if task.end_date %}
+                                        <div class="task-meta d-inline-flex align-items-center gap-2">
+                                            <i class="bi bi-calendar3"></i>
+                                            <span class="due-date" data-utc-date="{{ task.end_date.isoformat() }}"></span>
+                                        </div>
+                                    {% endif %}
+                                    {% if task.completed_date %}
+                                        <div class="task-meta d-inline-flex align-items-center gap-2">
+                                            <i class="bi bi-flag"></i>
+                                            <span class="completed-date" data-completed-date="{{ task.completed_date.isoformat() }}"></span>
+                                        </div>
+                                    {% endif %}
+                                    <div class="d-flex flex-wrap gap-2 task-tags" id="task-tags-{{ task.id }}">
+                                        {% for tag in task.tags %}
+                                            <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</span>
+                                        {% endfor %}
+                                    </div>
                                     {% for subtask in task.subtasks %}
                                         <div class="ms-3">
                                             <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
@@ -284,63 +406,298 @@
         });
     }
 
-    // Update the form action to ADD when the form is reset
-    document.getElementById("quick-cancel-btn").addEventListener("click", (event) => {
-        actionUrl = '{{ url_for("add_task") }}';
-        document.querySelector("#task-form").action = actionUrl;
-        collapseAccordionItem('detailed-item-container');
-    });
+    const taskForm = document.getElementById('task-form');
+    const quickCancelBtn = document.getElementById('quick-cancel-btn');
+    const nameField = document.getElementById('name');
+    const descriptionField = document.getElementById('description');
+    const endDateField = document.getElementById('end_date');
+    const tagsField = document.getElementById('tags');
+    const inlineTagOptions = document.getElementById('task-inline-tag-options');
+    const inlineTagEmpty = document.getElementById('task-inline-tag-empty');
+    const inlineTagInput = document.getElementById('task-inline-tag-input');
+    const inlineTagAddBtn = document.getElementById('task-inline-tag-add');
+    const inlineTagFeedback = document.getElementById('task-inline-tag-feedback');
 
-    // Update the form action to EDIT and the ID of the task
-    // Populate the form with the data-task-* attributes in the EDIT button
-    document.querySelectorAll(".edit-task-btn").forEach((item) => {
-        item.addEventListener("click", (event) => {
-            {% for field in task_form %}
-                {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
-                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-task-{{ field.name }}");
-                {% endif %}
-            {% endfor %}
+    const filterForm = document.getElementById('task-filter-form');
+    const searchInput = document.getElementById('search');
 
-            let baseUrl = '{{ url_for("edit_task", id=0) }}';
-            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-task-id"));
-            document.querySelector("#task-form").action = actionUrl;
+    // Update the form action to EDIT and populate the fields
+    document.querySelectorAll('.edit-task-btn').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+
+            if (nameField) {
+                nameField.value = button.getAttribute('data-task-name') || '';
+            }
+
+            if (descriptionField) {
+                descriptionField.value = button.getAttribute('data-task-description') || '';
+                autoResizeTextarea(descriptionField);
+            }
+
+            if (endDateField) {
+                const rawDate = button.getAttribute('data-task-end_date');
+                endDateField.value = rawDate ? convertToLocal(rawDate) : '';
+            }
+
+            const tagString = button.getAttribute('data-task-tags') || '';
+            if (tagsField) {
+                tagsField.value = tagString;
+            }
+            setInlineTagsFromString(tagString, button.getAttribute('data-task-id'));
+
+            const baseUrl = '{{ url_for("edit_task", id=0) }}';
+            const actionUrl = baseUrl.replace('/0', `/${button.getAttribute('data-task-id')}`);
+            if (taskForm) {
+                taskForm.action = actionUrl;
+            }
+
             expandAccordionItem('detailed-item-container');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         });
     });
 
-    document.querySelectorAll(".bi-calendar3").forEach((item) => {
-        local_date = convertToLocal(item.getAttribute("utc-date"));
-        formated_date = new Date(local_date).toLocaleDateString(undefined, {
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric', 
-            hour: 'numeric', 
-            minute: 'numeric'
-        });
-        //item.setAttribute("data-bs-original-title", 'Due: ' + formated_date);
-        //item.setAttribute("title", 'Due: ' + formated_date);
-        item.setAttribute("aria-label", 'Due: ' + formated_date);
-        item.innerHTML = ' Due: ' + formated_date;
-    });
-
-    function convertToLocal(utcDateString){
-        // Parse the UTC date string to a Date object
-        var date = new Date(utcDateString + 'z'); //add zulu time since datetime-local doesnt have it
-
-        // Format the date to a local datetime-local string
-        function pad(number) {
-            return number < 10 ? '0' + number : number;
+    function convertToLocal(utcDateString) {
+        if (!utcDateString) {
+            return '';
         }
-        var yyyy = date.getFullYear();
-        var MM = pad(date.getMonth() + 1); // Months are 0-based in JavaScript
-        var dd = pad(date.getDate());
-        var hh = pad(date.getHours());
-        var mm = pad(date.getMinutes());
+        const normalized = utcDateString.endsWith('Z') ? utcDateString : `${utcDateString}Z`;
+        const date = new Date(normalized);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
 
-        return yyyy + '-' + MM + '-' + dd + 'T' + hh + ':' + mm;
-    };
+        const pad = (number) => (number < 10 ? `0${number}` : number);
+        const yyyy = date.getFullYear();
+        const MM = pad(date.getMonth() + 1);
+        const dd = pad(date.getDate());
+        const hh = pad(date.getHours());
+        const mm = pad(date.getMinutes());
 
-    const csrfTokenInput = document.querySelector('#task-form input[name="csrf_token"]');
+        return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+    }
+
+    function formatDateTimeDisplay(utcDateString) {
+        if (!utcDateString) {
+            return '';
+        }
+        const normalized = utcDateString.endsWith('Z') ? utcDateString : `${utcDateString}Z`;
+        const date = new Date(normalized);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+        return date.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+        });
+    }
+
+    function autoResizeTextarea(textarea) {
+        if (!textarea) {
+            return;
+        }
+        textarea.style.height = 'auto';
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function syncInlineTagsField() {
+        if (!tagsField) {
+            return;
+        }
+        tagsField.value = Array.from(inlineSelectedTags.keys()).join(',');
+    }
+
+    function collectTagInfoForTask(taskId) {
+        const info = new Map();
+        if (!taskId) {
+            return info;
+        }
+        const container = document.getElementById(`task-tags-${taskId}`);
+        if (!container) {
+            return info;
+        }
+        container.querySelectorAll('[data-tag-id]').forEach((pill) => {
+            const id = String(pill.dataset.tagId);
+            info.set(id, {
+                id: Number(id),
+                name: pill.dataset.tagName || pill.textContent.replace('#', '').trim(),
+            });
+        });
+        return info;
+    }
+
+    function setInlineTagsFromString(tagString, taskId = null) {
+        inlineSelectedTags = new Map();
+        if (!tagString) {
+            syncInlineTagsField();
+            renderInlineTagOptions();
+            if (inlineTagFeedback) {
+                inlineTagFeedback.classList.add('d-none');
+            }
+            return;
+        }
+        const tagInfo = collectTagInfoForTask(taskId);
+        tagString.split(',').forEach((value) => {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return;
+            }
+            let tag = availableTagsMap.get(trimmed);
+            if (!tag) {
+                tag = tagInfo.get(trimmed);
+            }
+            if (!tag) {
+                tag = { id: Number(trimmed), name: trimmed };
+            }
+            inlineSelectedTags.set(String(tag.id), {
+                id: Number(tag.id),
+                name: tag.name || trimmed,
+            });
+            ensureTagInFilter(tag);
+        });
+        syncInlineTagsField();
+        renderInlineTagOptions();
+        if (inlineTagFeedback) {
+            inlineTagFeedback.classList.add('d-none');
+        }
+    }
+
+    function renderInlineTagOptions() {
+        if (!inlineTagOptions) {
+            return;
+        }
+        inlineTagOptions.innerHTML = '';
+        const tags = Array.from(availableTagsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        if (tags.length === 0) {
+            if (inlineTagEmpty) {
+                inlineTagEmpty.classList.remove('d-none');
+            }
+            return;
+        }
+        if (inlineTagEmpty) {
+            inlineTagEmpty.classList.add('d-none');
+        }
+        tags.forEach((tag) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'inline-tag-chip';
+            chip.dataset.tagId = String(tag.id);
+            chip.textContent = `#${tag.name}`;
+            if (inlineSelectedTags.has(String(tag.id))) {
+                chip.classList.add('active');
+            }
+            chip.addEventListener('click', handleInlineTagToggle);
+            inlineTagOptions.appendChild(chip);
+        });
+    }
+
+    function handleInlineTagToggle(event) {
+        event.preventDefault();
+        const tagId = event.currentTarget.dataset.tagId;
+        if (!tagId) {
+            return;
+        }
+        const tag = availableTagsMap.get(tagId);
+        if (!tag) {
+            return;
+        }
+        if (inlineSelectedTags.has(tagId)) {
+            inlineSelectedTags.delete(tagId);
+        } else {
+            inlineSelectedTags.set(tagId, tag);
+        }
+        syncInlineTagsField();
+        renderInlineTagOptions();
+        if (inlineTagFeedback) {
+            inlineTagFeedback.classList.add('d-none');
+        }
+    }
+
+    function clearInlineSelection() {
+        inlineSelectedTags = new Map();
+        syncInlineTagsField();
+        renderInlineTagOptions();
+        if (inlineTagInput) {
+            inlineTagInput.value = '';
+        }
+        if (inlineTagFeedback) {
+            inlineTagFeedback.classList.add('d-none');
+        }
+    }
+
+    function createTagOnServer(rawValue) {
+        const normalized = (rawValue || '').replace(/^#+/, '').trim();
+        if (!normalized) {
+            return Promise.reject({ error: 'Please enter a tag name.' });
+        }
+        if (!csrfToken) {
+            return Promise.reject({ error: 'Missing CSRF token.' });
+        }
+        return fetch('/tags', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({ name: normalized }),
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    return response.json().then((data) => Promise.reject(data));
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (!data || !data.tag) {
+                    return Promise.reject({ error: 'Unable to create tag.' });
+                }
+                return data.tag;
+            });
+    }
+
+    function handleInlineTagCreate() {
+        if (!inlineTagInput) {
+            return;
+        }
+        createTagOnServer(inlineTagInput.value)
+            .then((tag) => {
+                ensureTagInFilter(tag);
+                inlineSelectedTags.set(String(tag.id), tag);
+                syncInlineTagsField();
+                renderInlineTagOptions();
+                inlineTagInput.value = '';
+                if (inlineTagFeedback) {
+                    inlineTagFeedback.classList.add('d-none');
+                }
+            })
+            .catch((error) => {
+                if (inlineTagFeedback) {
+                    const message = error && error.error ? error.error : 'Unable to create tag.';
+                    inlineTagFeedback.textContent = message;
+                    inlineTagFeedback.classList.remove('d-none');
+                }
+            });
+    }
+
+    function updateDateDisplays() {
+        document.querySelectorAll('.due-date').forEach((element) => {
+            const formatted = formatDateTimeDisplay(element.dataset.utcDate);
+            if (formatted) {
+                element.textContent = `Due: ${formatted}`;
+            }
+        });
+        document.querySelectorAll('.completed-date').forEach((element) => {
+            const formatted = formatDateTimeDisplay(element.dataset.completedDate);
+            if (formatted) {
+                element.textContent = `Completed: ${formatted}`;
+            }
+        });
+    }
+
+    const csrfTokenInput = taskForm ? taskForm.querySelector('input[name="csrf_token"]') : null;
     const csrfToken = csrfTokenInput ? csrfTokenInput.value : null;
 
     const tagModalElement = document.getElementById('tagManagerModal');
@@ -359,6 +716,7 @@
     let availableTagsMap = new Map();
     let currentTaskId = null;
     let currentTaskTags = new Map();
+    let inlineSelectedTags = new Map();
 
     function hydrateAvailableTagsFromFilter() {
         if (!filterContainer) {
@@ -501,6 +859,7 @@
                     }
                     updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
                     renderTagOptions();
+                    renderInlineTagOptions();
                     applyTagFilters();
                 }
             })
@@ -510,48 +869,19 @@
     }
 
     function handleCreateTag() {
-        if (!newTagInput || !csrfToken || !currentTaskId) {
+        if (!newTagInput || !currentTaskId) {
             return;
         }
 
-        const rawValue = newTagInput.value.trim();
-        const normalized = rawValue.replace(/^#+/, '').trim();
-
-        if (!normalized) {
-            if (newTagFeedback) {
-                newTagFeedback.textContent = 'Please enter a tag name.';
-                newTagFeedback.classList.remove('d-none');
-            }
-            return;
-        }
-
-        if (newTagFeedback) {
-            newTagFeedback.classList.add('d-none');
-        }
-
-        fetch('/tags', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify({ name: normalized }),
-        })
-            .then((response) => {
-                if (!response.ok) {
-                    return response.json().then((data) => Promise.reject(data));
-                }
-                return response.json();
-            })
-            .then((data) => {
-                if (!data || !data.tag) {
-                    return;
-                }
-                const tag = data.tag;
-                const tagKey = String(tag.id);
-                availableTagsMap.set(tagKey, tag);
+        createTagOnServer(newTagInput.value)
+            .then((tag) => {
                 ensureTagInFilter(tag);
                 newTagInput.value = '';
+                if (newTagFeedback) {
+                    newTagFeedback.classList.add('d-none');
+                }
+                const tagKey = String(tag.id);
+                currentTaskTags.set(tagKey, tag);
                 renderTagOptions();
                 updateTagAssignment(tagKey, true);
             })
@@ -644,10 +974,39 @@
         });
     }
 
+    if (quickCancelBtn) {
+        quickCancelBtn.addEventListener('click', () => {
+            const actionUrl = '{{ url_for("add_task") }}';
+            if (taskForm) {
+                taskForm.action = actionUrl;
+            }
+            clearInlineSelection();
+            collapseAccordionItem('detailed-item-container');
+        });
+    }
+
+    if (taskForm) {
+        taskForm.addEventListener('reset', () => {
+            const actionUrl = '{{ url_for("add_task") }}';
+            taskForm.action = actionUrl;
+            clearInlineSelection();
+            if (descriptionField) {
+                descriptionField.style.height = '';
+            }
+        });
+    }
+
+    document.querySelectorAll('textarea.auto-resize-textarea').forEach((textarea) => {
+        autoResizeTextarea(textarea);
+        textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+    });
+
     attachFilterListeners();
     hydrateAvailableTagsFromFilter();
+    setInlineTagsFromString(tagsField ? tagsField.value : '');
     attachTagManagerListeners();
     applyTagFilters();
+    updateDateDisplays();
 
     if (createTagBtn) {
         createTagBtn.addEventListener('click', handleCreateTag);
@@ -659,6 +1018,32 @@
                 event.preventDefault();
                 handleCreateTag();
             }
+        });
+    }
+
+    if (inlineTagAddBtn) {
+        inlineTagAddBtn.addEventListener('click', handleInlineTagCreate);
+    }
+
+    if (inlineTagInput) {
+        inlineTagInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleInlineTagCreate();
+            }
+        });
+    }
+
+    if (filterForm && searchInput) {
+        const debouncedSubmit = debounce(() => {
+            if (filterForm.requestSubmit) {
+                filterForm.requestSubmit();
+            } else {
+                filterForm.submit();
+            }
+        }, 350);
+        searchInput.addEventListener('input', () => {
+            debouncedSubmit();
         });
     }
 </script>

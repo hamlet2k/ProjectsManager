@@ -1,6 +1,7 @@
 from flask_wtf import FlaskForm
 from wtforms import (
     DateTimeLocalField,
+    HiddenField,
     SelectField,
     StringField,
     TextAreaField,
@@ -48,6 +49,7 @@ class TaskForm(FlaskForm):
     name = StringField("Name", [DataRequired()])
     description = TextAreaField("Description")
     end_date = DateTimeLocalField("End Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
+    tags = HiddenField("Tags")
     # completed = SelectField("Completed", choices=[(True, "Yes"), (False, "No")], coerce=bool)
     # rank = IntegerField("Rank")
     
