@@ -276,23 +276,42 @@ def change_theme(theme):
 @app.before_request
 def load_scope():
     scope_selected = session.get("selected_scope")
-    if scope_selected:
-        g.scope = Scope.query.get(scope_selected)
-    else:
-        g.scope = None
+    if scope_selected and g.user:
+        scope = Scope.query.get(scope_selected)
+        if scope and _user_can_access_scope(scope):
+            g.scope = scope
+            return
+        session.pop("selected_scope", None)
+    g.scope = None
 
 def scope_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not g.scope:
-            flash("Please select a scope", "warning")
+        if not g.scope or not _user_can_access_scope(g.scope):
+            flash("Please select a valid scope", "warning")
             return redirect(request.referrer or url_for("home"))
         return f(*args, **kwargs)
     return decorated_function
 
 
+def _user_can_access_scope(scope: Scope) -> bool:
+    if g.user is None or scope is None:
+        return False
+    if scope.owner_id == g.user.id:
+        return True
+    return any(shared_scope.id == scope.id for shared_scope in g.user.scopes)
+
+
+def _user_owns_scope(scope: Scope) -> bool:
+    return g.user is not None and scope is not None and scope.owner_id == g.user.id
+
+
 @app.route("/scope/<int:id>")
 def set_scope(id):
+    scope = Scope.query.get_or_404(id)
+    if not _user_can_access_scope(scope):
+        flash("You do not have access to that scope.", "danger")
+        return redirect(url_for("scope"))
     session["selected_scope"] = id
     return redirect(url_for("task"))
 
@@ -321,6 +340,8 @@ def task():
 
     filtered_tasks = []
     for task in g.scope.tasks:
+        if task.owner_id != g.user.id:
+            continue
         if not show_completed and task.completed:
             continue
 
@@ -333,13 +354,20 @@ def task():
 
     available_tags = (
         Tag.query.join(Tag.tasks)
-        .filter(Task.scope_id == g.scope.id)
+        .filter(Task.scope_id == g.scope.id, Task.owner_id == g.user.id)
         .distinct()
         .order_by(Tag.name.asc())
         .all()
     )
 
-    tag_usage = {tag.id: len(tag.tasks) for tag in available_tags}
+    tag_usage = {
+        tag.id: sum(
+            1
+            for tag_task in tag.tasks
+            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+        )
+        for tag in available_tags
+    }
 
     task_groups = []
     sortable_group_ids = []
@@ -375,11 +403,6 @@ def task():
             return item.end_date or datetime.max
 
         buckets = {
-            "without_due": {
-                "title": "Without due date",
-                "dom_id": "tasks-without-due-date",
-                "tasks": [],
-            },
             "today": {
                 "title": "Today",
                 "dom_id": "tasks-due-today",
@@ -405,6 +428,11 @@ def task():
                 "dom_id": "tasks-due-future",
                 "tasks": [],
             },
+            "without_due": {
+                "title": "Without due date",
+                "dom_id": "tasks-without-due-date",
+                "tasks": [],
+            },
         }
 
         for task in filtered_tasks:
@@ -425,7 +453,17 @@ def task():
             else:
                 buckets["future"]["tasks"].append(task)
 
-        for bucket in buckets.values():
+        bucket_order = [
+            "today",
+            "tomorrow",
+            "next_week",
+            "next_month",
+            "future",
+            "without_due",
+        ]
+
+        for bucket_key in bucket_order:
+            bucket = buckets[bucket_key]
             if not bucket["tasks"]:
                 continue
             task_groups.append(
@@ -529,16 +567,28 @@ def task():
 def list_tags():
     tags = (
         Tag.query.join(Tag.tasks)
-        .filter(Task.scope_id == g.scope.id)
+        .filter(Task.scope_id == g.scope.id, Task.owner_id == g.user.id)
         .distinct()
         .order_by(Tag.name.asc())
         .all()
     )
-    return jsonify({"tags": [tag.to_dict() for tag in tags]})
+    serialized_tags = []
+    for tag in tags:
+        payload = tag.to_dict()
+        payload["task_count"] = sum(
+            1
+            for tag_task in tag.tasks
+            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+        )
+        serialized_tags.append(payload)
+    return jsonify({"tags": serialized_tags})
 
 
 @app.route("/tags", methods=["POST"])
+@scope_required
 def create_tag():
+    if not _user_can_access_scope(g.scope):
+        return jsonify({"error": "You do not have permission to modify tags."}), 403
     payload = request.get_json(silent=True) or {}
     raw_name = payload.get("name", "")
     normalized_name = raw_name.lstrip("#").strip().lower()
@@ -561,12 +611,27 @@ def create_tag():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-    return jsonify({"tag": tag.to_dict(), "created": created})
+    tag_payload = {
+        "id": tag.id,
+        "name": tag.name,
+        "task_count": sum(
+            1
+            for tag_task in tag.tasks
+            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+        ),
+    }
+
+    return jsonify({"tag": tag_payload, "created": created})
 
 
 @app.route("/tags/<int:tag_id>", methods=["DELETE"])
+@scope_required
 def delete_tag(tag_id):
     tag = Tag.query.get_or_404(tag_id)
+
+    for task in tag.tasks:
+        if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+            return jsonify({"error": "You do not have permission to delete this tag."}), 403
 
     try:
         for task in list(tag.tasks):
@@ -583,7 +648,12 @@ def delete_tag(tag_id):
 
 def _get_task_in_scope_or_404(task_id):
     task = Task.query.get_or_404(task_id)
-    if g.scope is None or task.scope_id != g.scope.id:
+    if (
+        g.scope is None
+        or task.scope_id != g.scope.id
+        or task.owner_id != g.user.id
+        or not _user_can_access_scope(task.scope)
+    ):
         abort(404)
     return task
 
@@ -701,7 +771,7 @@ def add_task():
     item = Task()
     form = TaskForm()
     form.tags.data = form.tags.data or ""
-    items = [item for item in g.scope.tasks if not item.completed]
+    items = [item for item in g.scope.tasks if item.owner_id == g.user.id and not item.completed]
     show_modal = False
     print(form.errors)
     if form.validate_on_submit():
@@ -742,6 +812,8 @@ def add_task():
 def edit_scope(id):
     items = g.user.owned_scopes + g.user.scopes
     item = Scope.query.get_or_404(id)
+    if not _user_owns_scope(item):
+        abort(404)
     form = ScopeForm(obj=item)
     show_modal = False
 
@@ -764,8 +836,10 @@ def edit_scope(id):
 @app.route("/task/edit/<int:id>", methods=["GET", "POST"])
 @scope_required
 def edit_task(id):
-    items = [task for task in g.scope.tasks if not task.completed]
+    items = [task for task in g.scope.tasks if task.owner_id == g.user.id and not task.completed]
     item = Task.query.get_or_404(id)
+    if item.scope_id != g.scope.id or item.owner_id != g.user.id:
+        abort(404)
     form = TaskForm(obj=item)
     form.tags.data = ",".join(str(tag.id) for tag in item.tags)
     show_modal = False
@@ -801,7 +875,34 @@ def delete_item(item_type, id):
             # TODO: This may need to be adjusted for CamelCase
             item_class = globals().get(item_type.capitalize())
             item = item_class.query.get_or_404(id)
-                
+
+            if item_type == "scope":
+                if not _user_owns_scope(item):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "You do not have permission to delete this scope.",
+                            }
+                        ),
+                        403,
+                    )
+            elif item_type == "task":
+                if (
+                    item.scope is None
+                    or not _user_can_access_scope(item.scope)
+                    or item.owner_id != g.user.id
+                ):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "You do not have permission to delete this task.",
+                            }
+                        ),
+                        403,
+                    )
+
             db.session.delete(item)
             db.session.commit()
             flash(f"{item_class.__name__} deleted!", "success")
@@ -818,7 +919,7 @@ def delete_item(item_type, id):
 @scope_required
 def complete_task(id):
     try:
-        item = Task.query.get_or_404(id)
+        item = _get_task_in_scope_or_404(id)
         if item.completed:
             item.uncomplete_task()
         else:
@@ -833,14 +934,29 @@ def complete_task(id):
 @app.route("/<string:item_type>/rank", methods=["POST"])
 def update_item_rank(item_type):
     items_list = request.json["items"]
+    try:
+        item_class = globals().get(item_type.capitalize())
+        if item_class is None:
+            raise ValueError(f"Model class for '{item_type}' not found.")
+    except ValueError as e:
+        logging.exception("Model class lookup failed for item_type '%s': %s", item_type, str(e))
+        return "Item type not found.", 404
+
     for data in items_list:
-        try:
-            item_class = globals().get(item_type.capitalize())
-            item = item_class.query.get_or_404(data["id"])
-            item.rank = data["newRank"]
-            db.session.commit()
-        except ValueError as e:
-            return str(e), 404
+        item = item_class.query.get_or_404(data["id"])
+
+        if item_type == "task":
+            if g.scope is None or not _user_can_access_scope(g.scope):
+                return jsonify({"error": "No scope selected."}), 400
+            if item.scope_id != g.scope.id or item.owner_id != g.user.id:
+                return jsonify({"error": "You do not have permission to reorder this task."}), 403
+        elif item_type == "scope":
+            if not _user_owns_scope(item):
+                return jsonify({"error": "You do not have permission to reorder this scope."}), 403
+
+        item.rank = data["newRank"]
+
+    db.session.commit()
     return jsonify({"success": True})
 
 
