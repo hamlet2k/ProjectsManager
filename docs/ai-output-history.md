@@ -74,3 +74,5 @@ The application has a solid foundation but requires attention to security and bu
 --------------------------------------------------------
 --------------------------------------------------------
 --------------------------------------------------------
+--------------------------------------------------------
+2025-10-01 – UI polish: unified modal styling, confirmation modals, task AJAX + filter retention, and copy updates.

@@ -1,16 +1,17 @@
-<div class="modal fade" id="scope-modal" tabindex="-1">
-    <div class="modal-dialog">
+<div class="modal fade" id="scope-modal" tabindex="-1" aria-labelledby="scope-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            
-            <div class="modal-header">
-                <h5 class="modal-title" id="scope-modal-title">{{ action }} Scope</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="scope-modal-title">Create scope</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            
+
             <form id="scope-form" method="post">
             {{ scope_form.hidden_tag() }}
-            
-            <div class="modal-body">
+
+            <div class="modal-body pt-2">
+                <p class="text-muted small mb-3" id="scope-modal-description">Organize tasks by creating a new scope.</p>
                 <div class="form-floating mb-3">
                     {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name) }}
                     {{ scope_form.name.label(class="form-label") }}
@@ -23,7 +24,7 @@
                 <div class="form-floating mb-3">
                     {{ scope_form.description(class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''), placeholder_=scope_form.description.name) }}
                     {{ scope_form.description.label(class="form-label") }}
-                    {% if scope_form.name.errors %}
+                    {% if scope_form.description.errors %}
                         {% for error in scope_form.description.errors %}
                             <div class="invalid-feedback" style="display:block;">{{ error }}</div>
                         {% endfor %}
@@ -31,50 +32,97 @@
                 </div>
             </div>
 
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                 Cancel
                 </button>
                 {{ scope_form.submit(class="btn btn-primary") }}
             </div>
-                
+
             </form>
         </div>
     </div>
 </div>
 
 <script>
-    // Display the modal based on the flag.
-    // Used when validation of the form fails to display the modal by default.
-    // Sets the modal butons depending on the action clicked (ADD or EDIT)
-    document.addEventListener('DOMContentLoaded', (event) => {
+    const scopeForm = document.getElementById('scope-form');
+    const scopeModalTitle = document.getElementById('scope-modal-title');
+    const scopeModalDescription = document.getElementById('scope-modal-description');
+    const scopeSubmitButton = scopeForm ? scopeForm.querySelector('[type="submit"]') : null;
+
+    function setScopeModalContent({ title, description, submitLabel }) {
+        if (scopeModalTitle) {
+            scopeModalTitle.textContent = title;
+        }
+        if (scopeModalDescription) {
+            scopeModalDescription.textContent = description;
+        }
+        if (scopeSubmitButton) {
+            scopeSubmitButton.value = submitLabel;
+            scopeSubmitButton.textContent = submitLabel;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const defaultAction = '{{ url_for("add_scope") }}';
+        if (scopeForm) {
+            const currentAction = scopeForm.getAttribute('action') || defaultAction;
+            if (currentAction !== defaultAction) {
+                setScopeModalContent({
+                    title: 'Edit scope',
+                    description: 'Update the scope details below.',
+                    submitLabel: 'Save changes',
+                });
+            } else {
+                setScopeModalContent({
+                    title: 'Create scope',
+                    description: 'Organize tasks by creating a new scope.',
+                    submitLabel: 'Create scope',
+                });
+            }
+        }
+
         {% if show_modal %}
-            var modal = new bootstrap.Modal(document.getElementById('{{show_modal}}'));
+            const modal = new bootstrap.Modal(document.getElementById('{{ show_modal }}'));
             modal.show();
         {% endif %}
     });
 
-    // Update the form action when the ADD button is clicked
-    // Clears the form fields
-    document.getElementById("add-scope-btn").addEventListener("click", (event) => {
-        actionUrl = '{{ url_for("add_scope") }}';
-        document.querySelector("#scope-form").action = actionUrl;
-        document.getElementById("scope-form").reset();
-    });
+    const addScopeBtn = document.getElementById('add-scope-btn');
+    if (addScopeBtn && scopeForm) {
+        addScopeBtn.addEventListener('click', () => {
+            scopeForm.action = '{{ url_for("add_scope") }}';
+            scopeForm.reset();
+            setScopeModalContent({
+                title: 'Create scope',
+                description: 'Organize tasks by creating a new scope.',
+                submitLabel: 'Create scope',
+            });
+        });
+    }
 
-    // Update the modal form action when the EDIT button is clicked
-    // Populate the form with the values associated to the EDIT button
-    document.querySelectorAll(".edit-scope-btn").forEach((item) => {
-        item.addEventListener("click", (event) => {
+    document.querySelectorAll('.edit-scope-btn').forEach((item) => {
+        item.addEventListener('click', () => {
             {% for field in scope_form %}
                 {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
-                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-scope-{{ field.name }}");
+                    const fieldElement = document.getElementById('{{ field.name }}');
+                    if (fieldElement) {
+                        fieldElement.value = item.getAttribute('data-scope-{{ field.name }}') || '';
+                    }
                 {% endif %}
             {% endfor %}
 
-            let baseUrl = '{{ url_for("edit_scope", id=0) }}';
-            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-scope-id"));
-            document.querySelector("#scope-form").action = actionUrl;
+            if (scopeForm) {
+                const baseUrl = '{{ url_for("edit_scope", id=0) }}';
+                const actionUrl = baseUrl.replace('/0', `/${item.getAttribute('data-scope-id')}`);
+                scopeForm.action = actionUrl;
+            }
+
+            setScopeModalContent({
+                title: 'Edit scope',
+                description: 'Update the scope details below.',
+                submitLabel: 'Save changes',
+            });
         });
     });
 </script>

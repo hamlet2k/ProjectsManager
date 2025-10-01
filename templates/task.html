@@ -51,9 +51,10 @@
         align-items: center;
         gap: 0.5rem;
         margin-bottom: 0.5rem;
+        flex-wrap: wrap;
     }
 
-    .task-group-header h6 {
+    .task-group-title {
         margin-bottom: 0;
     }
 
@@ -61,16 +62,29 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 0.5rem;
+        column-gap: 0.5rem;
+        row-gap: 0.35rem;
     }
 
     .task-toggle {
         min-width: 0;
+        color: var(--bs-secondary-color, var(--bs-body-color));
+        transition: color 0.15s ease-in-out;
+    }
+
+    .task-toggle:hover,
+    .task-toggle:focus {
+        color: var(--bs-body-color);
     }
 
     .task-title {
-        color: inherit;
+        color: var(--bs-secondary-color, var(--bs-body-color));
         min-width: 0;
+        font-weight: 500;
+    }
+
+    .task-title del {
+        color: inherit;
     }
 
     .tag-section-label {
@@ -123,6 +137,7 @@
 
     .task-description {
         white-space: pre-wrap;
+        color: var(--bs-secondary-color, var(--bs-body-color));
     }
 
     .inline-tag-input-group .form-control {
@@ -225,14 +240,25 @@
 
     .task-action-group {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 0.35rem;
         margin-left: auto;
         justify-content: flex-end;
+        flex: 0 0 auto;
+        white-space: nowrap;
+        align-self: center;
     }
 
     .task-action-group .task-action-btn {
         border-radius: 0.5rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .task-action-group {
+            width: 100%;
+            margin-left: 0;
+            justify-content: flex-start;
+        }
     }
 
     .task-group-add-btn {
@@ -333,32 +359,23 @@
                 <button id="quick-cancel-btn" class="btn btn-secondary" type="reset">
                     <i class="bi bi-x-circle"></i>
                 </button>
-                {% if task_form.name.errors %}
-                    {% for error in task_form.name.errors %}
-                        <div class="invalid-feedback" style="display:block;">{{ error }}</div>
-                    {% endfor %}
-                {% endif %}
+                {% set name_error = task_form.name.errors[0] if task_form.name.errors else '' %}
+                <div class="invalid-feedback {% if not name_error %}d-none{% endif %}" data-feedback-for="name">{{ name_error }}</div>
             </div>
         </div>
         <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
             <div class="accordion-body">
                 <div class="form-floating mb-3">
-                    {{ task_form.description(class_='form-control auto-resize-textarea', rows=3, placeholder_='Add more details') }}
+                    {{ task_form.description(class_='form-control auto-resize-textarea'+ (' is-invalid' if task_form.description.errors else ''), rows=3, placeholder_='Add more details') }}
                     {{ task_form.description.label(class_='form-label') }}
-                    {% if task_form.description.errors %}
-                        {% for error in task_form.description.errors %}
-                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
-                        {% endfor %}
-                    {% endif %}
+                    {% set description_error = task_form.description.errors[0] if task_form.description.errors else '' %}
+                    <div class="invalid-feedback {% if not description_error %}d-none{% endif %}" data-feedback-for="description">{{ description_error }}</div>
                 </div>
                 <div class="form-floating mb-3">
-                    {{ task_form.end_date(class_='form-control') }}
+                    {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_='YYYY-MM-DD') }}
                     {{ task_form.end_date.label(class_='form-label') }}
-                    {% if task_form.end_date.errors %}
-                        {% for error in task_form.end_date.errors %}
-                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
-                        {% endfor %}
-                    {% endif %}
+                    {% set end_date_error = task_form.end_date.errors[0] if task_form.end_date.errors else '' %}
+                    <div class="invalid-feedback {% if not end_date_error %}d-none{% endif %}" data-feedback-for="end_date">{{ end_date_error }}</div>
                 </div>
                 <div class="mb-3">
                     <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
@@ -475,7 +492,9 @@
         updateChevronForCollapse(event.target.id, false);
     });
 
+    const defaultTaskAction = '{{ url_for("add_task") }}';
     const taskForm = document.getElementById('task-form');
+    const quickAddBtn = document.getElementById('quick-add-btn');
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
     const nameField = document.getElementById('name');
     const descriptionField = document.getElementById('description');
@@ -511,6 +530,56 @@
         setQuickToggleIcon(detailedItemContainer.classList.contains('show'));
         detailedItemContainer.addEventListener('show.bs.collapse', () => setQuickToggleIcon(true));
         detailedItemContainer.addEventListener('hide.bs.collapse', () => setQuickToggleIcon(false));
+    }
+
+    function getTaskFormAction() {
+        if (!taskForm) {
+            return defaultTaskAction;
+        }
+        return taskForm.getAttribute('action') || defaultTaskAction;
+    }
+
+    function isEditingCurrentTask() {
+        const action = getTaskFormAction();
+        return typeof action === 'string' && action.includes('/task/edit/');
+    }
+
+    function setTaskFormActionToAdd() {
+        if (taskForm) {
+            taskForm.action = defaultTaskAction;
+        }
+    }
+
+    function applyTaskFormErrors(errors = {}) {
+        if (!taskForm) {
+            return;
+        }
+        const fieldConfigs = [
+            { element: nameField, key: 'name' },
+            { element: descriptionField, key: 'description' },
+            { element: endDateField, key: 'end_date' },
+        ];
+
+        fieldConfigs.forEach(({ element, key }) => {
+            if (!element) {
+                return;
+            }
+            const feedback = taskForm.querySelector(`[data-feedback-for="${key}"]`);
+            const messages = Array.isArray(errors[key]) ? errors[key] : [];
+            if (messages.length > 0) {
+                element.classList.add('is-invalid');
+                if (feedback) {
+                    feedback.textContent = messages[0];
+                    feedback.classList.remove('d-none');
+                }
+            } else {
+                element.classList.remove('is-invalid');
+                if (feedback) {
+                    feedback.textContent = '';
+                    feedback.classList.add('d-none');
+                }
+            }
+        });
     }
 
     function convertToLocal(utcDateString) {
@@ -739,6 +808,90 @@
         if (inlineTagFeedback) {
             inlineTagFeedback.classList.add('d-none');
         }
+    }
+
+    function handleTaskFormSubmit(event) {
+        if (!taskForm) {
+            return;
+        }
+        if (event) {
+            event.preventDefault();
+            if (event.submitter && event.submitter.type === 'reset') {
+                return;
+            }
+        }
+        if (taskForm.dataset.ajaxSubmitting === 'true') {
+            return;
+        }
+
+        applyTaskFormErrors({});
+        const formData = new FormData(taskForm);
+        if (formData.has('name')) {
+            formData.set('name', (formData.get('name') || '').trim());
+        }
+
+        taskForm.dataset.ajaxSubmitting = 'true';
+        if (quickAddBtn) {
+            quickAddBtn.disabled = true;
+        }
+
+        const actionUrl = getTaskFormAction();
+
+        fetch(actionUrl, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                if (!ok || !data || data.success !== true) {
+                    const errors = (data && data.errors) || {};
+                    applyTaskFormErrors(errors);
+                    const message = (data && data.message) || 'Unable to save task.';
+                    displayFlashMessage(message, 'danger');
+                    const error = new Error(message);
+                    error.silent = true;
+                    throw error;
+                }
+
+                applyTaskFormErrors({});
+                const message = data.message || (isEditingCurrentTask() ? 'Task updated!' : 'Task added!');
+                displayFlashMessage(message, 'success');
+
+                taskForm.reset();
+                clearInlineSelection();
+                collapseAccordionItem('detailed-item-container');
+                if (descriptionField) {
+                    descriptionField.style.height = '';
+                }
+                setTaskFormActionToAdd();
+
+                return refreshTaskList().then(() => {
+                    if (nameField) {
+                        nameField.focus({ preventScroll: false });
+                        nameField.select();
+                    }
+                });
+            })
+            .catch((error) => {
+                if (!error || !error.silent) {
+                    console.error('Task form submission failed', error);
+                }
+            })
+            .finally(() => {
+                if (quickAddBtn) {
+                    quickAddBtn.disabled = false;
+                }
+                taskForm.dataset.ajaxSubmitting = 'false';
+            });
     }
 
     function focusTaskFormForGroup({ tagIdValue = null, dueBucket = null } = {}) {
@@ -1223,40 +1376,48 @@
         }
         const tagName = button.dataset.tagName || '';
         const tagCount = Number(button.dataset.tagCount || '0');
-        if (tagCount > 0) {
-            const confirmed = window.confirm(
-                `Tag "#${tagName}" is assigned to ${tagCount} task${tagCount === 1 ? '' : 's'}. Delete it?`
-            );
+        const proceed = tagCount > 0 && typeof showConfirmationModal === 'function'
+            ? showConfirmationModal({
+                  title: 'Delete tag',
+                  message: `Tag "#${tagName}" is assigned to ${tagCount} task${tagCount === 1 ? '' : 's'}. Delete it?`,
+                  confirmLabel: 'Delete tag',
+                  confirmVariant: 'danger',
+              })
+            : Promise.resolve(true);
+
+        Promise.resolve(proceed).then((confirmed) => {
             if (!confirmed) {
                 return;
             }
-        }
-        fetch(`/tags/${tagId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken,
-            },
-        })
-            .then((response) => {
-                if (!response.ok) {
-                    throw response;
-                }
-                return response.json();
+            fetch(`/tags/${tagId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
             })
-            .then(() => {
-                button.remove();
-                availableTagsMap.delete(String(tagId));
-                updateFilterEmptyState();
-                inlineSelectedTags.delete(String(tagId));
-                syncInlineTagsField();
-                renderInlineTagOptions();
-                applyTagFilters();
-                refreshTaskList();
-            })
-            .catch((error) => {
-                console.error('Unable to delete tag', error);
-            });
+                .then((response) => {
+                    if (!response.ok) {
+                        throw response;
+                    }
+                    return response.json();
+                })
+                .then(() => {
+                    button.remove();
+                    availableTagsMap.delete(String(tagId));
+                    updateFilterEmptyState();
+                    inlineSelectedTags.delete(String(tagId));
+                    syncInlineTagsField();
+                    renderInlineTagOptions();
+                    applyTagFilters();
+                    refreshTaskList();
+                    displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
+                })
+                .catch((error) => {
+                    console.error('Unable to delete tag', error);
+                    displayFlashMessage(`Unable to delete tag "#${tagName}".`, 'danger');
+                });
+        });
     }
 
     // Use WeakSet to track attached listeners for edit-task-btn
@@ -1296,8 +1457,67 @@
                     taskForm.action = actionUrl;
                 }
 
+                applyTaskFormErrors({});
                 expandAccordionItem('detailed-item-container');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        });
+    }
+
+    const taskDeleteListenerAttached = new WeakSet();
+    function attachTaskDeleteListeners() {
+        document.querySelectorAll('.task-delete-btn').forEach((button) => {
+            if (taskDeleteListenerAttached.has(button)) {
+                return;
+            }
+            taskDeleteListenerAttached.add(button);
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (typeof showConfirmationModal !== 'function') {
+                    return;
+                }
+                const actionUrl = button.dataset.confirmUrl;
+                if (!actionUrl) {
+                    return;
+                }
+                const taskName = button.dataset.taskName || button.getAttribute('aria-label') || 'this task';
+                showConfirmationModal({
+                    title: 'Delete task',
+                    message: `Delete "${taskName}"? This action cannot be undone.`,
+                    confirmLabel: 'Delete task',
+                    confirmVariant: 'danger',
+                }).then((confirmed) => {
+                    if (!confirmed) {
+                        return;
+                    }
+                    fetch(actionUrl, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            Accept: 'application/json',
+                        },
+                    })
+                        .then((response) =>
+                            response
+                                .json()
+                                .catch(() => ({}))
+                                .then((data) => ({ ok: response.ok, data }))
+                        )
+                        .then(({ ok, data }) => {
+                            if (!ok || !data || data.success !== true) {
+                                const message = (data && data.message) || `Unable to delete "${taskName}".`;
+                                displayFlashMessage(message, 'danger');
+                                return;
+                            }
+                            const message = (data && data.message) || `Task "${taskName}" deleted.`;
+                            displayFlashMessage(message, 'success');
+                            refreshTaskList();
+                        })
+                        .catch((error) => {
+                            console.error('Unable to delete task', error);
+                            displayFlashMessage(`Unable to delete "${taskName}".`, 'danger');
+                        });
+                });
             });
         });
     }
@@ -1350,24 +1570,25 @@
 
     if (quickCancelBtn) {
         quickCancelBtn.addEventListener('click', () => {
-            const actionUrl = '{{ url_for("add_task") }}';
-            if (taskForm) {
-                taskForm.action = actionUrl;
-            }
+            setTaskFormActionToAdd();
             clearInlineSelection();
             collapseAccordionItem('detailed-item-container');
+            applyTaskFormErrors({});
         });
     }
 
     if (taskForm) {
         taskForm.addEventListener('reset', () => {
-            const actionUrl = '{{ url_for("add_task") }}';
-            taskForm.action = actionUrl;
+            setTaskFormActionToAdd();
             clearInlineSelection();
+            applyTaskFormErrors({});
             if (descriptionField) {
                 descriptionField.style.height = '';
             }
         });
+        if (typeof window.fetch === 'function') {
+            taskForm.addEventListener('submit', handleTaskFormSubmit);
+        }
     }
 
     document.querySelectorAll('textarea.auto-resize-textarea').forEach((textarea) => {
@@ -1438,6 +1659,7 @@
                 initializeSortableGroups();
                 attachEditTaskListeners();
                 attachTagManagerListeners();
+                attachTaskDeleteListeners();
                 attachGroupAddListeners();
                 syncChevronStates();
                 updateDateDisplays();
@@ -1453,6 +1675,7 @@
     setInlineTagsFromString(tagsField ? tagsField.value : '');
     attachEditTaskListeners();
     attachTagManagerListeners();
+    attachTaskDeleteListeners();
     attachGroupAddListeners();
     applyTagFilters();
     updateDateDisplays();
