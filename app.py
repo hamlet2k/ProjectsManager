@@ -939,7 +939,8 @@ def update_item_rank(item_type):
         if item_class is None:
             raise ValueError(f"Model class for '{item_type}' not found.")
     except ValueError as e:
-        return str(e), 404
+        logging.exception("Model class lookup failed for item_type '%s': %s", item_type, str(e))
+        return "Item type not found.", 404
 
     for data in items_list:
         item = item_class.query.get_or_404(data["id"])
