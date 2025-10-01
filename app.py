@@ -1,5 +1,6 @@
 from datetime import datetime
 from functools import wraps
+import logging
 
 from flask import (
     Flask,
@@ -574,7 +575,8 @@ def delete_tag(tag_id):
         db.session.commit()
     except SQLAlchemyError as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logging.exception("Error deleting tag with id %s", tag_id)
+        return jsonify({"error": "Unable to delete tag due to an internal error."}), 500
 
     return jsonify({"deleted": True, "tag_id": tag_id})
 
