@@ -559,13 +559,15 @@
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
 
+    const DEFAULT_DUE_HOUR = 17;
+
     function computeDueDateForBucket(bucket) {
         if (!bucket) {
             return null;
         }
         const now = new Date();
         const target = new Date(now.getTime());
-        target.setHours(17, 0, 0, 0);
+        target.setHours(DEFAULT_DUE_HOUR, 0, 0, 0);
         switch (bucket) {
             case 'today':
                 return target;
