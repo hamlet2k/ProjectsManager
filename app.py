@@ -439,6 +439,7 @@ def task():
     ]
 
     form = TaskForm()
+    form.tags.data = ""
 
     return render_template(
         "task.html",
@@ -498,6 +499,22 @@ def _get_task_in_scope_or_404(task_id):
     if g.scope is None or task.scope_id != g.scope.id:
         abort(404)
     return task
+
+
+def _parse_tag_ids(raw_value):
+    if not raw_value:
+        return []
+    tag_ids = []
+    for value in raw_value.split(","):
+        value = value.strip()
+        if not value:
+            continue
+        try:
+            tag_id = int(value)
+        except ValueError:
+            continue
+        tag_ids.append(tag_id)
+    return tag_ids
 
 
 @app.route("/tasks/<int:task_id>/tags", methods=["GET"])
@@ -596,6 +613,7 @@ def add_task():
 
     item = Task()
     form = TaskForm()
+    form.tags.data = form.tags.data or ""
     items = [item for item in g.scope.tasks if not item.completed]
     show_modal = False
     print(form.errors)
@@ -605,11 +623,17 @@ def add_task():
         item.owner_id = g.user.id
         item.rank = get_max_rank('task') + 1
         item.start_date = datetime.fromisoformat(datetime.utcnow().strftime("%Y-%m-%dT%H:%M"))
-        
+
         item.name = form.name.data
         item.description = form.description.data
         item.end_date = form.end_date.data
-        
+
+        tag_ids = _parse_tag_ids(form.tags.data)
+        if tag_ids:
+            item.tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
+        else:
+            item.tags = []
+
         g.scope.tasks.append(item)
 
         try:
@@ -656,12 +680,20 @@ def edit_task(id):
     items = [task for task in g.scope.tasks if not task.completed]
     item = Task.query.get_or_404(id)
     form = TaskForm(obj=item)
+    form.tags.data = ",".join(str(tag.id) for tag in item.tags)
     show_modal = False
 
     if form.validate_on_submit():
         #edit the item
         item.name = form.name.data
         item.description = form.description.data
+        item.end_date = form.end_date.data
+
+        tag_ids = _parse_tag_ids(form.tags.data)
+        if tag_ids:
+            item.tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
+        else:
+            item.tags = []
         try:
             db.session.commit()
             flash("Task edited!", "success")
