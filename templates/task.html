@@ -1028,12 +1028,14 @@
             });
     }
 
+    // Use WeakSet to track attached listeners for edit-task-btn
+    const editTaskListenerAttached = new WeakSet();
     function attachEditTaskListeners() {
         document.querySelectorAll('.edit-task-btn').forEach((button) => {
-            if (button.dataset.editListenerAttached === 'true') {
+            if (editTaskListenerAttached.has(button)) {
                 return;
             }
-            button.dataset.editListenerAttached = 'true';
+            editTaskListenerAttached.add(button);
             button.addEventListener('click', (event) => {
                 event.preventDefault();
 
