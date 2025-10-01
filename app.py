@@ -821,7 +821,8 @@ def add_task():
             form = TaskForm()
         except SQLAlchemyError as e:
             db.session.rollback()
-            error_message = f"An error occurred: {str(e)}"
+            logging.error("Database error while adding task", exc_info=True)
+            error_message = "An internal error has occurred."
             if wants_json:
                 return jsonify({"success": False, "message": error_message}), 500
             flash(error_message, "error")
