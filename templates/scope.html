@@ -78,8 +78,8 @@
             showConfirmationModal({
                 title: 'Delete scope',
                 message: `Delete scope "${scopeName}"?`,
-                description: 'Deleting this scope will remove it permanently.',
-                details: ['This action cannot be undone.'],
+                description: `Deleting this scope will permanently remove "${scopeName}" and its ordering.`,
+                details: [`Scope: ${scopeName}`, 'This action cannot be undone.'],
                 confirmLabel: 'Delete scope',
                 confirmVariant: 'danger',
             }).then((confirmed) => {

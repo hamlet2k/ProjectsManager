@@ -415,7 +415,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted small mb-2" id="tag-modal-task-name"></p>
+                    <p class="text-muted small mb-1">Assign or remove tags to keep this task organized.</p>
+                    <p class="fw-semibold mb-3" id="tag-modal-task-name"></p>
                     <div class="mb-3">
                         <div class="d-flex flex-wrap gap-2" id="tag-modal-available"></div>
                         <p class="text-muted small mb-0 d-none" id="tag-modal-empty">No tags yet. Create one below.</p>
@@ -1386,13 +1387,16 @@
         }
         const tagName = button.dataset.tagName || '';
         const tagCount = Number(button.dataset.tagCount || '0');
-        const proceed = tagCount > 0 && typeof showConfirmationModal === 'function'
+        const proceed = typeof showConfirmationModal === 'function'
             ? showConfirmationModal({
                   title: 'Delete tag',
-                  message: `Delete "#${tagName}"?`,
-                  description: 'Removing this tag will detach it from every associated task.',
+                  message: `Delete tag "#${tagName}"?`,
+                  description: `Deleting this tag will remove "#${tagName}" from every associated task.`,
                   details: [
-                      `${tagCount} task${tagCount === 1 ? '' : 's'} currently use this tag.`,
+                      `Tag: #${tagName}`,
+                      tagCount > 0
+                          ? `${tagCount} task${tagCount === 1 ? '' : 's'} currently use this tag.`
+                          : 'This tag is not assigned to any tasks.',
                       'This action cannot be undone.',
                   ],
                   confirmLabel: 'Delete tag',
@@ -1539,10 +1543,11 @@
                     );
                 }
 
+                detailItems.unshift(`Task: ${taskName}`);
                 showConfirmationModal({
                     title: 'Delete task',
-                    message: `Delete "${taskName}"?`,
-                    description: 'Deleting this task will remove it permanently.',
+                    message: `Delete task "${taskName}"?`,
+                    description: `Deleting this task will permanently remove "${taskName}" and its activity.`,
                     details: [...detailItems, 'This action cannot be undone.'],
                     confirmLabel: 'Delete task',
                     confirmVariant: 'danger',
@@ -1598,7 +1603,8 @@
                 currentTaskTags = new Map();
 
                 if (tagModalTaskName) {
-                    tagModalTaskName.textContent = `Tags for "${button.dataset.taskName || ''}"`;
+                    const taskLabel = button.dataset.taskName || 'this task';
+                    tagModalTaskName.textContent = `Task: "${taskLabel}"`;
                 }
 
                 const tagContainer = document.getElementById(`task-tags-${currentTaskId}`);
@@ -1775,6 +1781,58 @@
 
     if (inlineTagAddBtn) {
         inlineTagAddBtn.addEventListener('click', handleInlineTagCreate);
+    }
+
+    function focusNewTask(expandDetails = true) {
+        if (!taskForm) {
+            return;
+        }
+        taskForm.reset();
+        taskForm.dataset.ajaxSubmitting = 'false';
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        taskForm.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+        if (expandDetails) {
+            if (detailedItemCollapse) {
+                detailedItemCollapse.show();
+            } else {
+                expandAccordionItem('detailed-item-container');
+            }
+        }
+        window.setTimeout(() => {
+            if (nameField) {
+                nameField.focus({ preventScroll: true });
+                nameField.select();
+            }
+        }, 0);
+    }
+
+    document.addEventListener('keydown', (event) => {
+        const isShortcutModifier = event.ctrlKey || event.metaKey;
+        if (!isShortcutModifier) {
+            return;
+        }
+        const key = (event.key || '').toLowerCase();
+        if (key === 'n') {
+            event.preventDefault();
+            focusNewTask(true);
+        }
+    });
+
+    if (nameField) {
+        nameField.addEventListener('keydown', (event) => {
+            if (!(event.ctrlKey || event.metaKey)) {
+                return;
+            }
+            if (event.key !== 'ArrowDown') {
+                return;
+            }
+            event.preventDefault();
+            if (detailedItemCollapse) {
+                detailedItemCollapse.show();
+            } else {
+                expandAccordionItem('detailed-item-container');
+            }
+        });
     }
 
     if (inlineTagInput) {

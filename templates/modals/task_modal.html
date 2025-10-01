@@ -2,7 +2,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
 
-            <div class="modal-header border-0 pb-0">
+            <div class="modal-header">
                 <h5 class="modal-title" id="task-modal-title">{{ action }} Task</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -10,8 +10,8 @@
             <form id="task-form" method="post">
             {{ task_form.hidden_tag() }}
 
-            <div class="modal-body pt-2">
-                <p class="text-muted small mb-3" id="task-modal-description">Capture the details for this task below.</p>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" id="task-modal-description">Capture or update the essential details for this task.</p>
                 <div class="form-floating mb-3">
                     {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_=task_form.name.name) }}
                     {{ task_form.name.label(class="form-label") }}
@@ -41,7 +41,7 @@
                 </div>
             </div>
 
-            <div class="modal-footer border-0 pt-0">
+            <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                 Cancel
                 </button>
@@ -59,35 +59,99 @@
     // Display the modal based on the flag.
     // Used when validation of the form fails to display the modal by default.
     // Sets the modal butons depending on the action clicked (ADD or EDIT)
+    const taskForm = document.getElementById('task-form');
+    const taskModalTitle = document.getElementById('task-modal-title');
+    const taskModalDescription = document.getElementById('task-modal-description');
+    const taskSubmitButton = document.getElementById('submitTaskButton');
+
+    function setTaskModalContent({ title, description, submitLabel }) {
+        if (taskModalTitle) {
+            taskModalTitle.textContent = title;
+        }
+        if (taskModalDescription) {
+            taskModalDescription.textContent = description;
+        }
+        if (taskSubmitButton) {
+            taskSubmitButton.textContent = submitLabel;
+        }
+    }
+
+    function getTaskNameField() {
+        return document.getElementById('name');
+    }
+
+    function buildCreateTaskDescription() {
+        return 'Capture the essential details to create a new task.';
+    }
+
+    function buildEditTaskDescription(name = '') {
+        if (name && name.trim().length > 0) {
+            return `Update the details for "${name.trim()}" before saving your changes.`;
+        }
+        return 'Update the task details before saving your changes.';
+    }
+
     document.addEventListener('DOMContentLoaded', (event) => {
         {% if show_modal %}
             var modal = new bootstrap.Modal(document.getElementById('{{show_modal}}'));
             modal.show();
         {% endif %}
+
+        const nameField = getTaskNameField();
+        if (taskForm && taskForm.getAttribute('action') && taskForm.getAttribute('action').includes('/task/edit/')) {
+            setTaskModalContent({
+                title: 'Edit task',
+                description: buildEditTaskDescription(nameField ? nameField.value : ''),
+                submitLabel: 'Save changes',
+            });
+        } else {
+            setTaskModalContent({
+                title: 'Add task',
+                description: buildCreateTaskDescription(),
+                submitLabel: 'Save task',
+            });
+        }
     });
 
     // Update the form action when the ADD button is clicked
     // Clears the form fields
-    document.getElementById("add-task-btn").addEventListener("click", (event) => {
-        actionUrl = '{{ url_for("add_task") }}';
-        document.querySelector("#task-form").action = actionUrl;
-        document.getElementById("task-form").reset();
-        //clearFormFields();
-    });
+    const addTaskButton = document.getElementById('add-task-btn');
+    if (addTaskButton && taskForm) {
+        addTaskButton.addEventListener('click', (event) => {
+            const actionUrl = '{{ url_for("add_task") }}';
+            taskForm.action = actionUrl;
+            taskForm.reset();
+            setTaskModalContent({
+                title: 'Add task',
+                description: buildCreateTaskDescription(),
+                submitLabel: 'Save task',
+            });
+        });
+    }
 
     // Update the modal form action when the EDIT button is clicked
     // Populate the form with the values associated to the EDIT button
-    document.querySelectorAll(".edit-task-btn").forEach((item) => {
-        item.addEventListener("click", (event) => {
+    document.querySelectorAll('.edit-task-btn').forEach((item) => {
+        item.addEventListener('click', (event) => {
             {% for field in task_form %}
                 {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
-                    document.getElementById('{{ field.name }}').value = item.getAttribute("data-task-{{ field.name }}");
+                    const fieldElement = document.getElementById('{{ field.name }}');
+                    if (fieldElement) {
+                        fieldElement.value = item.getAttribute('data-task-{{ field.name }}');
+                    }
                 {% endif %}
             {% endfor %}
 
-            let baseUrl = '{{ url_for("edit_task", id=0) }}';
-            let actionUrl = baseUrl.replace("/0", "/" + item.getAttribute("data-task-id"));
-            document.querySelector("#task-form").action = actionUrl;
+            if (taskForm) {
+                const baseUrl = '{{ url_for("edit_task", id=0) }}';
+                const actionUrl = baseUrl.replace('/0', `/${item.getAttribute('data-task-id')}`);
+                taskForm.action = actionUrl;
+            }
+            setTaskModalContent({
+                title: 'Edit task',
+                description: buildEditTaskDescription(item.getAttribute('data-task-name') || ''),
+                submitLabel: 'Save changes',
+            });
         });
     });
 
@@ -100,17 +164,19 @@
     };
 
     // Convert DateTimeLocalField to UTC before to to submit the form
-    document.getElementById('task-form').addEventListener('submit', function(event) {
-        event.preventDefault();  // Prevent the default form submission
-        {% for field in task_form %}
-            {% if field.type == 'DateTimeLocalField' %}
-                if (document.getElementById('{{ field.name }}').value != '') {
-                    document.getElementById('{{ field.name }}').value = convertToUTC(document.getElementById('{{ field.name }}').value)
-                }
-            {% endif %}
-        {% endfor %}
-        this.submit();
-    });
+    if (taskForm) {
+        taskForm.addEventListener('submit', function(event) {
+            event.preventDefault();  // Prevent the default form submission
+            {% for field in task_form %}
+                {% if field.type == 'DateTimeLocalField' %}
+                    if (document.getElementById('{{ field.name }}').value != '') {
+                        document.getElementById('{{ field.name }}').value = convertToUTC(document.getElementById('{{ field.name }}').value)
+                    }
+                {% endif %}
+            {% endfor %}
+            this.submit();
+        });
+    }
 
     function convertToUTC(dateString){
         var localDateTime = new Date(dateString);
