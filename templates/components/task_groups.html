@@ -72,6 +72,11 @@
                                     <button type="button" class="btn task-action-btn task-delete-btn"
                                         data-confirm-url="{{ url_for('delete_item', item_type='task', id=task.id) }}"
                                         data-task-name="{{ task.name | e }}"
+                                        data-task-completed="{{ 'true' if task.completed else 'false' }}"
+                                        {% if task.completed_date %}data-task-completed-date="{{ task.completed_date.isoformat() }}"{% endif %}
+                                        {% if task.end_date %}data-task-due-date="{{ task.end_date.isoformat() }}"{% endif %}
+                                        data-task-tag-count="{{ task.tags | length }}"
+                                        data-task-tags='{{ task.tags | map(attribute="name") | list | tojson | e }}'
                                         aria-label="Delete task {{ task.name }}">
                                         <i class="bi bi-trash"></i>
                                     </button>

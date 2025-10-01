@@ -77,7 +77,9 @@
             const scopeName = button.dataset.scopeName || 'this scope';
             showConfirmationModal({
                 title: 'Delete scope',
-                message: `Delete scope "${scopeName}"? This action cannot be undone.`,
+                message: `Delete scope "${scopeName}"?`,
+                description: 'Deleting this scope will remove it permanently.',
+                details: ['This action cannot be undone.'],
                 confirmLabel: 'Delete scope',
                 confirmVariant: 'danger',
             }).then((confirmed) => {

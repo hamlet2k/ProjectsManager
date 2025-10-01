@@ -262,10 +262,20 @@
     }
 
     .task-group-add-btn {
+        --task-quick-add-scale: 0.75;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 0.25rem;
+        --bs-btn-padding-y: calc(0.25rem * var(--task-quick-add-scale));
+        --bs-btn-padding-x: calc(0.5rem * var(--task-quick-add-scale));
+        --bs-btn-font-size: calc(0.875rem * var(--task-quick-add-scale));
+        --bs-btn-line-height: 1;
+        --bs-btn-border-radius: calc(0.2rem * var(--task-quick-add-scale));
+    }
+
+    .task-group-add-btn .bi {
+        font-size: calc(1rem * var(--task-quick-add-scale));
     }
 
     .task-filter-collapse.collapse:not(.show) {
@@ -1379,7 +1389,12 @@
         const proceed = tagCount > 0 && typeof showConfirmationModal === 'function'
             ? showConfirmationModal({
                   title: 'Delete tag',
-                  message: `Tag "#${tagName}" is assigned to ${tagCount} task${tagCount === 1 ? '' : 's'}. Delete it?`,
+                  message: `Delete "#${tagName}"?`,
+                  description: 'Removing this tag will detach it from every associated task.',
+                  details: [
+                      `${tagCount} task${tagCount === 1 ? '' : 's'} currently use this tag.`,
+                      'This action cannot be undone.',
+                  ],
                   confirmLabel: 'Delete tag',
                   confirmVariant: 'danger',
               })
@@ -1481,9 +1496,54 @@
                     return;
                 }
                 const taskName = button.dataset.taskName || button.getAttribute('aria-label') || 'this task';
+                const detailItems = [];
+                const dueDate = button.dataset.taskDueDate;
+                const formattedDue = typeof formatDateTimeDisplay === 'function'
+                    ? formatDateTimeDisplay(dueDate)
+                    : '';
+                if (formattedDue) {
+                    detailItems.push(`Due ${formattedDue}`);
+                }
+
+                const tagCount = Number(button.dataset.taskTagCount || '0');
+                if (tagCount > 0) {
+                    let tagNames = [];
+                    try {
+                        tagNames = JSON.parse(button.dataset.taskTags || '[]');
+                    } catch (error) {
+                        tagNames = [];
+                    }
+                    if (Array.isArray(tagNames) && tagNames.length > 0) {
+                        const formattedTags = tagNames
+                            .map((name) => (typeof name === 'string' && name.trim() ? `#${name.trim()}` : null))
+                            .filter(Boolean)
+                            .join(', ');
+                        if (formattedTags) {
+                            detailItems.push(`Tags: ${formattedTags}`);
+                        }
+                    }
+                    if (!detailItems.some((item) => item.startsWith('Tags'))) {
+                        detailItems.push(`${tagCount} tag${tagCount === 1 ? '' : 's'} assigned.`);
+                    }
+                }
+
+                if (button.dataset.taskCompleted === 'true') {
+                    const completedDate = button.dataset.taskCompletedDate;
+                    const formattedCompleted = typeof formatDateTimeDisplay === 'function'
+                        ? formatDateTimeDisplay(completedDate)
+                        : '';
+                    detailItems.push(
+                        formattedCompleted
+                            ? `Completed ${formattedCompleted}`
+                            : 'Task is already marked as completed.'
+                    );
+                }
+
                 showConfirmationModal({
                     title: 'Delete task',
-                    message: `Delete "${taskName}"? This action cannot be undone.`,
+                    message: `Delete "${taskName}"?`,
+                    description: 'Deleting this task will remove it permanently.',
+                    details: [...detailItems, 'This action cannot be undone.'],
                     confirmLabel: 'Delete task',
                     confirmVariant: 'danger',
                 }).then((confirmed) => {

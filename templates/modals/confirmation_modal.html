@@ -1,14 +1,16 @@
 <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header border-0 pb-0">
                 <h5 class="modal-title" id="confirmationModalTitle">Confirm action</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p class="mb-0" id="confirmationModalBody">Are you sure you want to continue?</p>
+            <div class="modal-body pt-2">
+                <p class="mb-1 fw-semibold" id="confirmationModalMessage">Are you sure you want to continue?</p>
+                <p class="text-muted small mb-3" id="confirmationModalDescription">This action cannot be undone.</p>
+                <ul class="text-muted small mb-0 ps-3 d-none" id="confirmationModalDetails"></ul>
             </div>
-            <div class="modal-footer border-0 pt-0">
+            <div class="modal-footer border-0 pt-0 gap-2">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
             </div>
@@ -24,17 +26,23 @@
     }
 
     const modalTitle = document.getElementById('confirmationModalTitle');
-    const modalBody = document.getElementById('confirmationModalBody');
+    const modalMessage = document.getElementById('confirmationModalMessage');
+    const modalDescription = document.getElementById('confirmationModalDescription');
+    const modalDetails = document.getElementById('confirmationModalDetails');
     const confirmButton = document.getElementById('confirmButton');
-    const modalInstance = new bootstrap.Modal(modalElement);
-
+    let modalInstance = null;
     let resolver = null;
     let wasConfirmed = false;
     const defaultConfirmClass = 'btn btn-danger';
 
     confirmButton.addEventListener('click', () => {
         wasConfirmed = true;
-        modalInstance.hide();
+        const instance = ensureModalInstance();
+        if (instance) {
+            instance.hide();
+        } else {
+            wasConfirmed = false;
+        }
     });
 
     modalElement.addEventListener('hidden.bs.modal', () => {
@@ -45,19 +53,65 @@
         resolver = null;
         confirmButton.className = defaultConfirmClass;
         confirmButton.textContent = 'Confirm';
+        if (modalMessage) {
+            modalMessage.textContent = 'Are you sure you want to continue?';
+        }
+        if (modalDescription) {
+            modalDescription.textContent = 'This action cannot be undone.';
+            modalDescription.classList.remove('d-none');
+        }
+        if (modalDetails) {
+            modalDetails.innerHTML = '';
+            modalDetails.classList.add('d-none');
+        }
     });
+
+    function ensureModalInstance() {
+        if (modalInstance) {
+            return modalInstance;
+        }
+        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            console.warn('Confirmation modal requires Bootstrap.');
+            return null;
+        }
+        modalInstance = new bootstrap.Modal(modalElement);
+        return modalInstance;
+    }
 
     window.showConfirmationModal = function showConfirmationModal({
         title = 'Confirm action',
         message = 'Are you sure you want to continue?',
+        description = 'This action cannot be undone.',
+        details = [],
         confirmLabel = 'Confirm',
         confirmVariant = 'danger',
     } = {}) {
         if (modalTitle) {
             modalTitle.textContent = title;
         }
-        if (modalBody) {
-            modalBody.textContent = message;
+        if (modalMessage) {
+            modalMessage.textContent = message;
+        }
+        if (modalDescription) {
+            const hasDescription = typeof description === 'string' && description.trim().length > 0;
+            modalDescription.textContent = hasDescription ? description : '';
+            modalDescription.classList.toggle('d-none', !hasDescription);
+        }
+        if (modalDetails) {
+            modalDetails.innerHTML = '';
+            const normalizedDetails = Array.isArray(details)
+                ? details.filter((detail) => typeof detail === 'string' && detail.trim().length > 0)
+                : [];
+            if (normalizedDetails.length > 0) {
+                normalizedDetails.forEach((detail) => {
+                    const item = document.createElement('li');
+                    item.textContent = detail;
+                    modalDetails.appendChild(item);
+                });
+                modalDetails.classList.remove('d-none');
+            } else {
+                modalDetails.classList.add('d-none');
+            }
         }
         if (confirmButton) {
             const normalizedVariant = (confirmVariant || 'danger').trim();
@@ -71,7 +125,11 @@
             confirmButton.textContent = confirmLabel;
         }
 
-        modalInstance.show();
+        const instance = ensureModalInstance();
+        if (!instance) {
+            return Promise.resolve(false);
+        }
+        instance.show();
         return new Promise((resolve) => {
             resolver = resolve;
         });
