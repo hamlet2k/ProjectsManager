@@ -372,7 +372,7 @@
                     <div class="invalid-feedback {% if not description_error %}d-none{% endif %}" data-feedback-for="description">{{ description_error }}</div>
                 </div>
                 <div class="form-floating mb-3">
-                    {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_='Add more details') }}
+                    {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_='YYYY-MM-DD') }}
                     {{ task_form.end_date.label(class_='form-label') }}
                     {% set end_date_error = task_form.end_date.errors[0] if task_form.end_date.errors else '' %}
                     <div class="invalid-feedback {% if not end_date_error %}d-none{% endif %}" data-feedback-for="end_date">{{ end_date_error }}</div>
