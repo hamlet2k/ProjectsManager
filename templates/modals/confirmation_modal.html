@@ -1,16 +1,16 @@
 <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
+            <div class="modal-header">
                 <h5 class="modal-title" id="confirmationModalTitle">Confirm action</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body pt-2">
-                <p class="mb-1 fw-semibold" id="confirmationModalMessage">Are you sure you want to continue?</p>
-                <p class="text-muted small mb-3" id="confirmationModalDescription">This action cannot be undone.</p>
+            <div class="modal-body">
+                <p class="mb-1 fw-semibold" id="confirmationModalMessage">Are you sure you want to proceed?</p>
+                <p class="text-muted small mb-3" id="confirmationModalDescription">Review the details below before continuing.</p>
                 <ul class="text-muted small mb-0 ps-3 d-none" id="confirmationModalDetails"></ul>
             </div>
-            <div class="modal-footer border-0 pt-0 gap-2">
+            <div class="modal-footer gap-2">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" id="confirmButton">Confirm</button>
             </div>
@@ -34,6 +34,8 @@
     let resolver = null;
     let wasConfirmed = false;
     const defaultConfirmClass = 'btn btn-danger';
+    const defaultMessage = 'Are you sure you want to proceed?';
+    const defaultDescription = 'Review the details below before continuing.';
 
     confirmButton.addEventListener('click', () => {
         wasConfirmed = true;
@@ -54,10 +56,10 @@
         confirmButton.className = defaultConfirmClass;
         confirmButton.textContent = 'Confirm';
         if (modalMessage) {
-            modalMessage.textContent = 'Are you sure you want to continue?';
+            modalMessage.textContent = defaultMessage;
         }
         if (modalDescription) {
-            modalDescription.textContent = 'This action cannot be undone.';
+            modalDescription.textContent = defaultDescription;
             modalDescription.classList.remove('d-none');
         }
         if (modalDetails) {
@@ -80,8 +82,8 @@
 
     window.showConfirmationModal = function showConfirmationModal({
         title = 'Confirm action',
-        message = 'Are you sure you want to continue?',
-        description = 'This action cannot be undone.',
+        message = defaultMessage,
+        description = defaultDescription,
         details = [],
         confirmLabel = 'Confirm',
         confirmVariant = 'danger',

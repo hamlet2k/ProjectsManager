@@ -2,7 +2,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
 
-            <div class="modal-header border-0 pb-0">
+            <div class="modal-header">
                 <h5 class="modal-title" id="scope-modal-title">Create scope</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -10,8 +10,8 @@
             <form id="scope-form" method="post">
             {{ scope_form.hidden_tag() }}
 
-            <div class="modal-body pt-2">
-                <p class="text-muted small mb-3" id="scope-modal-description">Organize tasks by creating a new scope.</p>
+            <div class="modal-body">
+                <p class="text-muted small mb-3" id="scope-modal-description">Group related tasks by creating a new scope.</p>
                 <div class="form-floating mb-3">
                     {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name) }}
                     {{ scope_form.name.label(class="form-label") }}
@@ -32,7 +32,7 @@
                 </div>
             </div>
 
-            <div class="modal-footer border-0 pt-0">
+            <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                 Cancel
                 </button>
@@ -63,20 +63,33 @@
         }
     }
 
+    function buildCreateScopeDescription() {
+        return 'Provide a name and optional description to group related tasks.';
+    }
+
+    function buildEditScopeDescription(name = '') {
+        if (name && name.trim().length > 0) {
+            return `Update the details for "${name.trim()}" before saving your changes.`;
+        }
+        return 'Update the scope details before saving your changes.';
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         const defaultAction = '{{ url_for("add_scope") }}';
         if (scopeForm) {
             const currentAction = scopeForm.getAttribute('action') || defaultAction;
             if (currentAction !== defaultAction) {
+                const currentNameField = scopeForm.querySelector('#name');
+                const currentName = currentNameField ? currentNameField.value : '';
                 setScopeModalContent({
                     title: 'Edit scope',
-                    description: 'Update the scope details below.',
+                    description: buildEditScopeDescription(currentName),
                     submitLabel: 'Save changes',
                 });
             } else {
                 setScopeModalContent({
                     title: 'Create scope',
-                    description: 'Organize tasks by creating a new scope.',
+                    description: buildCreateScopeDescription(),
                     submitLabel: 'Create scope',
                 });
             }
@@ -95,7 +108,7 @@
             scopeForm.reset();
             setScopeModalContent({
                 title: 'Create scope',
-                description: 'Organize tasks by creating a new scope.',
+                description: buildCreateScopeDescription(),
                 submitLabel: 'Create scope',
             });
         });
@@ -120,7 +133,7 @@
 
             setScopeModalContent({
                 title: 'Edit scope',
-                description: 'Update the scope details below.',
+                description: buildEditScopeDescription(item.getAttribute('data-scope-name') || ''),
                 submitLabel: 'Save changes',
             });
         });
