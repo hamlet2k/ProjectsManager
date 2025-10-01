@@ -329,9 +329,22 @@ def scope():
 @scope_required
 def task():
     show_completed = request.args.get("show_completed", "false").lower() == "true"
-    sort_by = request.args.get("sort_by", "rank")
     valid_sorts = {"rank", "name", "tags", "due_date"}
-    if sort_by not in valid_sorts:
+    requested_sort = request.args.get("sort_by")
+
+    sort_preferences = session.get("task_sort_preferences", {})
+    scope_key = str(g.scope.id)
+    stored_sort = sort_preferences.get(scope_key)
+
+    if requested_sort in valid_sorts:
+        sort_by = requested_sort
+        if stored_sort != sort_by:
+            sort_preferences[scope_key] = sort_by
+            session["task_sort_preferences"] = sort_preferences
+            session.modified = True
+    elif stored_sort in valid_sorts:
+        sort_by = stored_sort
+    else:
         sort_by = "rank"
 
     search_query = request.args.get("search", "") or ""
@@ -472,6 +485,7 @@ def task():
                     "dom_id": bucket["dom_id"],
                     "tasks": _sort_tasks(bucket["tasks"], key_func=_due_key),
                     "sortable": False,
+                    "due_bucket": bucket_key,
                 }
             )
     elif sort_by == "tags":
@@ -493,6 +507,7 @@ def task():
                     "tasks": tagged_tasks,
                     "sortable": True,
                     "tag_id": tag.id,
+                    "tag_name": tag.name,
                 }
             )
             sortable_group_ids.append(dom_id)
@@ -508,6 +523,7 @@ def task():
                     "dom_id": dom_id,
                     "tasks": untagged,
                     "sortable": True,
+                    "tag_id": None,
                 }
             )
             sortable_group_ids.append(dom_id)

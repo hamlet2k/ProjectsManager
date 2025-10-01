@@ -6,29 +6,41 @@
         {% endif %}
         <div class="task-group mb-4" data-group-dom-id="{{ group.dom_id }}" {% if group.tag_id is defined %}data-tag-id="{{ group.tag_id }}"{% endif %}>
             {% if group.title %}
-                <h6 class="text-uppercase text-muted small mb-2">{{ group.title }}</h6>
+                {% set show_quick_add = (sort_by == 'tags' and group.tag_id is defined) or (sort_by == 'due_date' and group.due_bucket is defined) %}
+                <div class="task-group-header">
+                    <h6 class="text-uppercase text-muted small mb-2 flex-grow-1">{{ group.title }}</h6>
+                    {% if show_quick_add %}
+                        <button type="button"
+                                class="btn btn-outline-primary btn-sm task-group-add-btn"
+                                {% if group.tag_id is defined %}data-group-tag-id="{{ group.tag_id if group.tag_id is not none else '' }}"{% endif %}
+                                {% if group.due_bucket is defined %}data-group-due-bucket="{{ group.due_bucket }}"{% endif %}
+                                aria-label="Add task for {{ group.title }}">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    {% endif %}
+                </div>
             {% endif %}
             <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
                 {% if group.tasks %}
                     {% for task in group.tasks %}
                         {% set has_details = task.has_info() or task.completed_date %}
                         <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
-                            <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
+                            <div class="task-item-header my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
                                 <div class="d-flex align-items-center flex-grow-1">
                                     <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
                                     {% if has_details %}
-                                        <a href="#" class="text-decoration-none no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
-                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
-                                            <div class="flex-grow-1">
+                                        <a href="#" class="text-decoration-none text-body task-toggle no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
+                                            <div class="flex-grow-1 task-title">
                                                 {% if task.completed %}
                                                     <del>{{ task.name }}</del>
                                                 {% else %}
                                                     {{ task.name }}
                                                 {% endif %}
                                             </div>
+                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
                                         </a>
                                     {% else %}
-                                        <div class="mx-2">
+                                        <div class="mx-2 flex-grow-1 task-title text-body">
                                             {% if task.completed %}
                                                 <del>{{ task.name }}</del>
                                             {% else %}
@@ -37,18 +49,18 @@
                                         </div>
                                     {% endif %}
                                 </div>
-                                <div class="col-auto d-flex justify-content-end align-items-center">
-                                    <a class="btn task-action-btn mx-1" href="{{ url_for('complete_task', id=task.id) }}">
+                                <div class="task-action-group">
+                                    <a class="btn task-action-btn" href="{{ url_for('complete_task', id=task.id) }}">
                                         {% if task.completed %}
                                             <i class="bi bi-arrow-counterclockwise"></i>
                                         {% else %}
                                             <i class="bi bi-check"></i>
                                         {% endif %}
                                     </a>
-                                    <button type="button" class="btn task-action-btn mx-1 tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
+                                    <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
                                         <i class="bi bi-tags"></i>
                                     </button>
-                                    <button type="button" class="btn task-action-btn mx-1 edit-task-btn"
+                                    <button type="button" class="btn task-action-btn edit-task-btn"
                                         data-task-id="{{ task.id }}"
                                         data-task-name="{{ task.name | e }}"
                                         data-task-description="{{ task.description | default('') | e }}"
@@ -57,7 +69,7 @@
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    <button type="button" class="btn task-action-btn mx-1" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
+                                    <button type="button" class="btn task-action-btn" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
