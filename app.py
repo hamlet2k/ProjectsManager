@@ -970,6 +970,10 @@ def delete_item(item_type, id):
 @app.route("/complete_task/<int:id>")
 @scope_required
 def complete_task(id):
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest" or (
+        request.accept_mimetypes["application/json"]
+        >= request.accept_mimetypes["text/html"]
+    )
     try:
         item = _get_task_in_scope_or_404(id)
         if item.completed:
@@ -977,9 +981,45 @@ def complete_task(id):
         else:
             item.complete_task()
         db.session.commit()
+
+        task_label = getattr(item, "name", None)
+        if item.completed:
+            message = (
+                f'Task "{task_label}" completed.' if task_label else "Task completed."
+            )
+            category = "success"
+        else:
+            message = (
+                f'Task "{task_label}" restored.' if task_label else "Task restored."
+            )
+            category = "info"
+
+        if wants_json:
+            return jsonify(
+                {
+                    "success": True,
+                    "completed": item.completed,
+                    "message": message,
+                    "category": category,
+                }
+            )
+
+        flash(message, category)
     except SQLAlchemyError as e:
         db.session.rollback()
-        flash(f"An error occurred: {str(e)}", "error")
+        error_message = f"An error occurred: {str(e)}"
+        if wants_json:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": error_message,
+                        "category": "danger",
+                    }
+                ),
+                500,
+            )
+        flash(error_message, "error")
     return redirect(request.referrer or url_for("task"))
 
 
