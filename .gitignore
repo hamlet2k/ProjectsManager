@@ -2,6 +2,4 @@ venv/
 .venv
 *__pycache__/
 instance/
-migrations/versions/
-!migrations/versions/*.py
 admin/
