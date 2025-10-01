@@ -70,32 +70,18 @@
         border-width: 1px;
         border-style: solid;
         transition: all 0.15s ease-in-out;
-    }
-
-    .btn-pastel-success {
-        color: rgba(var(--bs-success-rgb), 0.85);
-        border-color: rgba(var(--bs-success-rgb), 0.35);
-        background-color: rgba(var(--bs-success-rgb), 0.12);
+        color: var(--bs-body-color);
+        border-color: var(--bs-secondary-border-subtle, #ced4da);
+        background-color: var(--bs-tertiary-bg);
     }
 
     .btn-pastel-success:hover,
-    .btn-pastel-success:focus {
-        color: rgba(var(--bs-success-rgb), 0.9);
-        border-color: rgba(var(--bs-success-rgb), 0.55);
-        background-color: rgba(var(--bs-success-rgb), 0.2);
-    }
-
-    .btn-pastel-danger {
-        color: rgba(var(--bs-danger-rgb), 0.85);
-        border-color: rgba(var(--bs-danger-rgb), 0.35);
-        background-color: rgba(var(--bs-danger-rgb), 0.12);
-    }
-
+    .btn-pastel-success:focus,
     .btn-pastel-danger:hover,
     .btn-pastel-danger:focus {
-        color: rgba(var(--bs-danger-rgb), 0.9);
-        border-color: rgba(var(--bs-danger-rgb), 0.55);
-        background-color: rgba(var(--bs-danger-rgb), 0.2);
+        color: var(--bs-body-color);
+        border-color: var(--bs-secondary-color, #adb5bd);
+        background-color: var(--bs-secondary-bg, #e9ecef);
     }
 
     .task-chevron {
@@ -153,6 +139,37 @@
         color: var(--bs-white);
         border-color: var(--bs-primary);
     }
+
+    .tag-filter-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .tag-filter-label {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .tag-filter-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 999px;
+        cursor: pointer;
+        color: inherit;
+    }
+
+    .tag-filter-remove:hover,
+    .tag-filter-remove:focus {
+        background-color: rgba(0, 0, 0, 0.08);
+    }
+
+    .tag-filter-button .tag-filter-remove i {
+        pointer-events: none;
+    }
 </style>
 {% endblock %}
 
@@ -167,7 +184,7 @@
             </div>
             <div class="col-12 col-md-3">
                 <label for="sort_by" class="form-label">Sort by</label>
-                <select class="form-select form-select-sm" id="sort_by" name="sort_by" onchange="this.form.submit()">
+                <select class="form-select form-select-sm" id="sort_by" name="sort_by">
                     <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
                     <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
                     <option value="tags" {{ 'selected' if sort_by == 'tags' else '' }}>Tags</option>
@@ -176,7 +193,7 @@
             </div>
             <div class="col-12 col-md-3">
                 <div class="form-check form-switch mt-md-4 pt-1">
-                    <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" onchange="this.form.submit()" {{ 'checked' if show_completed else '' }}>
+                    <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" {{ 'checked' if show_completed else '' }}>
                     <label class="form-check-label" for="filter-completed">Show completed tasks</label>
                 </div>
             </div>
@@ -190,7 +207,12 @@
             </div>
             <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
                 {% for tag in available_tags %}
-                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</button>
+                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}" data-tag-count="{{ tag_usage.get(tag.id, 0) }}">
+                        <span class="tag-filter-label">#{{ tag.name }}</span>
+                        <span class="tag-filter-remove" role="button" tabindex="0" aria-label="Delete tag #{{ tag.name }}" data-tag-id="{{ tag.id }}">
+                            <i class="bi bi-x-lg"></i>
+                        </span>
+                    </button>
                 {% endfor %}
             </div>
             <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
@@ -244,7 +266,6 @@
                     {% endif %}
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Tags</label>
                     <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
                     <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
                     <div class="input-group input-group-sm inline-tag-input-group">
@@ -259,113 +280,7 @@
     </form>
 </div>
 
-<div class="container mt-2">
-    {% set ns = namespace(has_tasks=false) %}
-    {% for group in task_groups %}
-        {% if group.tasks %}
-            {% set ns.has_tasks = true %}
-        {% endif %}
-        <div class="task-group mb-4">
-            {% if group.title %}
-                <h6 class="text-uppercase text-muted small mb-2">{{ group.title }}</h6>
-            {% endif %}
-            <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
-                {% if group.tasks %}
-                    {% for task in group.tasks %}
-                        {% set has_details = task.has_info() or task.completed_date %}
-                        <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
-                            <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
-                                <div class="d-flex align-items-center flex-grow-1">
-                                    <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
-                                    {% if has_details %}
-                                        <a href="#" class="text-decoration-none no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
-                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
-                                            <div class="flex-grow-1">
-                                                {% if task.completed %}
-                                                    <del>{{ task.name }}</del>
-                                                {% else %}
-                                                    {{ task.name }}
-                                                {% endif %}
-                                            </div>
-                                        </a>
-                                    {% else %}
-                                        <div class="mx-2">
-                                            {% if task.completed %}
-                                                <del>{{ task.name }}</del>
-                                            {% else %}
-                                                {{ task.name }}
-                                            {% endif %}
-                                        </div>
-                                    {% endif %}
-                                </div>
-                                <div class="col-auto d-flex justify-content-end align-items-center">
-                                    <a class="btn btn-pastel-success mx-1" href="{{ url_for('complete_task', id=task.id) }}">
-                                        {% if task.completed %}
-                                            <i class="bi bi-arrow-counterclockwise"></i>
-                                        {% else %}
-                                            <i class="bi bi-check"></i>
-                                        {% endif %}
-                                    </a>
-                                    <button type="button" class="btn btn-outline-secondary tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
-                                        <i class="bi bi-tags"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-outline-secondary mx-1 edit-task-btn"
-                                        data-task-id="{{ task.id }}"
-                                        data-task-name="{{ task.name | e }}"
-                                        data-task-description="{{ task.description | default('') | e }}"
-                                        data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
-                                        data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
-                                    >
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <button type="button" class="btn btn-pastel-danger" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div id="collapse{{ group.dom_id }}-{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ group.dom_id }}">
-                                {% if has_details %}
-                                <div class="accordion-body d-flex flex-column gap-2">
-                                    {% if task.description %}
-                                        <p class="small task-description mb-0">{{ task.description | replace('\n', '<br>') | safe }}</p>
-                                    {% endif %}
-                                    {% if task.end_date %}
-                                        <div class="task-meta d-inline-flex align-items-center gap-2">
-                                            <i class="bi bi-calendar3"></i>
-                                            <span class="due-date" data-utc-date="{{ task.end_date.isoformat() }}"></span>
-                                        </div>
-                                    {% endif %}
-                                    {% if task.completed_date %}
-                                        <div class="task-meta d-inline-flex align-items-center gap-2">
-                                            <i class="bi bi-flag"></i>
-                                            <span class="completed-date" data-completed-date="{{ task.completed_date.isoformat() }}"></span>
-                                        </div>
-                                    {% endif %}
-                                    <div class="d-flex flex-wrap gap-2 task-tags" id="task-tags-{{ task.id }}">
-                                        {% for tag in task.tags %}
-                                            <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</span>
-                                        {% endfor %}
-                                    </div>
-                                    {% for subtask in task.subtasks %}
-                                        <div class="ms-3">
-                                            <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-muted small mb-0">No tasks in this group.</p>
-                {% endif %}
-            </div>
-        </div>
-    {% endfor %}
-    {% if not ns.has_tasks %}
-        <p class="text-muted fst-italic">No tasks match the selected filters.</p>
-    {% endif %}
-</div>
+{% include 'components/task_groups.html' %}
 {% endblock %}
 
 {% block modals %}
@@ -398,13 +313,72 @@
 {% block scripts %}
 {{ super() }}
 <script>
+    function debounce(fn, delay = 300) {
+        let timeoutId;
+        return (...args) => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => fn.apply(null, args), delay);
+        };
+    }
 
-    const sortableGroupIds = {{ sortable_group_ids | tojson }};
-    if (Array.isArray(sortableGroupIds) && sortableGroupIds.length > 0) {
-        sortableGroupIds.forEach((groupId) => {
-            initializeSortable(groupId, 'task');
+    function getTaskGroupsContainer() {
+        return document.getElementById('task-groups-container');
+    }
+
+    function initializeSortableGroups() {
+        const container = getTaskGroupsContainer();
+        if (!container) {
+            return;
+        }
+        let sortableGroupIds = [];
+        try {
+            sortableGroupIds = JSON.parse(container.dataset.sortableGroups || '[]');
+        } catch (error) {
+            sortableGroupIds = [];
+        }
+        if (Array.isArray(sortableGroupIds)) {
+            sortableGroupIds.forEach((groupId) => {
+                initializeSortable(groupId, 'task');
+            });
+        }
+    }
+
+    function getCurrentSortBy() {
+        const container = getTaskGroupsContainer();
+        return container ? container.dataset.sortBy || null : null;
+    }
+
+    function updateChevronForCollapse(collapseId, isExpanded) {
+        if (!collapseId) {
+            return;
+        }
+        const icon = document.querySelector(`.task-chevron[data-chevron-for="${collapseId}"]`);
+        if (icon) {
+            icon.classList.toggle('task-chevron-rotated', isExpanded);
+        }
+    }
+
+    function syncChevronStates() {
+        document.querySelectorAll('.task-chevron').forEach((icon) => {
+            const collapseId = icon.dataset.chevronFor;
+            if (!collapseId) {
+                return;
+            }
+            const target = document.getElementById(collapseId);
+            if (!target) {
+                return;
+            }
+            icon.classList.toggle('task-chevron-rotated', target.classList.contains('show'));
         });
     }
+
+    document.addEventListener('show.bs.collapse', (event) => {
+        updateChevronForCollapse(event.target.id, true);
+    });
+
+    document.addEventListener('hide.bs.collapse', (event) => {
+        updateChevronForCollapse(event.target.id, false);
+    });
 
     const taskForm = document.getElementById('task-form');
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
@@ -420,42 +394,29 @@
 
     const filterForm = document.getElementById('task-filter-form');
     const searchInput = document.getElementById('search');
+    const sortSelect = document.getElementById('sort_by');
+    const filterCompleted = document.getElementById('filter-completed');
+    const filterContainer = document.getElementById('tag-filter-container');
+    const filterClear = document.getElementById('tag-filter-clear');
+    const filterEmptyMessage = document.getElementById('tag-filter-empty');
 
-    // Update the form action to EDIT and populate the fields
-    document.querySelectorAll('.edit-task-btn').forEach((button) => {
-        button.addEventListener('click', (event) => {
-            event.preventDefault();
+    const detailedItemContainer = document.getElementById('detailed-item-container');
+    const quickToggleIcon = document.querySelector('[data-bs-target="#detailed-item-container"] i');
 
-            if (nameField) {
-                nameField.value = button.getAttribute('data-task-name') || '';
+    if (detailedItemContainer && quickToggleIcon) {
+        const updateQuickToggleIcon = () => {
+            if (detailedItemContainer.classList.contains('show')) {
+                quickToggleIcon.classList.remove('bi-chevron-down');
+                quickToggleIcon.classList.add('bi-chevron-up');
+            } else {
+                quickToggleIcon.classList.remove('bi-chevron-up');
+                quickToggleIcon.classList.add('bi-chevron-down');
             }
-
-            if (descriptionField) {
-                descriptionField.value = button.getAttribute('data-task-description') || '';
-                autoResizeTextarea(descriptionField);
-            }
-
-            if (endDateField) {
-                const rawDate = button.getAttribute('data-task-end_date');
-                endDateField.value = rawDate ? convertToLocal(rawDate) : '';
-            }
-
-            const tagString = button.getAttribute('data-task-tags') || '';
-            if (tagsField) {
-                tagsField.value = tagString;
-            }
-            setInlineTagsFromString(tagString, button.getAttribute('data-task-id'));
-
-            const baseUrl = '{{ url_for("edit_task", id=0) }}';
-            const actionUrl = baseUrl.replace('/0', `/${button.getAttribute('data-task-id')}`);
-            if (taskForm) {
-                taskForm.action = actionUrl;
-            }
-
-            expandAccordionItem('detailed-item-container');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-    });
+        };
+        updateQuickToggleIcon();
+        detailedItemContainer.addEventListener('show.bs.collapse', updateQuickToggleIcon);
+        detailedItemContainer.addEventListener('hide.bs.collapse', updateQuickToggleIcon);
+    }
 
     function convertToLocal(utcDateString) {
         if (!utcDateString) {
@@ -665,7 +626,10 @@
         createTagOnServer(inlineTagInput.value)
             .then((tag) => {
                 ensureTagInFilter(tag);
-                inlineSelectedTags.set(String(tag.id), tag);
+                inlineSelectedTags.set(String(tag.id), {
+                    id: Number(tag.id),
+                    name: tag.name,
+                });
                 syncInlineTagsField();
                 renderInlineTagOptions();
                 inlineTagInput.value = '';
@@ -709,29 +673,60 @@
     const newTagFeedback = document.getElementById('new-tag-feedback');
     const createTagBtn = document.getElementById('create-tag-btn');
 
-    const filterContainer = document.getElementById('tag-filter-container');
-    const filterClear = document.getElementById('tag-filter-clear');
-    const filterEmptyMessage = document.getElementById('tag-filter-empty');
-
     let availableTagsMap = new Map();
     let currentTaskId = null;
     let currentTaskTags = new Map();
     let inlineSelectedTags = new Map();
+
+    function updateFilterEmptyState() {
+        if (!filterContainer || !filterEmptyMessage) {
+            return;
+        }
+        const hasTags = filterContainer.querySelectorAll('.tag-filter-button').length > 0;
+        filterEmptyMessage.classList.toggle('d-none', hasTags);
+    }
 
     function hydrateAvailableTagsFromFilter() {
         if (!filterContainer) {
             return;
         }
         availableTagsMap = new Map();
-        filterContainer.querySelectorAll('[data-tag-id]').forEach((button) => {
-            availableTagsMap.set(button.dataset.tagId, {
-                id: Number(button.dataset.tagId),
-                name: button.dataset.tagName,
+        filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
+            const tagId = String(button.dataset.tagId);
+            availableTagsMap.set(tagId, {
+                id: Number(tagId),
+                name: button.dataset.tagName || button.textContent.replace('#', '').trim(),
+                task_count: Number(button.dataset.tagCount || '0'),
             });
         });
-        if (filterEmptyMessage) {
-            filterEmptyMessage.classList.toggle('d-none', availableTagsMap.size > 0);
-        }
+        updateFilterEmptyState();
+    }
+
+    function createFilterButton(tag) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm tag-chip tag-filter-button';
+        button.dataset.tagId = String(tag.id);
+        button.dataset.tagName = tag.name;
+        button.dataset.tagCount = String(tag.task_count || 0);
+
+        const label = document.createElement('span');
+        label.className = 'tag-filter-label';
+        label.textContent = `#${tag.name}`;
+
+        const remove = document.createElement('span');
+        remove.className = 'tag-filter-remove';
+        remove.setAttribute('role', 'button');
+        remove.setAttribute('tabindex', '0');
+        remove.setAttribute('aria-label', `Delete tag #${tag.name}`);
+        remove.dataset.tagId = String(tag.id);
+
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-x-lg';
+        remove.appendChild(icon);
+
+        button.append(label, remove);
+        return button;
     }
 
     function ensureTagInFilter(tag) {
@@ -739,19 +734,40 @@
             return;
         }
         const tagId = String(tag.id);
-        if (!availableTagsMap.has(tagId)) {
-            availableTagsMap.set(tagId, tag);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'btn btn-sm tag-chip tag-filter-button';
-            button.dataset.tagId = tagId;
-            button.dataset.tagName = tag.name;
-            button.textContent = `#${tag.name}`;
-            button.addEventListener('click', handleFilterToggle);
-            filterContainer.appendChild(button);
+        const normalized = {
+            id: Number(tag.id),
+            name: tag.name,
+            task_count: Number(tag.task_count ?? tag.taskCount ?? tag.count ?? 0),
+        };
+        const existing = availableTagsMap.get(tagId);
+        if (existing) {
+            existing.task_count = normalized.task_count;
+            const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${tagId}"]`);
+            if (button) {
+                button.dataset.tagCount = String(existing.task_count);
+            }
+            return;
         }
-        if (filterEmptyMessage) {
-            filterEmptyMessage.classList.add('d-none');
+        availableTagsMap.set(tagId, normalized);
+        const button = createFilterButton(normalized);
+        filterContainer.appendChild(button);
+        updateFilterEmptyState();
+    }
+
+    function adjustFilterTagCount(tagId, delta) {
+        if (!filterContainer) {
+            return;
+        }
+        const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${tagId}"]`);
+        if (!button) {
+            return;
+        }
+        const current = Number(button.dataset.tagCount || '0');
+        const next = Math.max(0, current + delta);
+        button.dataset.tagCount = String(next);
+        const tag = availableTagsMap.get(String(tagId));
+        if (tag) {
+            tag.task_count = next;
         }
     }
 
@@ -781,7 +797,6 @@
             return;
         }
 
-        // Ensure tags from filters are included before rendering
         hydrateAvailableTagsFromFilter();
         currentTaskTags.forEach((tag) => ensureTagInFilter(tag));
 
@@ -854,13 +869,19 @@
                     if (assign) {
                         currentTaskTags.set(tagKey, tag);
                         ensureTagInFilter(tag);
+                        adjustFilterTagCount(tagKey, 1);
                     } else {
                         currentTaskTags.delete(tagKey);
+                        adjustFilterTagCount(tagKey, -1);
                     }
                     updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
                     renderTagOptions();
                     renderInlineTagOptions();
-                    applyTagFilters();
+                    if (getCurrentSortBy() === 'tags') {
+                        refreshTaskList();
+                    } else {
+                        applyTagFilters();
+                    }
                 }
             })
             .catch((error) => {
@@ -894,16 +915,9 @@
             });
     }
 
-    function handleFilterToggle(event) {
-        event.preventDefault();
-        const button = event.currentTarget;
-        button.classList.toggle('active');
-        applyTagFilters();
-    }
-
     function applyTagFilters() {
         const activeTags = filterContainer
-            ? Array.from(filterContainer.querySelectorAll('.tag-chip.active')).map((button) => button.dataset.tagId)
+            ? Array.from(filterContainer.querySelectorAll('.tag-filter-button.active')).map((button) => button.dataset.tagId)
             : [];
 
         document.querySelectorAll('.task-item').forEach((taskElement) => {
@@ -913,27 +927,154 @@
         });
     }
 
-    function attachFilterListeners() {
-        if (!filterContainer) {
+    const handleFilterContainerClick = (event) => {
+        const removeTarget = event.target.closest('.tag-filter-remove');
+        if (removeTarget) {
+            event.preventDefault();
+            const tagId = removeTarget.dataset.tagId;
+            handleTagDelete(tagId, removeTarget);
             return;
         }
-        filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
-            button.addEventListener('click', handleFilterToggle);
-        });
-
-        if (filterClear) {
-            filterClear.addEventListener('click', (event) => {
-                event.preventDefault();
-                filterContainer.querySelectorAll('.tag-chip').forEach((button) => {
-                    button.classList.remove('active');
-                });
-                applyTagFilters();
-            });
+        const button = event.target.closest('.tag-filter-button');
+        if (!button) {
+            return;
         }
+        event.preventDefault();
+        handleFilterToggle(button);
+    };
+
+    function handleFilterToggle(button) {
+        if (!button) {
+            return;
+        }
+        button.classList.toggle('active');
+        applyTagFilters();
+    }
+
+    const handleFilterRemoveKeydown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        const removeTarget = event.target.closest('.tag-filter-remove');
+        if (!removeTarget) {
+            return;
+        }
+        event.preventDefault();
+        handleTagDelete(removeTarget.dataset.tagId, removeTarget);
+    };
+
+    if (filterContainer) {
+        filterContainer.addEventListener('click', handleFilterContainerClick);
+        filterContainer.addEventListener('keydown', handleFilterRemoveKeydown);
+    }
+
+    if (filterClear) {
+        filterClear.addEventListener('click', (event) => {
+            event.preventDefault();
+            filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
+                button.classList.remove('active');
+            });
+            applyTagFilters();
+        });
+    }
+
+    function handleTagDelete(tagId, triggerElement) {
+        if (!tagId || !csrfToken) {
+            return;
+        }
+        const button = triggerElement
+            ? triggerElement.closest('.tag-filter-button')
+            : filterContainer
+            ? filterContainer.querySelector(`.tag-filter-button[data-tag-id="${tagId}"]`)
+            : null;
+        if (!button) {
+            return;
+        }
+        const tagName = button.dataset.tagName || '';
+        const tagCount = Number(button.dataset.tagCount || '0');
+        if (tagCount > 0) {
+            const confirmed = window.confirm(
+                `Tag "#${tagName}" is assigned to ${tagCount} task${tagCount === 1 ? '' : 's'}. Delete it?`
+            );
+            if (!confirmed) {
+                return;
+            }
+        }
+        fetch(`/tags/${tagId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw response;
+                }
+                return response.json();
+            })
+            .then(() => {
+                button.remove();
+                availableTagsMap.delete(String(tagId));
+                updateFilterEmptyState();
+                inlineSelectedTags.delete(String(tagId));
+                syncInlineTagsField();
+                renderInlineTagOptions();
+                applyTagFilters();
+                refreshTaskList();
+            })
+            .catch((error) => {
+                console.error('Unable to delete tag', error);
+            });
+    }
+
+    function attachEditTaskListeners() {
+        document.querySelectorAll('.edit-task-btn').forEach((button) => {
+            if (button.dataset.editListenerAttached === 'true') {
+                return;
+            }
+            button.dataset.editListenerAttached = 'true';
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+
+                if (nameField) {
+                    nameField.value = button.getAttribute('data-task-name') || '';
+                }
+
+                if (descriptionField) {
+                    descriptionField.value = button.getAttribute('data-task-description') || '';
+                    autoResizeTextarea(descriptionField);
+                }
+
+                if (endDateField) {
+                    const rawDate = button.getAttribute('data-task-end_date');
+                    endDateField.value = rawDate ? convertToLocal(rawDate) : '';
+                }
+
+                const tagString = button.getAttribute('data-task-tags') || '';
+                if (tagsField) {
+                    tagsField.value = tagString;
+                }
+                setInlineTagsFromString(tagString, button.getAttribute('data-task-id'));
+
+                const baseUrl = '{{ url_for("edit_task", id=0) }}';
+                const actionUrl = baseUrl.replace('/0', `/${button.getAttribute('data-task-id')}`);
+                if (taskForm) {
+                    taskForm.action = actionUrl;
+                }
+
+                expandAccordionItem('detailed-item-container');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        });
     }
 
     function attachTagManagerListeners() {
         document.querySelectorAll('.tag-manager-btn').forEach((button) => {
+            if (button.dataset.tagManagerListenerAttached === 'true') {
+                return;
+            }
+            button.dataset.tagManagerListenerAttached = 'true';
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 if (!tagModal) {
@@ -1001,12 +1142,85 @@
         textarea.addEventListener('input', () => autoResizeTextarea(textarea));
     });
 
-    attachFilterListeners();
+    function buildFilterUrl() {
+        if (!filterForm) {
+            return window.location.pathname;
+        }
+        const params = new URLSearchParams();
+        const formData = new FormData(filterForm);
+        formData.forEach((value, key) => {
+            if (key === 'search') {
+                const trimmed = (value || '').trim();
+                if (!trimmed) {
+                    return;
+                }
+                params.append(key, trimmed);
+                return;
+            }
+            if (key === 'show_completed') {
+                if (!filterCompleted || !filterCompleted.checked) {
+                    return;
+                }
+            }
+            if (value === null || value === undefined || value === '') {
+                return;
+            }
+            params.append(key, value);
+        });
+        const queryString = params.toString();
+        return `${filterForm.action}${queryString ? `?${queryString}` : ''}`;
+    }
+
+    function refreshTaskList() {
+        if (!filterForm) {
+            return Promise.resolve();
+        }
+        const url = buildFilterUrl();
+        history.replaceState(null, '', url);
+        return fetch(url, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw response;
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (!data || typeof data.html !== 'string') {
+                    return;
+                }
+                const template = document.createElement('template');
+                template.innerHTML = data.html.trim();
+                const newContainer = template.content.firstElementChild;
+                const currentContainer = getTaskGroupsContainer();
+                if (newContainer && currentContainer) {
+                    currentContainer.replaceWith(newContainer);
+                }
+                hydrateAvailableTagsFromFilter();
+                renderInlineTagOptions();
+                initializeSortableGroups();
+                attachEditTaskListeners();
+                attachTagManagerListeners();
+                syncChevronStates();
+                updateDateDisplays();
+                applyTagFilters();
+            })
+            .catch((error) => {
+                console.error('Unable to refresh tasks', error);
+            });
+    }
+
+    initializeSortableGroups();
     hydrateAvailableTagsFromFilter();
     setInlineTagsFromString(tagsField ? tagsField.value : '');
+    attachEditTaskListeners();
     attachTagManagerListeners();
     applyTagFilters();
     updateDateDisplays();
+    syncChevronStates();
 
     if (createTagBtn) {
         createTagBtn.addEventListener('click', handleCreateTag);
@@ -1034,16 +1248,31 @@
         });
     }
 
-    if (filterForm && searchInput) {
-        const debouncedSubmit = debounce(() => {
-            if (filterForm.requestSubmit) {
-                filterForm.requestSubmit();
-            } else {
-                filterForm.submit();
-            }
-        }, 350);
+    if (filterForm) {
+        filterForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            refreshTaskList();
+        });
+    }
+
+    if (sortSelect) {
+        sortSelect.addEventListener('change', () => {
+            refreshTaskList();
+        });
+    }
+
+    if (filterCompleted) {
+        filterCompleted.addEventListener('change', () => {
+            refreshTaskList();
+        });
+    }
+
+    if (searchInput) {
+        const debouncedSearch = debounce(() => {
+            refreshTaskList();
+        }, 250);
         searchInput.addEventListener('input', () => {
-            debouncedSubmit();
+            debouncedSearch();
         });
     }
 </script>

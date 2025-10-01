@@ -338,16 +338,26 @@ def task():
         .all()
     )
 
+    tag_usage = {tag.id: len(tag.tasks) for tag in available_tags}
+
     task_groups = []
     sortable_group_ids = []
 
-    def _sorted_by_rank(tasks):
-        return sorted(tasks, key=lambda item: (item.rank or 0))
+    def _sort_tasks(tasks, key_func=None):
+        key_func = key_func or (lambda item: item.rank or 0)
+        return sorted(
+            tasks,
+            key=lambda item: (
+                bool(item.completed),
+                key_func(item),
+                item.id,
+            ),
+        )
 
     if sort_by == "name":
-        ordered = sorted(
+        ordered = _sort_tasks(
             filtered_tasks,
-            key=lambda item: (item.name or "").lower(),
+            key_func=lambda item: (item.name or "").lower(),
         )
         task_groups.append(
             {
@@ -358,33 +368,76 @@ def task():
             }
         )
     elif sort_by == "due_date":
-        with_due = sorted(
-            [task for task in filtered_tasks if task.end_date],
-            key=lambda item: item.end_date,
-        )
-        without_due = _sorted_by_rank(
-            [task for task in filtered_tasks if not task.end_date]
-        )
+        today = datetime.utcnow().date()
 
-        task_groups.append(
-            {
-                "title": "With due date",
-                "dom_id": "tasks-with-due-date",
-                "tasks": with_due,
-                "sortable": False,
-            }
-        )
-        task_groups.append(
-            {
+        def _due_key(item):
+            return item.end_date or datetime.max
+
+        buckets = {
+            "without_due": {
                 "title": "Without due date",
                 "dom_id": "tasks-without-due-date",
-                "tasks": without_due,
-                "sortable": False,
-            }
-        )
+                "tasks": [],
+            },
+            "today": {
+                "title": "Today",
+                "dom_id": "tasks-due-today",
+                "tasks": [],
+            },
+            "tomorrow": {
+                "title": "Tomorrow",
+                "dom_id": "tasks-due-tomorrow",
+                "tasks": [],
+            },
+            "next_week": {
+                "title": "Next week",
+                "dom_id": "tasks-due-next-week",
+                "tasks": [],
+            },
+            "next_month": {
+                "title": "Next month",
+                "dom_id": "tasks-due-next-month",
+                "tasks": [],
+            },
+            "future": {
+                "title": "Future",
+                "dom_id": "tasks-due-future",
+                "tasks": [],
+            },
+        }
+
+        for task in filtered_tasks:
+            if not task.end_date:
+                buckets["without_due"]["tasks"].append(task)
+                continue
+
+            due_date = task.end_date.date()
+            delta = (due_date - today).days
+            if delta <= 0:
+                buckets["today"]["tasks"].append(task)
+            elif delta == 1:
+                buckets["tomorrow"]["tasks"].append(task)
+            elif 2 <= delta <= 7:
+                buckets["next_week"]["tasks"].append(task)
+            elif 8 <= delta <= 30:
+                buckets["next_month"]["tasks"].append(task)
+            else:
+                buckets["future"]["tasks"].append(task)
+
+        for bucket in buckets.values():
+            if not bucket["tasks"]:
+                continue
+            task_groups.append(
+                {
+                    "title": bucket["title"],
+                    "dom_id": bucket["dom_id"],
+                    "tasks": _sort_tasks(bucket["tasks"], key_func=_due_key),
+                    "sortable": False,
+                }
+            )
     elif sort_by == "tags":
         for tag in available_tags:
-            tagged_tasks = _sorted_by_rank(
+            tagged_tasks = _sort_tasks(
                 [
                     task
                     for task in filtered_tasks
@@ -400,11 +453,12 @@ def task():
                     "dom_id": dom_id,
                     "tasks": tagged_tasks,
                     "sortable": True,
+                    "tag_id": tag.id,
                 }
             )
             sortable_group_ids.append(dom_id)
 
-        untagged = _sorted_by_rank(
+        untagged = _sort_tasks(
             [task for task in filtered_tasks if not task.tags]
         )
         if untagged:
@@ -419,7 +473,7 @@ def task():
             )
             sortable_group_ids.append(dom_id)
     else:  # sort_by == "rank"
-        ordered = _sorted_by_rank(filtered_tasks)
+        ordered = _sort_tasks(filtered_tasks)
         dom_id = "tasks-accordion"
         task_groups.append(
             {
@@ -441,17 +495,32 @@ def task():
     form = TaskForm()
     form.tags.data = ""
 
-    return render_template(
-        "task.html",
-        task_groups=task_groups,
-        task_form=form,
-        scope=g.scope,
-        show_completed=show_completed,
-        available_tags=available_tags,
-        sort_by=sort_by,
-        search_query=search_query,
-        sortable_group_ids=sortable_group_ids,
-    )
+    response_context = {
+        "task_groups": task_groups,
+        "task_form": form,
+        "scope": g.scope,
+        "show_completed": show_completed,
+        "available_tags": available_tags,
+        "tag_usage": tag_usage,
+        "sort_by": sort_by,
+        "search_query": search_query,
+        "sortable_group_ids": sortable_group_ids,
+    }
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        html = render_template(
+            "components/task_groups.html",
+            **response_context,
+        )
+        return jsonify(
+            {
+                "html": html,
+                "sort_by": sort_by,
+                "sortable_group_ids": sortable_group_ids,
+            }
+        )
+
+    return render_template("task.html", **response_context)
 
 
 @app.route("/tags", methods=["GET"])
@@ -492,6 +561,22 @@ def create_tag():
         return jsonify({"error": str(e)}), 500
 
     return jsonify({"tag": tag.to_dict(), "created": created})
+
+
+@app.route("/tags/<int:tag_id>", methods=["DELETE"])
+def delete_tag(tag_id):
+    tag = Tag.query.get_or_404(tag_id)
+
+    try:
+        for task in list(tag.tasks):
+            task.tags.remove(tag)
+        db.session.delete(tag)
+        db.session.commit()
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"deleted": True, "tag_id": tag_id})
 
 
 def _get_task_in_scope_or_404(task_id):
