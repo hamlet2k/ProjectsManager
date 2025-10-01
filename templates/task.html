@@ -9,11 +9,13 @@
     .tag-pill {
         border-radius: 999px;
         padding: 0.25rem 0.75rem;
-        font-size: 0.85rem;
+        font-size: var(--bs-body-font-size, 1rem);
+        font-weight: 500;
         display: inline-flex;
         align-items: center;
         gap: 0.25rem;
-        border: 1px solid var(--bs-border-color);
+        border: var(--bs-border-width, 1px) solid var(--bs-border-color);
+        border-width: calc(var(--bs-border-width, 1px) * 1.5);
         transition: all 0.15s ease-in-out;
     }
 
@@ -41,7 +43,6 @@
 
     .tag-pill {
         background-color: var(--bs-tertiary-bg);
-        border-color: transparent;
         color: var(--bs-secondary-color, var(--bs-secondary));
     }
 
@@ -126,7 +127,10 @@
     .inline-tag-chip {
         border-radius: 999px;
         padding: 0.25rem 0.75rem;
-        border: 1px solid var(--bs-border-color);
+        border: var(--bs-border-width, 1px) solid var(--bs-border-color);
+        border-width: calc(var(--bs-border-width, 1px) * 1.5);
+        font-size: var(--bs-body-font-size, 1rem);
+        font-weight: 500;
         background-color: var(--bs-body-bg);
         cursor: pointer;
         display: inline-flex;
@@ -169,6 +173,20 @@
 
     .tag-filter-button .tag-filter-remove i {
         pointer-events: none;
+    }
+
+    .task-action-btn {
+        border: var(--bs-border-width, 1px) solid var(--bs-border-color);
+        background-color: var(--bs-tertiary-bg);
+        color: var(--bs-body-color);
+        transition: all 0.15s ease-in-out;
+    }
+
+    .task-action-btn:hover,
+    .task-action-btn:focus {
+        background-color: var(--bs-secondary-bg, #e9ecef);
+        border-color: var(--bs-secondary-border-subtle, #ced4da);
+        color: var(--bs-body-color);
     }
 </style>
 {% endblock %}
@@ -268,7 +286,7 @@
                 <div class="mb-3">
                     <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
                     <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
-                    <div class="input-group input-group-sm inline-tag-input-group">
+                    <div class="input-group input-group-sm inline-tag-input-group mt-3">
                         <span class="input-group-text">#</span>
                         <input type="text" class="form-control" id="task-inline-tag-input" placeholder="Add a tag and press Enter">
                         <button class="btn btn-outline-primary" type="button" id="task-inline-tag-add">Add</button>
@@ -404,18 +422,13 @@
     const quickToggleIcon = document.querySelector('[data-bs-target="#detailed-item-container"] i');
 
     if (detailedItemContainer && quickToggleIcon) {
-        const updateQuickToggleIcon = () => {
-            if (detailedItemContainer.classList.contains('show')) {
-                quickToggleIcon.classList.remove('bi-chevron-down');
-                quickToggleIcon.classList.add('bi-chevron-up');
-            } else {
-                quickToggleIcon.classList.remove('bi-chevron-up');
-                quickToggleIcon.classList.add('bi-chevron-down');
-            }
+        const setQuickToggleIcon = (isExpanded) => {
+            quickToggleIcon.classList.toggle('bi-chevron-down', !isExpanded);
+            quickToggleIcon.classList.toggle('bi-chevron-up', isExpanded);
         };
-        updateQuickToggleIcon();
-        detailedItemContainer.addEventListener('show.bs.collapse', updateQuickToggleIcon);
-        detailedItemContainer.addEventListener('hide.bs.collapse', updateQuickToggleIcon);
+        setQuickToggleIcon(detailedItemContainer.classList.contains('show'));
+        detailedItemContainer.addEventListener('show.bs.collapse', () => setQuickToggleIcon(true));
+        detailedItemContainer.addEventListener('hide.bs.collapse', () => setQuickToggleIcon(false));
     }
 
     function convertToLocal(utcDateString) {
@@ -920,10 +933,22 @@
             ? Array.from(filterContainer.querySelectorAll('.tag-filter-button.active')).map((button) => button.dataset.tagId)
             : [];
 
+        const groupsContainer = getTaskGroupsContainer();
+        const currentSort = groupsContainer ? groupsContainer.dataset.sortBy : null;
+
         document.querySelectorAll('.task-item').forEach((taskElement) => {
             const taskTags = (taskElement.dataset.tagIds || '').split(',').filter(Boolean);
             const matches = activeTags.every((tagId) => taskTags.includes(tagId));
             taskElement.style.display = matches ? '' : 'none';
+        });
+
+        document.querySelectorAll('.task-group').forEach((group) => {
+            if (currentSort === 'tags') {
+                const hasVisibleTask = Array.from(group.querySelectorAll('.task-item')).some((task) => task.style.display !== 'none');
+                group.style.display = hasVisibleTask ? '' : 'none';
+            } else {
+                group.style.display = '';
+            }
         });
     }
 
@@ -1273,7 +1298,7 @@
     if (searchInput) {
         const debouncedSearch = debounce(() => {
             refreshTaskList();
-        }, 250);
+        }, 300);
         searchInput.addEventListener('input', () => {
             debouncedSearch();
         });
