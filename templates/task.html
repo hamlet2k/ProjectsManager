@@ -58,48 +58,57 @@
         border: 1px solid var(--bs-border-color);
         padding: 0.75rem 1rem;
     }
+
+    .drag-disabled {
+        opacity: 0.35;
+        cursor: default !important;
+        pointer-events: none;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 
 <div class="container">
-    <form action="{{ url_for('task') }}" method="get">
-        <div class="row g-3">
-            <div class="col form-floating">
-                <select class="form-select form-select-sm" name="sort_by" onchange="this.form.submit()">
-                    <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
-                    <option value="due_date" {{ 'selected' if sort_by == 'due_date' else '' }}>Due Date</option>
-                    <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
-                </select>
-                <label for="sort_by" class="form-label">Sort by</label>
+    <div class="tag-filter-toolbar d-flex flex-column gap-3">
+        <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end">
+            <div class="col-12 col-md-4">
+                <label for="search" class="form-label">Search tasks</label>
+                <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description">
             </div>
-            <div class="col form-floating">
-                <div class="form-check form-switch">
+            <div class="col-12 col-md-3">
+                <label for="sort_by" class="form-label">Sort by</label>
+                <select class="form-select form-select-sm" id="sort_by" name="sort_by" onchange="this.form.submit()">
+                    <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
+                    <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
+                    <option value="tags" {{ 'selected' if sort_by == 'tags' else '' }}>Tags</option>
+                    <option value="due_date" {{ 'selected' if sort_by == 'due_date' else '' }}>Due date</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <div class="form-check form-switch mt-md-4 pt-1">
                     <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" onchange="this.form.submit()" {{ 'checked' if show_completed else '' }}>
-                    <label class="form-check-label" for="filter-completed">Show completed Tasks</label>
+                    <label class="form-check-label" for="filter-completed">Show completed tasks</label>
                 </div>
             </div>
+            <div class="col-12 col-md-2">
+                <button type="submit" class="btn btn-outline-secondary w-100">Apply</button>
+            </div>
+        </form>
+        <div class="d-flex flex-column flex-lg-row gap-2 align-items-lg-center">
+            <div class="d-flex align-items-center gap-2">
+                <span class="tag-section-label mb-0">Filter by tags</span>
+                <a href="#" class="small text-decoration-none" id="tag-filter-clear">clear</a>
+            </div>
+            <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
+                {% for tag in available_tags %}
+                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</button>
+                {% endfor %}
+            </div>
+            <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
+                No tags yet. Add tags to tasks to start filtering.
+            </p>
         </div>
-    </form>
-</div>
-
-<div class="container mt-2">
-    <div class="tag-filter-toolbar d-flex flex-column flex-lg-row gap-2">
-        <div class="d-flex align-items-center gap-2">
-            <span class="tag-section-label">Filter by tags</span>
-            <a href="#" class="small text-decoration-none" id="tag-filter-all">all</a>
-            <span class="text-muted small">/</span>
-            <a href="#" class="small text-decoration-none" id="tag-filter-none">none</a>
-        </div>
-        <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
-            {% for tag in available_tags %}
-                <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</button>
-            {% endfor %}
-        </div>
-        <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
-            No tags yet. Add tags to tasks to start filtering.
-        </p>
     </div>
 </div>
 
@@ -151,73 +160,89 @@
 </div>
 
 <div class="container mt-2">
-    <div class="accordion" id="tasks-accordion">
-        {% for task in tasks %}
-            <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
-                <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ task.id }}">
-                    <a href="#" class="text-decoration-none no-visited" data-bs-toggle="collapse" data-bs-target="#collapse{{ task.id }}">
-                        <div class="col d-flex">
-                            <i class="bi bi-grip-vertical text-muted" id="grip" data-item-id="{{ task.id }}"></i>
-                            <span class="{{'text-decoration-line-through text-muted' if task.completed}}">
-                                {{task.name}}
-                            </span>
-                            {% if task.has_info() %}
-                            <a href="#" data-bs-toggle="collapse" data-bs-target="#collapse{{ task.id }}">
-                                <i class="bi bi-caret-down clickable-icon mx-1"></i>
-                            </a>
-                            {% endif %}
-                        </div>
-                    </a>
-                    <div class="col-auto d-flex justify-content-between align-items-center">
-                        <i class="bi bi-hash tag-manager-btn clickable-icon text-muted mx-1"
-                            data-task-id="{{ task.id }}"
-                            data-task-name="{{ task.name | e }}"
-                            title="Manage tags"></i>
-                        <a href="{{url_for('complete_task',id=task.id)}}">
-                            <i class="bi bi-check2-circle mx-1"
-                                {% if task.completed %}
-                                    style="color: green;"
-                                {% endif %}
-                                data-bs-toggle="tooltip" 
-                                title="Complete Task"></i>
-                        </a>
-                        <i class="bi bi-pencil edit-task-btn clickable-icon text-muted mx-1" onclick="expandAccordionItem('detailed-item-container');"
-                            data-task-id="{{task.id}}"
-                            data-task-name="{{task.name}}"
-                            data-task-end_date="{{task.end_date}}"
-                            data-task-description="{{task.description}}"></i>
-                        <i class="bi bi-trash3 clickable-icon text-muted mx-1" 
-                            onclick="showConfirmationModal('{{url_for('delete_item',item_type='task', id=task.id)}}','Confirm Action','Are you sure?')"></i>
-                    </div>
-                </div>
-                {% if task.has_info() %}
-                <div id="collapse{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#tasks-accordion">
-                    <div class="accordion-body py-0">
-                        <div class="mb-2 d-flex flex-wrap gap-2" id="task-tags-{{ task.id }}">
-                            {% for tag in task.tags %}
-                                <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</span>
-                            {% endfor %}
-                        </div>
-                        {% if task.end_date %}
-                            <i class="bi bi-calendar3 small text-muted" utc-date="{{ task.end_date }}"></i>
-                        {% endif %}
-                        {% if task.description %}
-                            <p class="small">{{ task.description }}</p>
-                        {% endif %}
-                        <!-- Display subtasks -->
-                        {% for subtask in task.subtasks %}
-                            <div class="ms-3">
-                                <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
-                                <!-- Subtask actions here -->
+    {% set ns = namespace(has_tasks=false) %}
+    {% for group in task_groups %}
+        {% if group.tasks %}
+            {% set ns.has_tasks = true %}
+        {% endif %}
+        <div class="task-group mb-4">
+            {% if group.title %}
+                <h6 class="text-uppercase text-muted small mb-2">{{ group.title }}</h6>
+            {% endif %}
+            <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
+                {% if group.tasks %}
+                    {% for task in group.tasks %}
+                        <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
+                            <div class="d-flex justify-content-between align-items-center my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
+                                <a href="#" class="text-decoration-none no-visited flex-grow-1" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}">
+                                    <div class="col d-flex">
+                                        <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
+                                        <div class="mx-2">
+                                            {% if task.completed %}
+                                                <del>{{ task.name }}</del>
+                                            {% else %}
+                                                {{ task.name }}
+                                            {% endif %}
+                                            <div class="d-flex flex-wrap gap-2 mt-1" id="task-tags-{{ task.id }}">
+                                                {% for tag in task.tags %}
+                                                    <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">#{{ tag.name }}</span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </a>
+                                <div class="col-4 d-flex justify-content-end">
+                                    <a class="btn btn-outline-success mx-1" href="{{ url_for('complete_task', id=task.id) }}">
+                                        {% if task.completed %}
+                                            <i class="bi bi-arrow-counterclockwise"></i>
+                                        {% else %}
+                                            <i class="bi bi-check"></i>
+                                        {% endif %}
+                                    </a>
+                                    <button type="button" class="btn btn-outline-secondary tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name }}">
+                                        <i class="bi bi-tags"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-primary mx-1 edit-task-btn"
+                                        data-task-id="{{ task.id }}"
+                                        data-task-name="{{ task.name }}"
+                                        data-task-description="{{ task.description }}"
+                                        data-task-end_date="{{ task.end_date }}"
+                                    >
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
                             </div>
-                        {% endfor %}
-                    </div>
-                </div>
+                            <div id="collapse{{ group.dom_id }}-{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ group.dom_id }}">
+                                {% if task.description or task.end_date %}
+                                <div class="accordion-body">
+                                    {% if task.end_date %}
+                                        <i class="bi bi-calendar3 small text-muted" utc-date="{{ task.end_date }}"></i>
+                                    {% endif %}
+                                    {% if task.description %}
+                                        <p class="small">{{ task.description }}</p>
+                                    {% endif %}
+                                    {% for subtask in task.subtasks %}
+                                        <div class="ms-3">
+                                            <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted small mb-0">No tasks in this group.</p>
                 {% endif %}
             </div>
-        {% endfor %}
-    </div>
-    <!-- Button to add a new task -->
+        </div>
+    {% endfor %}
+    {% if not ns.has_tasks %}
+        <p class="text-muted fst-italic">No tasks match the selected filters.</p>
+    {% endif %}
 </div>
 {% endblock %}
 
@@ -252,7 +277,12 @@
 {{ super() }}
 <script>
 
-    initializeSortable('tasks-accordion', 'task');
+    const sortableGroupIds = {{ sortable_group_ids | tojson }};
+    if (Array.isArray(sortableGroupIds) && sortableGroupIds.length > 0) {
+        sortableGroupIds.forEach((groupId) => {
+            initializeSortable(groupId, 'task');
+        });
+    }
 
     // Update the form action to ADD when the form is reset
     document.getElementById("quick-cancel-btn").addEventListener("click", (event) => {
@@ -323,8 +353,7 @@
     const createTagBtn = document.getElementById('create-tag-btn');
 
     const filterContainer = document.getElementById('tag-filter-container');
-    const filterAll = document.getElementById('tag-filter-all');
-    const filterNone = document.getElementById('tag-filter-none');
+    const filterClear = document.getElementById('tag-filter-clear');
     const filterEmptyMessage = document.getElementById('tag-filter-empty');
 
     let availableTagsMap = new Map();
@@ -562,18 +591,8 @@
             button.addEventListener('click', handleFilterToggle);
         });
 
-        if (filterAll) {
-            filterAll.addEventListener('click', (event) => {
-                event.preventDefault();
-                filterContainer.querySelectorAll('.tag-chip').forEach((button) => {
-                    button.classList.add('active');
-                });
-                applyTagFilters();
-            });
-        }
-
-        if (filterNone) {
-            filterNone.addEventListener('click', (event) => {
+        if (filterClear) {
+            filterClear.addEventListener('click', (event) => {
                 event.preventDefault();
                 filterContainer.querySelectorAll('.tag-chip').forEach((button) => {
                     button.classList.remove('active');
@@ -628,6 +647,7 @@
     attachFilterListeners();
     hydrateAvailableTagsFromFilter();
     attachTagManagerListeners();
+    applyTagFilters();
 
     if (createTagBtn) {
         createTagBtn.addEventListener('click', handleCreateTag);
