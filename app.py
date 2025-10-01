@@ -789,9 +789,11 @@ def add_task():
     form.tags.data = form.tags.data or ""
     items = [item for item in g.scope.tasks if item.owner_id == g.user.id and not item.completed]
     show_modal = False
-    print(form.errors)
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
+    )
     if form.validate_on_submit():
-        print('after form validate on submit')
         # Set the data for the new scope
         item.owner_id = g.user.id
         item.rank = get_max_rank('task') + 1
@@ -812,13 +814,25 @@ def add_task():
         try:
             db.session.add(item)
             db.session.commit()
-            flash("Task added!", "success")
+            success_message = f'Task "{item.name}" added!'
+            if wants_json:
+                return jsonify({"success": True, "message": success_message, "task_id": item.id})
+            flash(success_message, "success")
             form = TaskForm()
         except SQLAlchemyError as e:
             db.session.rollback()
-            flash(f"An error occurred: {str(e)}", "error")
+            error_message = f"An error occurred: {str(e)}"
+            if wants_json:
+                return jsonify({"success": False, "message": error_message}), 500
+            flash(error_message, "error")
         return redirect(request.referrer or url_for("task"))
     else:
+        if wants_json:
+            return jsonify({
+                "success": False,
+                "message": "Please correct the highlighted fields.",
+                "errors": form.errors,
+            }), 400
         show_modal = "task-modal"
     # TODO: This needs to be tested
     return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items, scope=g.scope)
@@ -858,6 +872,10 @@ def edit_task(id):
         abort(404)
     form = TaskForm(obj=item)
     form.tags.data = ",".join(str(tag.id) for tag in item.tags)
+    wants_json = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
+    )
     show_modal = False
 
     if form.validate_on_submit():
@@ -873,13 +891,25 @@ def edit_task(id):
             item.tags = []
         try:
             db.session.commit()
-            flash("Task edited!", "success")
+            success_message = f'Task "{item.name}" updated!'
+            if wants_json:
+                return jsonify({"success": True, "message": success_message, "task_id": item.id})
+            flash(success_message, "success")
             form = TaskForm()
         except SQLAlchemyError as e:
             db.session.rollback()
-            flash(f"An error occurred: {str(e)}", "error")
+            error_message = f"An error occurred: {str(e)}"
+            if wants_json:
+                return jsonify({"success": False, "message": error_message}), 500
+            flash(error_message, "error")
         return redirect(request.referrer or url_for("task"))
     else:
+        if wants_json:
+            return jsonify({
+                "success": False,
+                "message": "Please correct the highlighted fields.",
+                "errors": form.errors,
+            }), 400
         show_modal = "task-modal"
     return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items)
 
@@ -921,8 +951,12 @@ def delete_item(item_type, id):
 
             db.session.delete(item)
             db.session.commit()
-            flash(f"{item_class.__name__} deleted!", "success")
-            return jsonify({'success': True, 'message': f"{item_class.__name__} deleted!"})
+            item_label = getattr(item, "name", None)
+            message = f"{item_class.__name__} deleted!"
+            if item_label:
+                message = f"{item_class.__name__} \"{item_label}\" deleted!"
+            flash(message, "success")
+            return jsonify({'success': True, 'message': message})
         except ValueError as e:
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")

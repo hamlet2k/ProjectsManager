@@ -1,21 +1,23 @@
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}
-            {% if category %}
-            <div class="alert alert-dismissible alert-{{ category }}" {% if category=='info' or category=='success' %}
-                data-auto-dismiss{% endif %}>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                {{ message }}
-            </div>
-            {% else %}
-            <div class="alert alert-dismissible alert-secondary">
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                {{ message }}
-            </div>
-            {% endif %}
-        {% endfor %}
-    {% endif %}
-{% endwith %}
+<div id="flash-container" class="mt-3">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                {% if category %}
+                <div class="alert alert-dismissible alert-{{ category }}" {% if category=='info' or category=='success' %}
+                    data-auto-dismiss{% endif %}>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    {{ message }}
+                </div>
+                {% else %}
+                <div class="alert alert-dismissible alert-secondary">
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    {{ message }}
+                </div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+</div>
 
 <script>
     window.addEventListener('load', () => {

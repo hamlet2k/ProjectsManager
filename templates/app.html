@@ -23,14 +23,60 @@
     overflow: hidden; /* Prevent content from spilling during height transition */
 }
 
+.modal-content {
+    border-radius: 1rem;
+    border: 1px solid var(--bs-border-color);
+    background-color: var(--bs-body-bg);
+    box-shadow: 0 0.75rem 2rem rgba(33, 37, 41, 0.2);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--bs-border-color);
+}
+
+.modal-title {
+    font-weight: 600;
+}
+
 </style>
-{% endblock css %} 
+{% endblock css %}
 
 
 {% block scripts %}
     {{ super() }}
 
 <script>
+    window.displayFlashMessage = function(message, type = 'info') {
+        const flashContainer = document.getElementById('flash-container');
+        const target = flashContainer || document.body;
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type} alert-dismissible fade show mt-2`;
+        alert.setAttribute('role', 'alert');
+        alert.innerHTML = `
+            <div class="d-flex align-items-center gap-2">
+                <span>${message}</span>
+                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+
+        if (target.firstChild) {
+            target.insertBefore(alert, target.firstChild);
+        } else {
+            target.appendChild(alert);
+        }
+
+        if (type === 'success' || type === 'info') {
+            window.setTimeout(() => {
+                const instance = bootstrap.Alert.getOrCreateInstance(alert);
+                instance.close();
+            }, 5000);
+        }
+    };
+
     function expandAccordionItem(accordionItemId) {
         var toggleElement = document.querySelector(`[data-bs-target="#${accordionItemId}"]`);
         if (toggleElement && toggleElement.classList.contains('collapsed')) {

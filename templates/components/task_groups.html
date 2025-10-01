@@ -8,13 +8,13 @@
             {% if group.title %}
                 {% set show_quick_add = (sort_by == 'tags' and group.tag_id is defined) or (sort_by == 'due_date' and group.due_bucket is defined) %}
                 <div class="task-group-header">
-                    <h6 class="text-uppercase text-muted small mb-2 flex-grow-1">{{ group.title }}</h6>
+                    <h6 class="task-group-title text-uppercase text-muted small mb-0">{{ group.title }}</h6>
                     {% if show_quick_add %}
                         <button type="button"
                                 class="btn btn-outline-primary btn-sm task-group-add-btn"
                                 {% if group.tag_id is defined %}data-group-tag-id="{{ group.tag_id if group.tag_id is not none else '' }}"{% endif %}
                                 {% if group.due_bucket is defined %}data-group-due-bucket="{{ group.due_bucket }}"{% endif %}
-                                aria-label="Add task for {{ group.title }}">
+                                aria-label="Quick add task for {{ group.title }}">
                             <i class="bi bi-plus-lg"></i>
                         </button>
                     {% endif %}
@@ -29,7 +29,7 @@
                                 <div class="d-flex align-items-center flex-grow-1">
                                     <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
                                     {% if has_details %}
-                                        <a href="#" class="text-decoration-none text-body task-toggle no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
+                                        <a href="#" class="text-decoration-none task-toggle no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
                                             <div class="flex-grow-1 task-title">
                                                 {% if task.completed %}
                                                     <del>{{ task.name }}</del>
@@ -40,7 +40,7 @@
                                             <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
                                         </a>
                                     {% else %}
-                                        <div class="mx-2 flex-grow-1 task-title text-body">
+                                        <div class="mx-2 flex-grow-1 task-title">
                                             {% if task.completed %}
                                                 <del>{{ task.name }}</del>
                                             {% else %}
@@ -69,7 +69,10 @@
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>
-                                    <button type="button" class="btn task-action-btn" onclick="showConfirmationModal('{{ url_for('delete_item', item_type='task', id=task.id) }}','Confirm Action','Are you sure?')">
+                                    <button type="button" class="btn task-action-btn task-delete-btn"
+                                        data-confirm-url="{{ url_for('delete_item', item_type='task', id=task.id) }}"
+                                        data-task-name="{{ task.name | e }}"
+                                        aria-label="Delete task {{ task.name }}">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </div>
