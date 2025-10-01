@@ -308,10 +308,28 @@ def scope():
 @app.route("/task")
 @scope_required
 def task():
-    show_completed = request.args.get('show_completed', 'false').lower() == 'true'
-    items = [task for task in g.scope.tasks if show_completed or not task.completed]
-    items.sort(key=lambda item: item.rank)
-    form = TaskForm()
+    show_completed = request.args.get("show_completed", "false").lower() == "true"
+    sort_by = request.args.get("sort_by", "rank")
+    valid_sorts = {"rank", "name", "tags", "due_date"}
+    if sort_by not in valid_sorts:
+        sort_by = "rank"
+
+    search_query = request.args.get("search", "") or ""
+    search_query = search_query.strip()
+    search_term = search_query.lower()
+
+    filtered_tasks = []
+    for task in g.scope.tasks:
+        if not show_completed and task.completed:
+            continue
+
+        if search_term:
+            haystack = f"{task.name or ''} {task.description or ''}".lower()
+            if search_term not in haystack:
+                continue
+
+        filtered_tasks.append(task)
+
     available_tags = (
         Tag.query.join(Tag.tasks)
         .filter(Task.scope_id == g.scope.id)
@@ -319,13 +337,119 @@ def task():
         .order_by(Tag.name.asc())
         .all()
     )
+
+    task_groups = []
+    sortable_group_ids = []
+
+    def _sorted_by_rank(tasks):
+        return sorted(tasks, key=lambda item: (item.rank or 0))
+
+    if sort_by == "name":
+        ordered = sorted(
+            filtered_tasks,
+            key=lambda item: (item.name or "").lower(),
+        )
+        task_groups.append(
+            {
+                "title": None,
+                "dom_id": "tasks-accordion",
+                "tasks": ordered,
+                "sortable": False,
+            }
+        )
+    elif sort_by == "due_date":
+        with_due = sorted(
+            [task for task in filtered_tasks if task.end_date],
+            key=lambda item: item.end_date,
+        )
+        without_due = _sorted_by_rank(
+            [task for task in filtered_tasks if not task.end_date]
+        )
+
+        task_groups.append(
+            {
+                "title": "With due date",
+                "dom_id": "tasks-with-due-date",
+                "tasks": with_due,
+                "sortable": False,
+            }
+        )
+        task_groups.append(
+            {
+                "title": "Without due date",
+                "dom_id": "tasks-without-due-date",
+                "tasks": without_due,
+                "sortable": False,
+            }
+        )
+    elif sort_by == "tags":
+        for tag in available_tags:
+            tagged_tasks = _sorted_by_rank(
+                [
+                    task
+                    for task in filtered_tasks
+                    if any(t.id == tag.id for t in task.tags)
+                ]
+            )
+            if not tagged_tasks:
+                continue
+            dom_id = f"tasks-tag-{tag.id}"
+            task_groups.append(
+                {
+                    "title": f"#{tag.name}",
+                    "dom_id": dom_id,
+                    "tasks": tagged_tasks,
+                    "sortable": True,
+                }
+            )
+            sortable_group_ids.append(dom_id)
+
+        untagged = _sorted_by_rank(
+            [task for task in filtered_tasks if not task.tags]
+        )
+        if untagged:
+            dom_id = "tasks-untagged"
+            task_groups.append(
+                {
+                    "title": "Untagged",
+                    "dom_id": dom_id,
+                    "tasks": untagged,
+                    "sortable": True,
+                }
+            )
+            sortable_group_ids.append(dom_id)
+    else:  # sort_by == "rank"
+        ordered = _sorted_by_rank(filtered_tasks)
+        dom_id = "tasks-accordion"
+        task_groups.append(
+            {
+                "title": None,
+                "dom_id": dom_id,
+                "tasks": ordered,
+                "sortable": True,
+            }
+        )
+        sortable_group_ids.append(dom_id)
+
+    # Ensure sortable group IDs are unique and only for sortable groups
+    sortable_group_ids = [
+        group["dom_id"]
+        for group in task_groups
+        if group.get("sortable")
+    ]
+
+    form = TaskForm()
+
     return render_template(
         "task.html",
-        tasks=items,
+        task_groups=task_groups,
         task_form=form,
         scope=g.scope,
         show_completed=show_completed,
         available_tags=available_tags,
+        sort_by=sort_by,
+        search_query=search_query,
+        sortable_group_ids=sortable_group_ids,
     )
 
 
