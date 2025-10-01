@@ -1173,6 +1173,7 @@
 
     function refreshTaskList() {
         if (!filterForm) {
+            console.warn('refreshTaskList: filterForm is missing. Task list will not be updated.');
             return Promise.resolve();
         }
         const url = buildFilterUrl();
