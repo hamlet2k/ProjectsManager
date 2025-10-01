@@ -50,7 +50,9 @@
                                     {% endif %}
                                 </div>
                                 <div class="task-action-group">
-                                    <a class="btn task-action-btn" href="{{ url_for('complete_task', id=task.id) }}">
+                                    <a class="btn task-action-btn task-complete-btn"
+                                        href="{{ url_for('complete_task', id=task.id) }}"
+                                        data-task-name="{{ task.name | e }}">
                                         {% if task.completed %}
                                             <i class="bi bi-arrow-counterclockwise"></i>
                                         {% else %}

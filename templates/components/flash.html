@@ -1,4 +1,29 @@
-<div id="flash-container" class="mt-3">
+<style>
+    #flash-container {
+        position: fixed;
+        top: 1rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1080;
+        width: min(100%, 36rem);
+        padding: 0 1rem;
+        pointer-events: none;
+    }
+
+    #flash-container .alert {
+        pointer-events: auto;
+        box-shadow: 0 0.75rem 1.5rem rgba(33, 37, 41, 0.25);
+    }
+
+    @media (max-width: 576px) {
+        #flash-container {
+            top: 0.5rem;
+            padding: 0 0.5rem;
+        }
+    }
+</style>
+
+<div id="flash-container" class="flash-stack">
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -20,27 +45,53 @@
 </div>
 
 <script>
-    window.addEventListener('load', () => {
-        const alerts = document.querySelectorAll('.alert[data-auto-dismiss]');
+    (function () {
+        const flashContainer = document.getElementById('flash-container');
 
-        alerts.forEach(alert => {
-            setTimeout(() => {
-                alert.style.opacity = '0'; // Start fading out
-                const alertHeight = alert.offsetHeight; // Get the current height of the alert
-                alert.style.height = `${alertHeight}px`; // Set a fixed height
-                setTimeout(() => {
-                    alert.style.height = '0'; // Transition to height 0
-                    alert.style.paddingTop = '0';
-                    alert.style.paddingBottom = '0';
-                    alert.style.marginBottom = '0';
-                }, 100); // Start collapsing shortly after fade out begins
+        function updateFlashOffset() {
+            if (!flashContainer) {
+                return;
+            }
+            const nav = document.querySelector('nav.navbar');
+            const navHeight = nav ? nav.getBoundingClientRect().height : 0;
+            const baseOffset = window.innerWidth <= 576 ? 8 : 16;
+            const computedTop = Math.max(navHeight + baseOffset, baseOffset);
+            flashContainer.style.top = `${computedTop}px`;
+        }
 
-                // Finally, hide completely
+        updateFlashOffset();
+
+        window.addEventListener('resize', updateFlashOffset);
+        window.addEventListener('orientationchange', updateFlashOffset);
+
+        const navbarCollapse = document.getElementById('navbarNav');
+        if (navbarCollapse) {
+            navbarCollapse.addEventListener('shown.bs.collapse', updateFlashOffset);
+            navbarCollapse.addEventListener('hidden.bs.collapse', updateFlashOffset);
+        }
+
+        window.addEventListener('load', () => {
+            updateFlashOffset();
+            const alerts = document.querySelectorAll('.alert[data-auto-dismiss]');
+
+            alerts.forEach((alert) => {
                 setTimeout(() => {
-                    alert.style.display = 'none';
-                }, 1100); // This should be after the height transition is complete
-            }, 5000); // Time before fade-out starts
+                    alert.style.opacity = '0'; // Start fading out
+                    const alertHeight = alert.offsetHeight; // Get the current height of the alert
+                    alert.style.height = `${alertHeight}px`; // Set a fixed height
+                    setTimeout(() => {
+                        alert.style.height = '0'; // Transition to height 0
+                        alert.style.paddingTop = '0';
+                        alert.style.paddingBottom = '0';
+                        alert.style.marginBottom = '0';
+                    }, 100); // Start collapsing shortly after fade out begins
+
+                    // Finally, hide completely
+                    setTimeout(() => {
+                        alert.style.display = 'none';
+                    }, 1100); // This should be after the height transition is complete
+                }, 5000); // Time before fade-out starts
+            });
         });
-    });
-
+    })();
 </script>

@@ -1587,6 +1587,64 @@
         });
     }
 
+    const taskCompleteListenerAttached = new WeakSet();
+    function attachTaskCompleteListeners() {
+        document.querySelectorAll('.task-complete-btn').forEach((button) => {
+            if (taskCompleteListenerAttached.has(button)) {
+                return;
+            }
+            taskCompleteListenerAttached.add(button);
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                const url = button.getAttribute('href');
+                if (!url) {
+                    return;
+                }
+                const taskName = button.dataset.taskName || button.getAttribute('aria-label') || 'this task';
+
+                fetch(url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        Accept: 'application/json',
+                    },
+                })
+                    .then((response) =>
+                        response
+                            .json()
+                            .catch(() => null)
+                            .then((data) => ({ ok: response.ok, data }))
+                    )
+                    .then(({ ok, data }) => {
+                        if (!ok || !data) {
+                            throw new Error('Invalid response');
+                        }
+                        if (!data.success) {
+                            const errorMessage = data.message || `Unable to update "${taskName}".`;
+                            displayFlashMessage(errorMessage, data.category || 'danger');
+                            return;
+                        }
+
+                        const message =
+                            data.message
+                            || (data.completed
+                                ? `Task "${taskName}" completed.`
+                                : `Task "${taskName}" restored.`);
+                        const category = data.category || 'success';
+                        displayFlashMessage(message, category);
+
+                        return refreshTaskList().catch((error) => {
+                            console.error('Unable to refresh tasks after completion', error);
+                            displayFlashMessage('Task updated, but the list could not be refreshed.', 'warning');
+                        });
+                    })
+                    .catch((error) => {
+                        console.error('Unable to toggle task completion', error);
+                        displayFlashMessage(`Unable to update "${taskName}".`, 'danger');
+                    });
+            });
+        });
+    }
+
     function attachTagManagerListeners() {
         document.querySelectorAll('.tag-manager-btn').forEach((button) => {
             if (button.dataset.tagManagerListenerAttached === 'true') {
@@ -1655,6 +1713,30 @@
         if (typeof window.fetch === 'function') {
             taskForm.addEventListener('submit', handleTaskFormSubmit);
         }
+        taskForm.addEventListener('keydown', (event) => {
+            if (!(event.ctrlKey || event.metaKey)) {
+                return;
+            }
+            if (event.key !== 'Enter') {
+                return;
+            }
+            if (isEditingCurrentTask()) {
+                return;
+            }
+            if (taskForm.dataset.ajaxSubmitting === 'true') {
+                return;
+            }
+            event.preventDefault();
+            if (quickAddBtn) {
+                quickAddBtn.click();
+                return;
+            }
+            if (typeof taskForm.requestSubmit === 'function') {
+                taskForm.requestSubmit();
+            } else {
+                taskForm.submit();
+            }
+        });
     }
 
     document.querySelectorAll('textarea.auto-resize-textarea').forEach((textarea) => {
@@ -1723,6 +1805,7 @@
                 hydrateAvailableTagsFromFilter();
                 renderInlineTagOptions();
                 initializeSortableGroups();
+                attachTaskCompleteListeners();
                 attachEditTaskListeners();
                 attachTagManagerListeners();
                 attachTaskDeleteListeners();
@@ -1739,6 +1822,7 @@
     initializeSortableGroups();
     hydrateAvailableTagsFromFilter();
     setInlineTagsFromString(tagsField ? tagsField.value : '');
+    attachTaskCompleteListeners();
     attachEditTaskListeners();
     attachTagManagerListeners();
     attachTaskDeleteListeners();
@@ -1807,12 +1891,42 @@
     }
 
     document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            if (!taskForm || isEditingCurrentTask()) {
+                return;
+            }
+            if (document.body && document.body.classList.contains('modal-open')) {
+                return;
+            }
+            const activeElement = document.activeElement;
+            const activeInsideForm = activeElement ? taskForm.contains(activeElement) : false;
+            const hasContent = [nameField, descriptionField, endDateField].some((field) => {
+                if (!field) {
+                    return false;
+                }
+                return (field.value || '').trim() !== '';
+            });
+            const detailsExpanded = detailedItemContainer && detailedItemContainer.classList.contains('show');
+            if (!activeInsideForm && !hasContent && !detailsExpanded) {
+                return;
+            }
+            event.preventDefault();
+            if (quickCancelBtn) {
+                quickCancelBtn.click();
+            } else {
+                taskForm.reset();
+                collapseAccordionItem('detailed-item-container');
+                applyTaskFormErrors({});
+            }
+            return;
+        }
+
         const isShortcutModifier = event.ctrlKey || event.metaKey;
         if (!isShortcutModifier) {
             return;
         }
         const key = (event.key || '').toLowerCase();
-        if (key === 'n') {
+        if (key === 'arrowup') {
             event.preventDefault();
             focusNewTask(true);
         }
