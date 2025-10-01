@@ -898,10 +898,11 @@ def edit_task(id):
             form = TaskForm()
         except SQLAlchemyError as e:
             db.session.rollback()
-            error_message = f"An error occurred: {str(e)}"
+            logging.error("Database error during task update", exc_info=True)
+            generic_error_message = "An internal error occurred while updating the task. Please try again later."
             if wants_json:
-                return jsonify({"success": False, "message": error_message}), 500
-            flash(error_message, "error")
+                return jsonify({"success": False, "message": generic_error_message}), 500
+            flash(generic_error_message, "error")
         return redirect(request.referrer or url_for("task"))
     else:
         if wants_json:
