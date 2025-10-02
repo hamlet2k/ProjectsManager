@@ -75,24 +75,13 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        const defaultAction = '{{ url_for("add_scope") }}';
+        // Initialize with create scope content by default
         if (scopeForm) {
-            const currentAction = scopeForm.getAttribute('action') || defaultAction;
-            if (currentAction !== defaultAction) {
-                const currentNameField = scopeForm.querySelector('#name');
-                const currentName = currentNameField ? currentNameField.value : '';
-                setScopeModalContent({
-                    title: 'Edit scope',
-                    description: buildEditScopeDescription(currentName),
-                    submitLabel: 'Save changes',
-                });
-            } else {
-                setScopeModalContent({
-                    title: 'Create scope',
-                    description: buildCreateScopeDescription(),
-                    submitLabel: 'Create scope',
-                });
-            }
+            setScopeModalContent({
+                title: 'Create scope',
+                description: buildCreateScopeDescription(),
+                submitLabel: 'Create scope',
+            });
         }
 
         {% if show_modal %}
@@ -118,9 +107,9 @@
         item.addEventListener('click', () => {
             {% for field in scope_form %}
                 {% if field.name != 'csrf_token' and field.type != 'SubmitField' %}
-                    const fieldElement = document.getElementById('{{ field.name }}');
-                    if (fieldElement) {
-                        fieldElement.value = item.getAttribute('data-scope-{{ field.name }}') || '';
+                    const fieldElement_{{ field.name }} = document.getElementById('{{ field.name }}');
+                    if (fieldElement_{{ field.name }}) {
+                        fieldElement_{{ field.name }}.value = item.getAttribute('data-scope-{{ field.name }}') || '';
                     }
                 {% endif %}
             {% endfor %}
