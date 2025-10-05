@@ -1265,6 +1265,7 @@
     let currentTaskId = null;
     let currentTaskTags = new Map();
     let inlineSelectedTags = new Map();
+    const pendingTagDeletions = new Map();
 
     function updateFilterEmptyState() {
         if (!filterContainer || !filterEmptyMessage) {
@@ -1317,46 +1318,208 @@
         return button;
     }
 
+    function normalizeTagPayload(tag) {
+        if (!tag || tag.id === undefined || tag.id === null) {
+            return null;
+        }
+        const id = Number(tag.id);
+        if (Number.isNaN(id)) {
+            return null;
+        }
+        const name = typeof tag.name === 'string' ? tag.name : '';
+        const rawCount = tag.task_count ?? tag.taskCount ?? tag.count ?? 0;
+        const count = Number(rawCount);
+        return {
+            id,
+            name,
+            task_count: Number.isNaN(count) ? 0 : count,
+        };
+    }
+
     function ensureTagInFilter(tag) {
-        if (!filterContainer || !tag) {
+        if (!filterContainer) {
             return;
         }
-        const tagId = String(tag.id);
-        const normalized = {
-            id: Number(tag.id),
-            name: tag.name,
-            task_count: Number(tag.task_count ?? tag.taskCount ?? tag.count ?? 0),
-        };
+        const normalized = normalizeTagPayload(tag);
+        if (!normalized) {
+            return;
+        }
+        const tagId = String(normalized.id);
         const existing = availableTagsMap.get(tagId);
         if (existing) {
+            existing.name = normalized.name;
             existing.task_count = normalized.task_count;
             const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${tagId}"]`);
             if (button) {
+                button.dataset.tagName = normalized.name;
                 button.dataset.tagCount = String(existing.task_count);
+                const label = button.querySelector('.tag-filter-label');
+                if (label) {
+                    label.textContent = `#${normalized.name}`;
+                }
+                const remove = button.querySelector('.tag-filter-remove');
+                if (remove) {
+                    remove.dataset.tagId = tagId;
+                    remove.setAttribute('aria-label', `Delete tag #${normalized.name}`);
+                }
             }
             return;
         }
-        availableTagsMap.set(tagId, normalized);
+        availableTagsMap.set(tagId, { ...normalized });
         const button = createFilterButton(normalized);
         filterContainer.appendChild(button);
         updateFilterEmptyState();
     }
 
-    function adjustFilterTagCount(tagId, delta) {
+    function removeTagLocally(tagId, { tagName = '', applyFilters = true, refresh = false, showMessage = false } = {}) {
+        const key = String(tagId);
+        if (filterContainer) {
+            const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${key}"]`);
+            if (button) {
+                button.remove();
+            }
+        }
+        availableTagsMap.delete(key);
+        inlineSelectedTags.delete(key);
+        currentTaskTags.delete(key);
+        syncInlineTagsField();
+        renderInlineTagOptions();
+        renderTagOptions();
+        updateFilterEmptyState();
+        if (applyFilters) {
+            applyTagFilters();
+        }
+        if (refresh) {
+            refreshTaskList();
+        }
+        if (showMessage && typeof displayFlashMessage === 'function' && tagName) {
+            displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
+        }
+    }
+
+    function deleteTagFromServer(tagId, tagName = '', { onSuccess = null, onError = null, showError = true } = {}) {
+        if (!tagId || !csrfToken) {
+            return Promise.resolve(false);
+        }
+        const key = String(tagId);
+        if (pendingTagDeletions.has(key)) {
+            return pendingTagDeletions.get(key);
+        }
+        const request = fetch(`/tags/${tagId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw response;
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (typeof onSuccess === 'function') {
+                    onSuccess(data);
+                }
+                return true;
+            })
+            .catch((error) => {
+                console.error('Unable to delete tag', error);
+                if (showError && typeof displayFlashMessage === 'function') {
+                    const label = tagName ? `tag "#${tagName}"` : 'tag';
+                    displayFlashMessage(`Unable to delete ${label}.`, 'danger');
+                }
+                if (typeof onError === 'function') {
+                    onError(error);
+                }
+                return false;
+            })
+            .finally(() => {
+                pendingTagDeletions.delete(key);
+            });
+        pendingTagDeletions.set(key, request);
+        return request;
+    }
+
+    function syncFilterTags(tags = []) {
         if (!filterContainer) {
             return;
         }
-        const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${tagId}"]`);
+        const seen = new Set();
+        tags.forEach((tag) => {
+            const normalized = normalizeTagPayload(tag);
+            if (!normalized) {
+                return;
+            }
+            ensureTagInFilter(normalized);
+            seen.add(String(normalized.id));
+        });
+        let removedAny = false;
+        let removedActive = false;
+        const existingButtons = Array.from(filterContainer.querySelectorAll('.tag-filter-button'));
+        existingButtons.forEach((button) => {
+            const tagId = button.dataset.tagId;
+            if (seen.has(tagId)) {
+                return;
+            }
+            removedAny = true;
+            if (button.classList.contains('active')) {
+                removedActive = true;
+            }
+            removeTagLocally(tagId, {
+                tagName: button.dataset.tagName || '',
+                applyFilters: false,
+                refresh: false,
+                showMessage: false,
+            });
+        });
+        if (removedAny) {
+            if (removedActive) {
+                applyTagFilters();
+            }
+            updateFilterEmptyState();
+        }
+    }
+
+    function getFilterTagCount(tagId) {
+        const key = String(tagId);
+        const tag = availableTagsMap.get(key);
+        if (tag && typeof tag.task_count === 'number' && !Number.isNaN(tag.task_count)) {
+            return tag.task_count;
+        }
+        if (!filterContainer) {
+            return 0;
+        }
+        const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${key}"]`);
         if (!button) {
-            return;
+            return 0;
         }
-        const current = Number(button.dataset.tagCount || '0');
-        const next = Math.max(0, current + delta);
-        button.dataset.tagCount = String(next);
-        const tag = availableTagsMap.get(String(tagId));
+        const value = Number(button.dataset.tagCount || '0');
+        return Number.isNaN(value) ? 0 : value;
+    }
+
+    function setFilterTagCount(tagId, value) {
+        if (!filterContainer) {
+            throw new Error('setFilterTagCount: filterContainer is null');
+        }
+        const key = String(tagId);
+        const normalized = Math.max(0, Number(value) || 0);
+        const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${key}"]`);
+        if (button) {
+            button.dataset.tagCount = String(normalized);
+        }
+        const tag = availableTagsMap.get(key);
         if (tag) {
-            tag.task_count = next;
+            tag.task_count = normalized;
         }
+        return normalized;
+    }
+
+    function adjustFilterTagCount(tagId, delta) {
+        const current = getFilterTagCount(tagId);
+        const next = current + Number(delta || 0);
+        return setFilterTagCount(tagId, next);
     }
 
     function updateTaskTagDisplay(taskId, tags) {
@@ -1454,18 +1617,20 @@
                 if (data && data.tag) {
                     const tag = data.tag;
                     const tagKey = String(tag.id);
+                    let updatedCount = null;
                     if (assign) {
                         currentTaskTags.set(tagKey, tag);
                         ensureTagInFilter(tag);
                         adjustFilterTagCount(tagKey, 1);
                     } else {
                         currentTaskTags.delete(tagKey);
-                        adjustFilterTagCount(tagKey, -1);
+                        updatedCount = adjustFilterTagCount(tagKey, -1);
                     }
                     updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
                     renderTagOptions();
                     renderInlineTagOptions();
-                    if (getCurrentSortBy() === 'tags') {
+                    const shouldRefreshSort = getCurrentSortBy() === 'tags';
+                    if (shouldRefreshSort) {
                         refreshTaskList();
                     } else {
                         applyTagFilters();
@@ -1590,18 +1755,18 @@
         if (!button) {
             return;
         }
+        const tagKey = String(tagId);
         const tagName = button.dataset.tagName || '';
-        const tagCount = Number(button.dataset.tagCount || '0');
-        const proceed = typeof showConfirmationModal === 'function'
+        const currentCount = setFilterTagCount(tagKey, getFilterTagCount(tagKey));
+        const shouldConfirm = currentCount > 0 && typeof showConfirmationModal === 'function';
+        const proceed = shouldConfirm
             ? showConfirmationModal({
                   title: 'Delete tag',
                   message: `Delete tag "#${tagName}"?`,
                   description: `Deleting this tag will remove "#${tagName}" from every associated task.`,
                   details: [
                       `Tag: #${tagName}`,
-                      tagCount > 0
-                          ? `${tagCount} task${tagCount === 1 ? '' : 's'} currently use this tag.`
-                          : 'This tag is not assigned to any tasks.',
+                      `${currentCount} task${currentCount === 1 ? '' : 's'} currently use this tag.`,
                       'This action cannot be undone.',
                   ],
                   confirmLabel: 'Delete tag',
@@ -1613,34 +1778,16 @@
             if (!confirmed) {
                 return;
             }
-            fetch(`/tags/${tagId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
+            deleteTagFromServer(tagId, tagName, {
+                onSuccess: () => {
+                    removeTagLocally(tagKey, {
+                        tagName,
+                        applyFilters: true,
+                        refresh: true,
+                        showMessage: true,
+                    });
                 },
-            })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw response;
-                    }
-                    return response.json();
-                })
-                .then(() => {
-                    button.remove();
-                    availableTagsMap.delete(String(tagId));
-                    updateFilterEmptyState();
-                    inlineSelectedTags.delete(String(tagId));
-                    syncInlineTagsField();
-                    renderInlineTagOptions();
-                    applyTagFilters();
-                    refreshTaskList();
-                    displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
-                })
-                .catch((error) => {
-                    console.error('Unable to delete tag', error);
-                    displayFlashMessage(`Unable to delete tag "#${tagName}".`, 'danger');
-                });
+            });
         });
     }
 
@@ -2007,7 +2154,11 @@
                 if (newContainer && currentContainer) {
                     currentContainer.replaceWith(newContainer);
                 }
-                hydrateAvailableTagsFromFilter();
+                if (Array.isArray(data.available_tags)) {
+                    syncFilterTags(data.available_tags);
+                } else {
+                    hydrateAvailableTagsFromFilter();
+                }
                 renderInlineTagOptions();
                 initializeSortableGroups();
                 attachTaskCompleteListeners();
