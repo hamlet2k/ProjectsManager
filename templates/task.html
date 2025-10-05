@@ -278,6 +278,17 @@
         font-size: calc(1rem * var(--task-quick-add-scale));
     }
 
+    [data-bs-theme="dark"] .task-group-add-btn {
+        --bs-btn-color: var(--bs-white);
+        --bs-btn-border-color: rgba(255, 255, 255, 0.65);
+        --bs-btn-hover-color: var(--bs-white);
+        --bs-btn-hover-bg: rgba(255, 255, 255, 0.2);
+        --bs-btn-hover-border-color: rgba(255, 255, 255, 0.85);
+        --bs-btn-active-bg: rgba(255, 255, 255, 0.3);
+        --bs-btn-active-border-color: rgba(255, 255, 255, 0.9);
+        color: var(--bs-white);
+    }
+
     .task-filter-collapse.collapse:not(.show) {
         display: none;
     }
@@ -836,6 +847,7 @@
         }
 
         applyTaskFormErrors({});
+        syncInlineTagsField();
         const formData = new FormData(taskForm);
         if (formData.has('name')) {
             formData.set('name', (formData.get('name') || '').trim());
