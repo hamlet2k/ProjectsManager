@@ -14,8 +14,15 @@ task_tags = db.Table(
 class Tag(db.Model):
     __tablename__ = "tag"
 
+    __table_args__ = (
+        db.UniqueConstraint("scope_id", "name", name="uq_tag_scope_name"),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), unique=True, nullable=False)
+    name = db.Column(db.String(64), nullable=False)
+    scope_id = db.Column(db.Integer, db.ForeignKey("scope.id"), nullable=True)
+
+    scope = db.relationship("Scope", back_populates="tags")
 
     tasks = db.relationship(
         "Task",
@@ -28,6 +35,7 @@ class Tag(db.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "scope_id": self.scope_id,
             "task_count": len(self.tasks) if self.tasks is not None else 0,
         }
 

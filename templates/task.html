@@ -1262,32 +1262,31 @@
             ensureTagInFilter(normalized);
             seen.add(String(normalized.id));
         });
-        let updatedSelected = false;
-        filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
+        let removedAny = false;
+        let removedActive = false;
+        const existingButtons = Array.from(filterContainer.querySelectorAll('.tag-filter-button'));
+        existingButtons.forEach((button) => {
             const tagId = button.dataset.tagId;
-            if (!seen.has(tagId)) {
-                const tagName = button.dataset.tagName || '';
-                const numericId = Number(tagId);
-                availableTagsMap.delete(tagId);
-                inlineSelectedTags.delete(tagId);
-                currentTaskTags.delete(tagId);
-                button.remove();
-                updatedSelected = true;
-                deleteTagFromServer(numericId, tagName, {
-                    showError: false,
-                    onError: () => {
-                        ensureTagInFilter({ id: numericId, name: tagName, task_count: 0 });
-                        renderInlineTagOptions();
-                        renderTagOptions();
-                        updateFilterEmptyState();
-                    },
-                });
+            if (seen.has(tagId)) {
+                return;
             }
+            removedAny = true;
+            if (button.classList.contains('active')) {
+                removedActive = true;
+            }
+            removeTagLocally(tagId, {
+                tagName: button.dataset.tagName || '',
+                applyFilters: false,
+                refresh: false,
+                showMessage: false,
+            });
         });
-        if (updatedSelected) {
-            syncInlineTagsField();
+        if (removedAny) {
+            if (removedActive) {
+                applyTagFilters();
+            }
+            updateFilterEmptyState();
         }
-        updateFilterEmptyState();
     }
 
     function getFilterTagCount(tagId) {
@@ -1442,19 +1441,6 @@
                         refreshTaskList();
                     } else {
                         applyTagFilters();
-                    }
-                    if (!assign && updatedCount !== null && updatedCount <= 0) {
-                        deleteTagFromServer(tag.id, tag.name, {
-                            showError: false,
-                            onSuccess: () => {
-                                removeTagLocally(tagKey, {
-                                    tagName: tag.name,
-                                    applyFilters: !shouldRefreshSort,
-                                    refresh: false,
-                                    showMessage: false,
-                                });
-                            },
-                        });
                     }
                 }
             })

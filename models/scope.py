@@ -19,6 +19,12 @@ class Scope(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     
     tasks = db.relationship("Task", backref="scope", lazy=True, cascade="all, delete-orphan")
+    tags = db.relationship(
+        "Tag",
+        back_populates="scope",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Scope {self.name}>"

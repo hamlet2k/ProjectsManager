@@ -17,6 +17,7 @@ from flask import (
 
 from flask_migrate import Migrate
 
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import db
 
@@ -306,6 +307,48 @@ def _user_owns_scope(scope: Scope) -> bool:
     return g.user is not None and scope is not None and scope.owner_id == g.user.id
 
 
+def _ensure_tags_assigned_to_current_scope(tags):
+    """Ensure every provided tag belongs to the active scope."""
+
+    if not tags:
+        return False
+
+    if g.scope is None:
+        abort(400)
+
+    changed = False
+    for tag in tags:
+        if tag.scope_id is None:
+            tag.scope_id = g.scope.id
+            changed = True
+        elif tag.scope_id != g.scope.id:
+            abort(404)
+
+    return changed
+
+
+def _get_tags_for_scope(tag_ids):
+    if not tag_ids:
+        return []
+
+    if g.scope is None:
+        abort(400)
+
+    tags = (
+        Tag.query.filter(Tag.id.in_(tag_ids))
+        .filter(or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None)))
+        .all()
+    )
+
+    found_ids = {tag.id for tag in tags}
+    missing = {tag_id for tag_id in tag_ids if tag_id not in found_ids}
+    if missing:
+        abort(404)
+
+    _ensure_tags_assigned_to_current_scope(tags)
+    return tags
+
+
 @app.route("/scope/<int:id>")
 def set_scope(id):
     scope = Scope.query.get_or_404(id)
@@ -366,12 +409,19 @@ def task():
         filtered_tasks.append(task)
 
     available_tags = (
-        Tag.query.join(Tag.tasks)
-        .filter(Task.scope_id == g.scope.id, Task.owner_id == g.user.id)
-        .distinct()
+        Tag.query.filter(
+            or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None))
+        )
         .order_by(Tag.name.asc())
         .all()
     )
+    if _ensure_tags_assigned_to_current_scope(available_tags):
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            logging.exception("Unable to assign tags to scope during task view")
+            abort(500)
 
     tag_usage = {
         tag.id: sum(
@@ -563,7 +613,12 @@ def task():
     }
 
     available_tags_payload = [
-        {"id": tag.id, "name": tag.name, "task_count": tag_usage.get(tag.id, 0)}
+        {
+            "id": tag.id,
+            "name": tag.name,
+            "scope_id": tag.scope_id,
+            "task_count": tag_usage.get(tag.id, 0),
+        }
         for tag in available_tags
     ]
 
@@ -588,12 +643,17 @@ def task():
 @scope_required
 def list_tags():
     tags = (
-        Tag.query.join(Tag.tasks)
-        .filter(Task.scope_id == g.scope.id, Task.owner_id == g.user.id)
-        .distinct()
+        Tag.query.filter(or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None)))
         .order_by(Tag.name.asc())
         .all()
     )
+    if _ensure_tags_assigned_to_current_scope(tags):
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            logging.exception("Unable to assign tags to scope while listing tags")
+            abort(500)
     serialized_tags = []
     for tag in tags:
         payload = tag.to_dict()
@@ -609,8 +669,6 @@ def list_tags():
 @app.route("/tags", methods=["POST"])
 @scope_required
 def create_tag():
-    if not _user_can_access_scope(g.scope):
-        return jsonify({"error": "You do not have permission to modify tags."}), 403
     payload = request.get_json(silent=True) or {}
     raw_name = payload.get("name", "")
     normalized_name = raw_name.lstrip("#").strip().lower()
@@ -618,14 +676,14 @@ def create_tag():
     if not normalized_name:
         return jsonify({"error": "Tag name is required."}), 400
 
-    tag = Tag(name=normalized_name)
+    tag = Tag(name=normalized_name, scope_id=g.scope.id)
     try:
         db.session.add(tag)
         db.session.commit()
         created = True
     except IntegrityError:
         db.session.rollback()
-        tag = Tag.query.filter_by(name=normalized_name).first()
+        tag = Tag.query.filter_by(name=normalized_name, scope_id=g.scope.id).first()
         if tag is None:
             return jsonify({"error": "Unable to create tag."}), 500
         created = False
@@ -636,6 +694,7 @@ def create_tag():
     tag_payload = {
         "id": tag.id,
         "name": tag.name,
+        "scope_id": tag.scope_id,
         "task_count": sum(
             1
             for tag_task in tag.tasks
@@ -649,7 +708,14 @@ def create_tag():
 @app.route("/tags/<int:tag_id>", methods=["DELETE"])
 @scope_required
 def delete_tag(tag_id):
-    tag = Tag.query.get_or_404(tag_id)
+    tag = (
+        Tag.query.filter(
+            Tag.id == tag_id,
+            or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None)),
+        )
+        .first_or_404()
+    )
+    _ensure_tags_assigned_to_current_scope([tag])
 
     for task in tag.tasks:
         if task.owner_id != g.user.id or task.scope_id != g.scope.id:
@@ -700,6 +766,13 @@ def _parse_tag_ids(raw_value):
 @scope_required
 def get_task_tags(task_id):
     task = _get_task_in_scope_or_404(task_id)
+    if _ensure_tags_assigned_to_current_scope(task.tags):
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            logging.exception("Unable to assign tags to scope while fetching task tags")
+            abort(500)
     return jsonify({"tags": [tag.to_dict() for tag in task.tags]})
 
 
@@ -712,11 +785,24 @@ def add_tag_to_task(task_id):
         return jsonify({"error": "Tag id is required."}), 400
 
     task = _get_task_in_scope_or_404(task_id)
-    tag = Tag.query.get_or_404(tag_id)
+    tag = (
+        Tag.query.filter(
+            Tag.id == tag_id,
+            or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None)),
+        )
+        .first_or_404()
+    )
+    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
 
     if tag not in task.tags:
         try:
             task.tags.append(tag)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+    elif tag_scope_changed:
+        try:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -729,11 +815,24 @@ def add_tag_to_task(task_id):
 @scope_required
 def remove_tag_from_task(task_id, tag_id):
     task = _get_task_in_scope_or_404(task_id)
-    tag = Tag.query.get_or_404(tag_id)
+    tag = (
+        Tag.query.filter(
+            Tag.id == tag_id,
+            or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None)),
+        )
+        .first_or_404()
+    )
+    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
 
     if tag in task.tags:
         try:
             task.tags.remove(tag)
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+    elif tag_scope_changed:
+        try:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -810,10 +909,7 @@ def add_task():
         item.end_date = form.end_date.data
 
         tag_ids = _parse_tag_ids(form.tags.data)
-        if tag_ids:
-            item.tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
-        else:
-            item.tags = []
+        item.tags = _get_tags_for_scope(tag_ids)
 
         g.scope.tasks.append(item)
 
@@ -893,10 +989,7 @@ def edit_task(id):
         item.end_date = form.end_date.data
 
         tag_ids = _parse_tag_ids(form.tags.data)
-        if tag_ids:
-            item.tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
-        else:
-            item.tags = []
+        item.tags = _get_tags_for_scope(tag_ids)
         try:
             db.session.commit()
             success_message = f'Task "{item.name}" updated!'
