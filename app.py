@@ -865,13 +865,15 @@ def add_tag_to_task(task_id):
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+            logging.error("Exception in add_tag_to_task: %s", e, exc_info=True)
+            return jsonify({"error": "An internal server error occurred."}), 500
     elif tag_scope_changed:
         try:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+            logging.error("Exception in add_tag_to_task (scope change): %s", e, exc_info=True)
+            return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": True})
 
@@ -895,13 +897,15 @@ def remove_tag_from_task(task_id, tag_id):
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+            logging.error("Exception in remove_tag_from_task: %s", e, exc_info=True)
+            return jsonify({"error": "An internal server error occurred."}), 500
     elif tag_scope_changed:
         try:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            return jsonify({"error": str(e)}), 500
+            logging.error("Exception in remove_tag_from_task (scope change): %s", e, exc_info=True)
+            return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": False})
 
