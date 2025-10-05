@@ -1501,7 +1501,7 @@
 
     function setFilterTagCount(tagId, value) {
         if (!filterContainer) {
-            return 0;
+            throw new Error('setFilterTagCount: filterContainer is null');
         }
         const key = String(tagId);
         const normalized = Math.max(0, Number(value) || 0);
