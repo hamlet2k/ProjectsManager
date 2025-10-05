@@ -41,6 +41,7 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 - [ ] **Roles & permissions**: model access for local/cloud groups.
 - [ ] **Packaging pipelines**: build scripts for desktop/mobile wrappers; env/config strategy.
 - [ ] **Proactive assistant**: suggestions, blockers, and flow-changing prompts based on context.
+- [ ] **Update TODO.md**: periodically review and prune; keep actionable.
 
 ---
 
