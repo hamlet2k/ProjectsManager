@@ -29,6 +29,35 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 
 ---
 
+## 🧩 Improvements
+
+- [ ] Add a menu always visible on top, when the screen has longer content than it can render, that dynamically displays all the sections on top; clicking on the sections scrolls down to the section.
+- [ ] When scrolling down the page, collapse the filters into a pill that remains always on top beside the add new task floating component; when clicked, expand the filters floating on the top of the screen.
+- [ ] Make the add tag floating on top of the screen always visible despite scrolling.
+- [ ] Remember in local storage the last scope and set of filters applied by the user and automatically apply it when the user logs in (tags, search, completed tasks, sort).
+- [ ] On the new task component, swap the position and styles of the save and cancel buttons.
+- [ ] Make the add new task field expand in height when the content doesn't fit in the field.
+- [ ] After adding a task with a tag, focus on the add new task field with the last tag already selected.
+- [ ] After adding a task, scroll to the newly added tag.
+- [ ] Add alt-text to the buttons that have a key bind associated.
+- [ ] Define a good name to publish this project online.
+- [ ] Create plans for online deployments.
+- [ ] Create an import/export tasks functionality accessible from the navbar; it can auto-recognize imports in a JSONB format or comma-separated items. For exports, let the user choose the format. Export only entire sections displayed on screen, so the user must apply the right filtering before exporting.
+- [ ] Export task to a GitHub issue.
+- [ ] Add a copy icon on each task to copy the task (title, description, tags, etc.) to the clipboard.
+- [ ] Rename the scopes to projects/groups/lists in the UI.
+- [ ] Add a floating chevron icon visible only when the screen is scrolled down; when clicked, it scrolls to the top of the screen.
+- [ ] Add a copy icon next to the quick add icon that copies all tasks within the group to the clipboard.
+- [ ] Add a copy icon on scopes that copies all tasks within the scope to the clipboard.
+- [ ] When refreshing the page or loading the scopes page, all last toast messages display again — they shouldn’t.
+- [ ] Select which icons should be displayed when the task is collapsed and which when it is expanded.
+- [ ] Add an icon next to the quick add icon section to delete the entire category.
+- [ ] Add a setting to copy tasks in plain text or JSONB format.
+- [ ] Add a key shortcut to delete the value in the search field (Ctrl + Backspace).
+
+
+---
+
 ## Backlog
 - [ ] **Dockerfile & compose**: local DB + app service; document dev workflow.
 - [ ] **Logging**: structured logs for create/update/delete operations.
@@ -41,7 +70,6 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 - [ ] **Roles & permissions**: model access for local/cloud groups.
 - [ ] **Packaging pipelines**: build scripts for desktop/mobile wrappers; env/config strategy.
 - [ ] **Proactive assistant**: suggestions, blockers, and flow-changing prompts based on context.
-- [ ] **Update todo.md**: periodically review and prune; keep actionable.
 
 ---
 
