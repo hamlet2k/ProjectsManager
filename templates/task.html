@@ -1072,6 +1072,7 @@
     let currentTaskId = null;
     let currentTaskTags = new Map();
     let inlineSelectedTags = new Map();
+    const pendingTagDeletions = new Map();
 
     function updateFilterEmptyState() {
         if (!filterContainer || !filterEmptyMessage) {
@@ -1177,6 +1178,77 @@
         updateFilterEmptyState();
     }
 
+    function removeTagLocally(tagId, { tagName = '', applyFilters = true, refresh = false, showMessage = false } = {}) {
+        const key = String(tagId);
+        if (filterContainer) {
+            const button = filterContainer.querySelector(`.tag-filter-button[data-tag-id="${key}"]`);
+            if (button) {
+                button.remove();
+            }
+        }
+        availableTagsMap.delete(key);
+        inlineSelectedTags.delete(key);
+        currentTaskTags.delete(key);
+        syncInlineTagsField();
+        renderInlineTagOptions();
+        renderTagOptions();
+        updateFilterEmptyState();
+        if (applyFilters) {
+            applyTagFilters();
+        }
+        if (refresh) {
+            refreshTaskList();
+        }
+        if (showMessage && typeof displayFlashMessage === 'function' && tagName) {
+            displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
+        }
+    }
+
+    function deleteTagFromServer(tagId, tagName = '', { onSuccess = null, onError = null, showError = true } = {}) {
+        if (!tagId || !csrfToken) {
+            return Promise.resolve(false);
+        }
+        const key = String(tagId);
+        if (pendingTagDeletions.has(key)) {
+            return pendingTagDeletions.get(key);
+        }
+        const request = fetch(`/tags/${tagId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw response;
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (typeof onSuccess === 'function') {
+                    onSuccess(data);
+                }
+                return true;
+            })
+            .catch((error) => {
+                console.error('Unable to delete tag', error);
+                if (showError && typeof displayFlashMessage === 'function') {
+                    const label = tagName ? `tag "#${tagName}"` : 'tag';
+                    displayFlashMessage(`Unable to delete ${label}.`, 'danger');
+                }
+                if (typeof onError === 'function') {
+                    onError(error);
+                }
+                return false;
+            })
+            .finally(() => {
+                pendingTagDeletions.delete(key);
+            });
+        pendingTagDeletions.set(key, request);
+        return request;
+    }
+
     function syncFilterTags(tags = []) {
         if (!filterContainer) {
             return;
@@ -1194,10 +1266,22 @@
         filterContainer.querySelectorAll('.tag-filter-button').forEach((button) => {
             const tagId = button.dataset.tagId;
             if (!seen.has(tagId)) {
+                const tagName = button.dataset.tagName || '';
+                const numericId = Number(tagId);
                 availableTagsMap.delete(tagId);
                 inlineSelectedTags.delete(tagId);
+                currentTaskTags.delete(tagId);
                 button.remove();
                 updatedSelected = true;
+                deleteTagFromServer(numericId, tagName, {
+                    showError: false,
+                    onError: () => {
+                        ensureTagInFilter({ id: numericId, name: tagName, task_count: 0 });
+                        renderInlineTagOptions();
+                        renderTagOptions();
+                        updateFilterEmptyState();
+                    },
+                });
             }
         });
         if (updatedSelected) {
@@ -1341,21 +1425,36 @@
                 if (data && data.tag) {
                     const tag = data.tag;
                     const tagKey = String(tag.id);
+                    let updatedCount = null;
                     if (assign) {
                         currentTaskTags.set(tagKey, tag);
                         ensureTagInFilter(tag);
                         adjustFilterTagCount(tagKey, 1);
                     } else {
                         currentTaskTags.delete(tagKey);
-                        adjustFilterTagCount(tagKey, -1);
+                        updatedCount = adjustFilterTagCount(tagKey, -1);
                     }
                     updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
                     renderTagOptions();
                     renderInlineTagOptions();
-                    if (getCurrentSortBy() === 'tags') {
+                    const shouldRefreshSort = getCurrentSortBy() === 'tags';
+                    if (shouldRefreshSort) {
                         refreshTaskList();
                     } else {
                         applyTagFilters();
+                    }
+                    if (!assign && updatedCount !== null && updatedCount <= 0) {
+                        deleteTagFromServer(tag.id, tag.name, {
+                            showError: false,
+                            onSuccess: () => {
+                                removeTagLocally(tagKey, {
+                                    tagName: tag.name,
+                                    applyFilters: !shouldRefreshSort,
+                                    refresh: false,
+                                    showMessage: false,
+                                });
+                            },
+                        });
                     }
                 }
             })
@@ -1500,34 +1599,16 @@
             if (!confirmed) {
                 return;
             }
-            fetch(`/tags/${tagId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
+            deleteTagFromServer(tagId, tagName, {
+                onSuccess: () => {
+                    removeTagLocally(tagKey, {
+                        tagName,
+                        applyFilters: true,
+                        refresh: true,
+                        showMessage: true,
+                    });
                 },
-            })
-                .then((response) => {
-                    if (!response.ok) {
-                        throw response;
-                    }
-                    return response.json();
-                })
-                .then(() => {
-                    button.remove();
-                    availableTagsMap.delete(tagKey);
-                    updateFilterEmptyState();
-                    inlineSelectedTags.delete(tagKey);
-                    syncInlineTagsField();
-                    renderInlineTagOptions();
-                    applyTagFilters();
-                    refreshTaskList();
-                    displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
-                })
-                .catch((error) => {
-                    console.error('Unable to delete tag', error);
-                    displayFlashMessage(`Unable to delete tag "#${tagName}".`, 'danger');
-                });
+            });
         });
     }
 
