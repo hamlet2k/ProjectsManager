@@ -872,7 +872,8 @@ def edit_task(id):
     if item.scope_id != g.scope.id or item.owner_id != g.user.id:
         abort(404)
     form = TaskForm(obj=item)
-    form.tags.data = ",".join(str(tag.id) for tag in item.tags)
+    if not form.is_submitted():
+        form.tags.data = ",".join(str(tag.id) for tag in item.tags)
     wants_json = (
         request.headers.get("X-Requested-With") == "XMLHttpRequest"
         or request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
