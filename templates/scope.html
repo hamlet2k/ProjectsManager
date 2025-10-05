@@ -126,57 +126,6 @@
         });
     }
 
-    function formatTaskClipboardText(task) {
-        if (!task) {
-            return '';
-        }
-        const lines = [];
-        const title = task.name ? `Task: ${task.name}` : 'Task';
-        lines.push(title);
-
-        if (task.description) {
-            lines.push('Description:');
-            lines.push(task.description);
-        }
-
-        if (task.due_date) {
-            const formattedDue = formatDateTimeDisplay(task.due_date) || task.due_date;
-            lines.push(`Due: ${formattedDue}`);
-        }
-
-        if (task.completed) {
-            const completion = formatDateTimeDisplay(task.completed_date) || task.completed_date;
-            lines.push(completion ? `Status: Completed (${completion})` : 'Status: Completed');
-        } else {
-            lines.push('Status: In progress');
-        }
-
-        if (Array.isArray(task.tags) && task.tags.length > 0) {
-            const formattedTags = task.tags
-                .map((tag) => (typeof tag === 'string' && tag.trim() ? `#${tag.trim()}` : null))
-                .filter(Boolean)
-                .join(', ');
-            if (formattedTags) {
-                lines.push(`Tags: ${formattedTags}`);
-            }
-        }
-
-        if (Array.isArray(task.subtasks) && task.subtasks.length > 0) {
-            lines.push('Subtasks:');
-            task.subtasks.forEach((subtask) => {
-                if (!subtask || typeof subtask !== 'object') {
-                    return;
-                }
-                const name = (subtask.name || '').trim();
-                const description = (subtask.description || '').trim();
-                const detail = description ? `${name} — ${description}` : name;
-                lines.push(`- ${detail || 'Untitled subtask'}`);
-            });
-        }
-
-        return lines.join('\n').trim();
-    }
-
     function copyScopeTasks(scopeId, scopeName) {
         if (!scopeId) {
             return Promise.reject(new Error('Missing scope identifier'));

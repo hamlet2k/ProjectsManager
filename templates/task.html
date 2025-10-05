@@ -692,6 +692,23 @@
         const tags = parseJsonAttribute(dataset.taskTags, []);
         const subtasks = parseJsonAttribute(dataset.taskSubtasks, []);
 
+        const normalizedSubtasks = Array.isArray(subtasks)
+            ? subtasks
+                .map((subtask) => {
+                    if (!subtask || typeof subtask !== 'object') {
+                        return null;
+                    }
+                    const name = normalizeMultiline(decodeHtmlEntities(subtask.name || ''));
+                    const description = normalizeMultiline(decodeHtmlEntities(subtask.description || ''));
+                    return {
+                        ...subtask,
+                        name,
+                        description,
+                    };
+                })
+                .filter(Boolean)
+            : [];
+
         return {
             id: dataset.taskId || '',
             name,
@@ -700,69 +717,8 @@
             completed,
             completedDate,
             tags: Array.isArray(tags) ? tags : [],
-            subtasks: Array.isArray(subtasks) ? subtasks : [],
+            subtasks: normalizedSubtasks,
         };
-    }
-
-    function formatTaskClipboardText(taskData) {
-        if (!taskData) {
-            return '';
-        }
-        const lines = [];
-        const title = taskData.name ? `Task: ${taskData.name}` : 'Task';
-        lines.push(title);
-
-        if (taskData.description) {
-            lines.push('Description:');
-            lines.push(taskData.description);
-        }
-
-        if (taskData.dueDate) {
-            const formattedDue = typeof formatDateTimeDisplay === 'function'
-                ? formatDateTimeDisplay(taskData.dueDate)
-                : taskData.dueDate;
-            if (formattedDue) {
-                lines.push(`Due: ${formattedDue}`);
-            }
-        }
-
-        if (taskData.completed) {
-            const completion = taskData.completedDate && typeof formatDateTimeDisplay === 'function'
-                ? formatDateTimeDisplay(taskData.completedDate)
-                : taskData.completedDate;
-            lines.push(
-                completion
-                    ? `Status: Completed (${completion})`
-                    : 'Status: Completed'
-            );
-        } else {
-            lines.push('Status: In progress');
-        }
-
-        if (Array.isArray(taskData.tags) && taskData.tags.length > 0) {
-            const formattedTags = taskData.tags
-                .map((tag) => (typeof tag === 'string' && tag.trim() ? `#${tag.trim()}` : null))
-                .filter(Boolean)
-                .join(', ');
-            if (formattedTags) {
-                lines.push(`Tags: ${formattedTags}`);
-            }
-        }
-
-        if (Array.isArray(taskData.subtasks) && taskData.subtasks.length > 0) {
-            lines.push('Subtasks:');
-            taskData.subtasks.forEach((subtask) => {
-                if (!subtask || typeof subtask !== 'object') {
-                    return;
-                }
-                const name = decodeHtmlEntities(subtask.name || '').trim();
-                const description = decodeHtmlEntities(subtask.description || '').trim();
-                const detail = description ? `${name} — ${description}` : name;
-                lines.push(`- ${detail || 'Untitled subtask'}`);
-            });
-        }
-
-        return lines.join('\n').trim();
     }
 
     function copyTextToClipboard(text) {
