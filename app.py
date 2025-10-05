@@ -562,6 +562,11 @@ def task():
         "sortable_group_ids": sortable_group_ids,
     }
 
+    available_tags_payload = [
+        {"id": tag.id, "name": tag.name, "task_count": tag_usage.get(tag.id, 0)}
+        for tag in available_tags
+    ]
+
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         html = render_template(
             "components/task_groups.html",
@@ -572,6 +577,7 @@ def task():
                 "html": html,
                 "sort_by": sort_by,
                 "sortable_group_ids": sortable_group_ids,
+                "available_tags": available_tags_payload,
             }
         )
 
