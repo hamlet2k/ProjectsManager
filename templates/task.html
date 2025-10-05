@@ -847,7 +847,7 @@
         }
 
         applyTaskFormErrors({});
-        syncInlineTagsField();
+        if (typeof syncInlineTagsField === 'function') syncInlineTagsField();
         const formData = new FormData(taskForm);
         if (formData.has('name')) {
             formData.set('name', (formData.get('name') || '').trim());
