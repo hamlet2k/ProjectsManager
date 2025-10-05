@@ -307,6 +307,36 @@ def _user_owns_scope(scope: Scope) -> bool:
     return g.user is not None and scope is not None and scope.owner_id == g.user.id
 
 
+def _serialize_task_for_clipboard(task: Task) -> dict:
+    if task is None:
+        return {}
+
+    def _serialize_subtask(subtask: Task) -> dict:
+        if subtask is None:
+            return {}
+        return {
+            "id": subtask.id,
+            "name": subtask.name or "",
+            "description": subtask.description or "",
+        }
+
+    subtasks = sorted(
+        (subtask for subtask in task.subtasks or []),
+        key=lambda item: ((item.rank or 0), item.id),
+    )
+
+    return {
+        "id": task.id,
+        "name": task.name or "",
+        "description": task.description or "",
+        "due_date": task.end_date.isoformat() if task.end_date else None,
+        "completed": bool(task.completed),
+        "completed_date": task.completed_date.isoformat() if task.completed_date else None,
+        "tags": [tag.name for tag in task.tags],
+        "subtasks": [_serialize_subtask(subtask) for subtask in subtasks],
+    }
+
+
 def _ensure_tags_assigned_to_current_scope(tags):
     """Ensure every provided tag belongs to the active scope."""
 
@@ -367,6 +397,41 @@ def scope():
     session.pop("selected_scope", None)
     g.scope = None
     return render_template("scope.html", scopes=items, scope_form=form)
+
+
+@app.route("/scope/<int:id>/tasks/export", methods=["GET"])
+def export_scope_tasks(id):
+    scope = Scope.query.get_or_404(id)
+    if not _user_can_access_scope(scope):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "You do not have permission to export tasks for this scope.",
+                }
+            ),
+            403,
+        )
+
+    if g.user is None:
+        return (
+            jsonify({"success": False, "message": "You must be logged in to export tasks."}),
+            401,
+        )
+
+    user_tasks = [task for task in scope.tasks if task.owner_id == g.user.id]
+    user_tasks.sort(key=lambda item: ((item.rank or 0), item.id))
+
+    payload = [_serialize_task_for_clipboard(task) for task in user_tasks]
+
+    return jsonify(
+        {
+            "success": True,
+            "scope": {"id": scope.id, "name": scope.name or ""},
+            "tasks": payload,
+        }
+    )
+
 
 @app.route("/task")
 @scope_required

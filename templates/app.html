@@ -49,6 +49,8 @@
 {% block scripts %}
     {{ super() }}
 
+    <script src="{{ url_for('static', filename='js/clipboard.js') }}"></script>
+
 <script>
     window.displayFlashMessage = function(message, type = 'info') {
         const flashContainer = document.getElementById('flash-container');

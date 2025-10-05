@@ -7,24 +7,44 @@
         <div class="task-group mb-4" data-group-dom-id="{{ group.dom_id }}" {% if group.tag_id is defined %}data-tag-id="{{ group.tag_id }}"{% endif %}>
             {% if group.title %}
                 {% set show_quick_add = (sort_by == 'tags' and group.tag_id is defined) or (sort_by == 'due_date' and group.due_bucket is defined) %}
-                <div class="task-group-header">
+                <div class="task-group-header d-flex align-items-center flex-wrap gap-2">
                     <h6 class="task-group-title text-uppercase text-muted small mb-0">{{ group.title }}</h6>
-                    {% if show_quick_add %}
+                    <div class="task-group-action-buttons d-inline-flex align-items-center">
                         <button type="button"
-                                class="btn btn-outline-primary btn-sm task-group-add-btn"
-                                {% if group.tag_id is defined %}data-group-tag-id="{{ group.tag_id if group.tag_id is not none else '' }}"{% endif %}
-                                {% if group.due_bucket is defined %}data-group-due-bucket="{{ group.due_bucket }}"{% endif %}
-                                aria-label="Quick add task for {{ group.title }}">
-                            <i class="bi bi-plus-lg"></i>
+                                class="btn btn-outline-secondary btn-sm task-group-copy-btn"
+                                aria-label="Copy tasks for {{ group.title }}">
+                            <i class="bi bi-clipboard"></i>
                         </button>
-                    {% endif %}
+                        {% if show_quick_add %}
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm task-group-add-btn"
+                                    {% if group.tag_id is defined %}data-group-tag-id="{{ group.tag_id if group.tag_id is not none else '' }}"{% endif %}
+                                    {% if group.due_bucket is defined %}data-group-due-bucket="{{ group.due_bucket }}"{% endif %}
+                                    aria-label="Quick add task for {{ group.title }}">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        {% endif %}
+                    </div>
                 </div>
             {% endif %}
             <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
                 {% if group.tasks %}
                     {% for task in group.tasks %}
                         {% set has_details = task.has_info() or task.completed_date %}
-                        <div class="m-1 px-2 sketchy-border task-item" data-task-id="{{ task.id }}" data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}">
+                        {% set subtask_ns = namespace(items=[]) %}
+                        {% for subtask in task.subtasks %}
+                            {% set _ = subtask_ns.items.append({'name': subtask.name, 'description': subtask.description}) %}
+                        {% endfor %}
+                        <div class="m-1 px-2 sketchy-border task-item"
+                             data-task-id="{{ task.id }}"
+                             data-tag-ids="{{ task.tags | map(attribute='id') | join(',') }}"
+                             data-task-name="{{ task.name | e }}"
+                             data-task-description="{{ task.description | default('') | e }}"
+                             data-task-due-date="{{ task.end_date.isoformat() if task.end_date else '' }}"
+                             data-task-completed="{{ 'true' if task.completed else 'false' }}"
+                             data-task-completed-date="{{ task.completed_date.isoformat() if task.completed_date else '' }}"
+                             data-task-tags='{{ task.tags | map(attribute="name") | list | tojson | e }}'
+                             data-task-subtasks='{{ subtask_ns.items | tojson | e }}'>
                             <div class="task-item-header my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
                                 <div class="d-flex align-items-center flex-grow-1">
                                     <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
@@ -59,6 +79,9 @@
                                             <i class="bi bi-check"></i>
                                         {% endif %}
                                     </a>
+                                    <button type="button" class="btn task-action-btn task-copy-btn" aria-label="Copy task {{ task.name | e }}">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
                                     <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
                                         <i class="bi bi-tags"></i>
                                     </button>
