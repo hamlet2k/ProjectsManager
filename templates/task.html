@@ -58,6 +58,12 @@
         margin-bottom: 0;
     }
 
+    .task-group-action-buttons {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
     .task-item-header {
         display: flex;
         flex-wrap: wrap;
@@ -261,6 +267,7 @@
         }
     }
 
+    .task-group-copy-btn,
     .task-group-add-btn {
         --task-quick-add-scale: 0.75;
         display: inline-flex;
@@ -274,10 +281,12 @@
         --bs-btn-border-radius: calc(0.2rem * var(--task-quick-add-scale));
     }
 
+    .task-group-copy-btn .bi,
     .task-group-add-btn .bi {
         font-size: calc(1rem * var(--task-quick-add-scale));
     }
 
+    [data-bs-theme="dark"] .task-group-copy-btn,
     [data-bs-theme="dark"] .task-group-add-btn {
         --bs-btn-color: var(--bs-white);
         --bs-btn-border-color: rgba(255, 255, 255, 0.65);
@@ -642,6 +651,106 @@
         });
     }
 
+    function decodeHtmlEntities(text) {
+        if (typeof text !== 'string' || !text) {
+            return '';
+        }
+        const textarea = document.createElement('textarea');
+        textarea.innerHTML = text;
+        return textarea.value;
+    }
+
+    function parseJsonAttribute(value, fallback) {
+        if (typeof value !== 'string' || !value.trim()) {
+            return fallback;
+        }
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            console.warn('Unable to parse JSON attribute', value, error);
+            return fallback;
+        }
+    }
+
+    function normalizeMultiline(text) {
+        if (typeof text !== 'string') {
+            return '';
+        }
+        return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    }
+
+    function buildTaskClipboardDataFromElement(taskElement) {
+        if (!(taskElement instanceof HTMLElement)) {
+            return null;
+        }
+        const dataset = taskElement.dataset || {};
+        const name = decodeHtmlEntities(dataset.taskName || '');
+        const description = decodeHtmlEntities(dataset.taskDescription || '');
+        const dueDate = dataset.taskDueDate || '';
+        const completed = dataset.taskCompleted === 'true';
+        const completedDate = dataset.taskCompletedDate || '';
+        const tags = parseJsonAttribute(dataset.taskTags, []);
+        const subtasks = parseJsonAttribute(dataset.taskSubtasks, []);
+
+        const normalizedSubtasks = Array.isArray(subtasks)
+            ? subtasks
+                .map((subtask) => {
+                    if (!subtask || typeof subtask !== 'object') {
+                        return null;
+                    }
+                    const name = normalizeMultiline(decodeHtmlEntities(subtask.name || ''));
+                    const description = normalizeMultiline(decodeHtmlEntities(subtask.description || ''));
+                    return {
+                        ...subtask,
+                        name,
+                        description,
+                    };
+                })
+                .filter(Boolean)
+            : [];
+
+        return {
+            id: dataset.taskId || '',
+            name,
+            description: normalizeMultiline(description),
+            dueDate,
+            completed,
+            completedDate,
+            tags: Array.isArray(tags) ? tags : [],
+            subtasks: normalizedSubtasks,
+        };
+    }
+
+    function copyTextToClipboard(text) {
+        if (typeof text !== 'string' || !text.trim()) {
+            return Promise.reject(new Error('Nothing to copy'));
+        }
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            return navigator.clipboard.writeText(text.trim());
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const textarea = document.createElement('textarea');
+                textarea.value = text.trim();
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'absolute';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                if (successful) {
+                    resolve();
+                } else {
+                    reject(new Error('Copy command was unsuccessful'));
+                }
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
     function formatDateInputValue(date) {
         if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
             return '';
@@ -963,6 +1072,90 @@
                     tagIdValue: typeof trigger.dataset.groupTagId === 'string' ? trigger.dataset.groupTagId : null,
                     dueBucket: typeof trigger.dataset.groupDueBucket === 'string' ? trigger.dataset.groupDueBucket : null,
                 });
+            });
+        });
+    }
+
+    const taskCopyListenerAttached = new WeakSet();
+    function attachTaskCopyListeners() {
+        document.querySelectorAll('.task-copy-btn').forEach((button) => {
+            if (taskCopyListenerAttached.has(button)) {
+                return;
+            }
+            taskCopyListenerAttached.add(button);
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                const trigger = event.currentTarget;
+                const taskElement = trigger.closest('.task-item');
+                const taskData = buildTaskClipboardDataFromElement(taskElement);
+                const taskName = taskData && taskData.name ? taskData.name : 'Task';
+                if (!taskData) {
+                    displayFlashMessage('Unable to copy this task.', 'danger');
+                    return;
+                }
+                const clipboardText = formatTaskClipboardText(taskData);
+                copyTextToClipboard(clipboardText)
+                    .then(() => {
+                        displayFlashMessage(`Task "${taskName}" copied to clipboard.`, 'success');
+                    })
+                    .catch((error) => {
+                        console.error('Unable to copy task', error);
+                        displayFlashMessage('Unable to copy this task to the clipboard.', 'danger');
+                    });
+            });
+        });
+    }
+
+    const groupCopyListenerAttached = new WeakSet();
+    function attachGroupCopyListeners() {
+        document.querySelectorAll('.task-group-copy-btn').forEach((button) => {
+            if (groupCopyListenerAttached.has(button)) {
+                return;
+            }
+            groupCopyListenerAttached.add(button);
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                const groupElement = button.closest('.task-group');
+                if (!groupElement) {
+                    displayFlashMessage('Unable to locate this task group.', 'danger');
+                    return;
+                }
+                const taskElements = Array.from(groupElement.querySelectorAll('.task-item'));
+                if (taskElements.length === 0) {
+                    displayFlashMessage('There are no tasks to copy in this group.', 'info');
+                    return;
+                }
+                const clipboardSections = taskElements
+                    .map((taskElement) => buildTaskClipboardDataFromElement(taskElement))
+                    .filter(Boolean)
+                    .map((taskData, index) => {
+                        const formatted = formatTaskClipboardText(taskData);
+                        return formatted ? `${index + 1}. ${formatted}` : null;
+                    })
+                    .filter(Boolean);
+
+                if (clipboardSections.length === 0) {
+                    displayFlashMessage('Unable to copy the selected tasks.', 'danger');
+                    return;
+                }
+
+                const titleElement = groupElement.querySelector('.task-group-title');
+                const groupTitle = titleElement ? titleElement.textContent.trim() : '';
+                const header = groupTitle ? `${groupTitle}\n` : '';
+                const clipboardText = `${header}${clipboardSections.join('\n\n')}`;
+                copyTextToClipboard(clipboardText)
+                    .then(() => {
+                        const count = clipboardSections.length;
+                        const label = groupTitle || 'group';
+                        displayFlashMessage(
+                            `Copied ${count} task${count === 1 ? '' : 's'} from "${label}" to the clipboard.`,
+                            'success'
+                        );
+                    })
+                    .catch((error) => {
+                        console.error('Unable to copy tasks from group', error);
+                        displayFlashMessage('Unable to copy tasks from this group.', 'danger');
+                    });
             });
         });
     }
@@ -1821,6 +2014,8 @@
                 attachEditTaskListeners();
                 attachTagManagerListeners();
                 attachTaskDeleteListeners();
+                attachTaskCopyListeners();
+                attachGroupCopyListeners();
                 attachGroupAddListeners();
                 syncChevronStates();
                 updateDateDisplays();
@@ -1838,6 +2033,8 @@
     attachEditTaskListeners();
     attachTagManagerListeners();
     attachTaskDeleteListeners();
+    attachTaskCopyListeners();
+    attachGroupCopyListeners();
     attachGroupAddListeners();
     applyTagFilters();
     updateDateDisplays();
