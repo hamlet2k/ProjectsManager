@@ -60,8 +60,8 @@
 
     .task-group-action-buttons {
         display: inline-flex;
+        align-items: center;
         gap: 0.25rem;
-        margin-left: auto;
     }
 
     .task-item-header {
@@ -267,6 +267,7 @@
         }
     }
 
+    .task-group-copy-btn,
     .task-group-add-btn {
         --task-quick-add-scale: 0.75;
         display: inline-flex;
@@ -280,10 +281,12 @@
         --bs-btn-border-radius: calc(0.2rem * var(--task-quick-add-scale));
     }
 
+    .task-group-copy-btn .bi,
     .task-group-add-btn .bi {
         font-size: calc(1rem * var(--task-quick-add-scale));
     }
 
+    [data-bs-theme="dark"] .task-group-copy-btn,
     [data-bs-theme="dark"] .task-group-add-btn {
         --bs-btn-color: var(--bs-white);
         --bs-btn-border-color: rgba(255, 255, 255, 0.65);

@@ -7,9 +7,9 @@
         <div class="task-group mb-4" data-group-dom-id="{{ group.dom_id }}" {% if group.tag_id is defined %}data-tag-id="{{ group.tag_id }}"{% endif %}>
             {% if group.title %}
                 {% set show_quick_add = (sort_by == 'tags' and group.tag_id is defined) or (sort_by == 'due_date' and group.due_bucket is defined) %}
-                <div class="task-group-header">
+                <div class="task-group-header d-flex align-items-center flex-wrap gap-2">
                     <h6 class="task-group-title text-uppercase text-muted small mb-0">{{ group.title }}</h6>
-                    <div class="task-group-action-buttons">
+                    <div class="task-group-action-buttons d-inline-flex align-items-center">
                         <button type="button"
                                 class="btn btn-outline-secondary btn-sm task-group-copy-btn"
                                 aria-label="Copy tasks for {{ group.title }}">
