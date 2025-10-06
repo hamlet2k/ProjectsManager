@@ -14,6 +14,8 @@ A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 from datetime import datetime
 from database import db
 from .tag import task_tags
+from markdown import markdown as render_markdown
+from markupsafe import Markup
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -53,6 +55,17 @@ class Task(db.Model):
             return True
         else:
             return False
+
+    @property
+    def description_html(self):
+        if not self.description:
+            return Markup("")
+        html = render_markdown(
+            self.description,
+            extensions=["extra"],
+            output_format="html5",
+        )
+        return Markup(html)
 
     def __repr__(self):
         return f"<Task {self.name}>"
