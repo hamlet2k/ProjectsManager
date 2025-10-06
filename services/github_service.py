@@ -137,7 +137,8 @@ def list_repositories(token: str) -> List[GitHubRepository]:
             break
         for repo in payload:
             owner = repo.get("owner", {}).get("login")
-            repos.append(GitHubRepository(id=repo["id"], name=repo["name"], owner=owner))
+            if owner is not None:
+                repos.append(GitHubRepository(id=repo["id"], name=repo["name"], owner=owner))
         page += 1
     return repos
 
