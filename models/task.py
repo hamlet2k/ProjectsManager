@@ -65,7 +65,14 @@ class Task(db.Model):
             extensions=["extra"],
             output_format="html5",
         )
-        return Markup(html)
+        import bleach
+        sanitized_html = bleach.clean(html, tags=bleach.sanitizer.ALLOWED_TAGS + ["p", "br"], attributes=bleach.sanitizer.ALLOWED_ATTRIBUTES)
+        return Markup(sanitized_html)
+        import bleach
+        allowed_tags = bleach.sanitizer.ALLOWED_TAGS + ["p", "pre", "code", "ul", "ol", "li", "strong", "em", "blockquote"]
+        allowed_attributes = bleach.sanitizer.ALLOWED_ATTRIBUTES
+        sanitized_html = bleach.clean(html, tags=allowed_tags, attributes=allowed_attributes)
+        return Markup(sanitized_html)
 
     def __repr__(self):
         return f"<Task {self.name}>"
