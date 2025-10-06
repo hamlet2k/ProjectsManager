@@ -1025,15 +1025,15 @@ def github_connect():
     return jsonify({"success": True})
 
 
-@app.route("/api/github/repos", methods=["GET"])
+@app.route("/api/github/repos", methods=["POST"])
 def github_repositories():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
-    token = g.user.get_github_token()
-    override_token = request.args.get("token")
-    if override_token:
-        token = override_token.strip()
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    if not token:
+        token = g.user.get_github_token()
 
     if not token:
         return jsonify({"success": False, "message": "Token is required."}), 400
