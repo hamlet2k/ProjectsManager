@@ -1676,6 +1676,8 @@
         const groupsContainer = getTaskGroupsContainer();
         const currentSort = groupsContainer ? groupsContainer.dataset.sortBy : null;
 
+        const hasActiveTags = activeTags.length > 0;
+
         document.querySelectorAll('.task-item').forEach((taskElement) => {
             const taskTags = (taskElement.dataset.tagIds || '').split(',').filter(Boolean);
             const matches = activeTags.every((tagId) => taskTags.includes(tagId));
@@ -1683,12 +1685,13 @@
         });
 
         document.querySelectorAll('.task-group').forEach((group) => {
-            if (currentSort === 'tags') {
-                const hasVisibleTask = Array.from(group.querySelectorAll('.task-item')).some((task) => task.style.display !== 'none');
-                group.style.display = hasVisibleTask ? '' : 'none';
-            } else {
+            if (!hasActiveTags && currentSort !== 'tags') {
                 group.style.display = '';
+                return;
             }
+
+            const hasVisibleTask = Array.from(group.querySelectorAll('.task-item')).some((task) => task.style.display !== 'none');
+            group.style.display = hasVisibleTask ? '' : 'none';
         });
     }
 
