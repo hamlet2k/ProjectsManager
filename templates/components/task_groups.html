@@ -111,7 +111,7 @@
                                 {% if has_details %}
                                 <div class="accordion-body d-flex flex-column gap-2">
                                     {% if task.description %}
-                                        <p class="small task-description mb-0">{{ task.description | replace('\n', '<br>') | safe }}</p>
+                                        <div class="small task-description markdown-content mb-0">{{ task.description_html | safe }}</div>
                                     {% endif %}
                                     {% if task.end_date %}
                                         <div class="task-meta d-inline-flex align-items-center gap-2">
