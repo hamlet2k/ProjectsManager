@@ -76,7 +76,7 @@ def decrypt_token(token_encrypted: Optional[bytes]) -> Optional[str]:
     try:
         return fernet.decrypt(token_encrypted).decode("utf-8")
     except InvalidToken as exc:  # pragma: no cover - shouldn't happen unless SECRET_KEY rotated
-        logging.error("Unable to decrypt GitHub token: %s", exc)
+        logging.error("Unable to decrypt GitHub token due to invalid token or key.")
         return None
 
 
