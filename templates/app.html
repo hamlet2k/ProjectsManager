@@ -42,6 +42,34 @@
     font-weight: 600;
 }
 
+
+.markdown-content {
+    line-height: 1.5;
+}
+.markdown-content p:last-child,
+.markdown-content ul:last-child,
+.markdown-content ol:last-child,
+.markdown-content pre:last-child {
+    margin-bottom: 0;
+}
+.markdown-content ul,
+.markdown-content ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+.markdown-content pre {
+    padding: 0.5rem;
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 0.5rem;
+    overflow: auto;
+}
+.markdown-content code {
+    font-size: inherit;
+    background-color: var(--bs-tertiary-bg);
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.25rem;
+}
+
 </style>
 {% endblock css %}
 

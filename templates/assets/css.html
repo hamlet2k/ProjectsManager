@@ -16,3 +16,9 @@
   rel="stylesheet"
   href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/sketchy/bootstrap.min.css"
 />
+{% if session.theme == 'dark' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/codehilite-monokai.css') }}">
+{% else %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/codehilite-light.css') }}">
+{% endif %}
+
