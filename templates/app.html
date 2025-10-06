@@ -163,5 +163,54 @@
         .catch((error) => console.error("Error:", error));
     }
 
+    document.addEventListener('DOMContentLoaded', () => {
+        const refreshButton = document.getElementById('github-refresh-btn');
+        if (!refreshButton) {
+            return;
+        }
+        refreshButton.addEventListener('click', () => {
+            const csrfField = document.querySelector('input[name="csrf_token"]');
+            const csrfToken = csrfField ? csrfField.value : null;
+            const originalContent = refreshButton.innerHTML;
+            refreshButton.disabled = true;
+            refreshButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            fetch('/api/github/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                },
+            })
+                .then((response) =>
+                    response
+                        .json()
+                        .catch(() => ({}))
+                        .then((data) => ({ ok: response.ok, data }))
+                )
+                .then(({ ok, data }) => {
+                    if (!ok || !data || !data.success) {
+                        const message = (data && data.message) || 'Unable to refresh GitHub data.';
+                        displayFlashMessage(message, 'danger');
+                        return;
+                    }
+                    const count = Number(data.updated || 0);
+                    const summary = `GitHub sync complete — ${count} task${count === 1 ? '' : 's'} updated.`;
+                    displayFlashMessage(summary, 'success');
+                    if (typeof refreshTaskList === 'function') {
+                        refreshTaskList();
+                    }
+                })
+                .catch((error) => {
+                    console.error('Unable to refresh GitHub data', error);
+                    displayFlashMessage('Unable to refresh GitHub data.', 'danger');
+                })
+                .finally(() => {
+                    refreshButton.disabled = false;
+                    refreshButton.innerHTML = originalContent;
+                });
+        });
+    });
+
 </script>
 {% endblock %}

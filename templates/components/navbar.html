@@ -26,8 +26,16 @@
       </ul> 
       #}
 
-      <ul class="navbar-nav ms-md-auto me-2">
-        {# 
+      <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
+        {% if g.user and g.user.github_integration_enabled %}
+        <li class="nav-item">
+          <button class="btn btn-outline-secondary btn-sm" type="button" id="github-refresh-btn">
+            <i class="bi bi-arrow-repeat"></i>
+            <span class="d-none d-lg-inline">Refresh GitHub Sync</span>
+          </button>
+        </li>
+        {% endif %}
+        {#
         {% if g.user.role == 'admin' %}
           <!-- Admin Menu -->
           {% include "components/devtools.html" %}

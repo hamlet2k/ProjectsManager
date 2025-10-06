@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from functools import wraps
 import logging
 
@@ -38,8 +39,35 @@ from models.scope import Scope
 from models.tag import Tag
 from models.task import Task
 from models.user import User
+from models.sync_log import SyncLog
 
-from forms import ScopeForm, TaskForm,SignupForm, LoginForm, UserSettingsForm, THEME_CHOICES
+from forms import (
+    ScopeForm,
+    TaskForm,
+    SignupForm,
+    LoginForm,
+    UserSettingsForm,
+    GitHubSettingsForm,
+    THEME_CHOICES,
+)
+from services.github_service import (
+    GITHUB_APP_LABEL,
+    MISSING_ISSUE_STATUS_CODES,
+    GitHubError,
+    comment_on_issue,
+    create_issue,
+    fetch_issue,
+    list_repositories,
+    test_connection,
+    update_issue,
+    close_issue,
+)
+
+LOCAL_GITHUB_TAG_NAME = "github"
+GITHUB_ISSUE_MISSING_MESSAGE = (
+    "Linked GitHub issue could not be found and the link has been removed."
+)
+GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
 
 # Create flask command lines to update the db based on the model
 # Useage:
@@ -110,7 +138,11 @@ def inject_forms():
     Returns:
         Dictionary listing the forms available in templates
     """
-    return {"login_form": LoginForm()}
+    return {
+        "login_form": LoginForm(),
+        "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
+        "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+    }
 
 
 def authenticate_user(username, password):
@@ -184,8 +216,22 @@ def signup():
 def user():
     """User settings page"""
     user_form = UserSettingsForm(obj=g.user)
+    github_form = GitHubSettingsForm()
 
-    if user_form.validate_on_submit():
+    selected_repo = g.user.github_repo_as_dict()
+    if not github_form.is_submitted():
+        if selected_repo:
+            github_form.repository.choices = [
+                (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
+            ]
+            github_form.repository.data = json.dumps(selected_repo)
+        github_form.enabled.data = g.user.github_integration_enabled
+    elif selected_repo and not github_form.repository.choices:
+        github_form.repository.choices = [
+            (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
+        ]
+
+    if user_form.submit.data and user_form.validate_on_submit():
         g.user.username = user_form.username.data
         g.user.name = user_form.name.data
         g.user.email = user_form.email.data
@@ -200,10 +246,66 @@ def user():
             db.session.rollback()  # Roll back the transaction
             flash(f"An error occurred: {str(e)}", "error")
 
-    # user_form.theme.choices = THEME_CHOICES
-    # user_form.role.choices = [(User.USER,'System User'),(User.ADMIN, 'Administrator')]
+    if github_form.submit.data and github_form.validate_on_submit():
+        token_input = (github_form.token.data or "").strip()
+        if github_form.enabled.data:
+            if token_input:
+                g.user.set_github_token(token_input)
+                token_to_use = token_input
+            else:
+                token_to_use = g.user.get_github_token()
+            if not token_to_use:
+                github_form.token.errors.append("Token is required when enabling integration.")
+            repo_value = github_form.repository.data
+            repo_payload = None
+            if repo_value:
+                try:
+                    repo_payload = json.loads(repo_value)
+                except ValueError:
+                    github_form.repository.errors.append("Invalid repository selection.")
+            elif not selected_repo:
+                github_form.repository.errors.append("Please select a repository.")
 
-    return render_template("user.html", user_form=user_form)
+            if not github_form.errors:
+                g.user.github_integration_enabled = True
+                if repo_payload:
+                    g.user.github_repo_id = repo_payload.get("id")
+                    g.user.github_repo_name = repo_payload.get("name")
+                    g.user.github_repo_owner = repo_payload.get("owner")
+                elif selected_repo:
+                    g.user.github_repo_id = selected_repo.get("id")
+                    g.user.github_repo_name = selected_repo.get("name")
+                    g.user.github_repo_owner = selected_repo.get("owner")
+                try:
+                    db.session.commit()
+                    flash("GitHub settings saved.", "success")
+                    return redirect(url_for("user"))
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    flash(f"An error occurred: {str(e)}", "error")
+        else:
+            g.user.github_integration_enabled = False
+            g.user.github_repo_id = None
+            g.user.github_repo_name = None
+            g.user.github_repo_owner = None
+            g.user.set_github_token(None)
+            try:
+                db.session.commit()
+                flash("GitHub integration disabled.", "info")
+                return redirect(url_for("user"))
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                flash(f"An error occurred: {str(e)}", "error")
+
+    token_present = bool(g.user.github_token_encrypted)
+
+    return render_template(
+        "user.html",
+        user_form=user_form,
+        github_form=github_form,
+        github_token_present=token_present,
+        github_repo=selected_repo,
+    )
 
 
 # Custom form validators
@@ -379,6 +481,170 @@ def _get_tags_for_scope(tag_ids):
     return tags
 
 
+def _labels_for_github(task: Task) -> list[str]:
+    labels: set[str] = set()
+    for tag in task.tags:
+        if not tag or not tag.name:
+            continue
+        name = tag.name.strip()
+        if not name:
+            continue
+        lower = name.lower()
+        if lower in {LOCAL_GITHUB_TAG_NAME, GITHUB_APP_LABEL.lower()}:
+            continue
+        labels.add(name)
+    return sorted(labels)
+
+
+def _get_or_create_local_github_tag(scope: Scope | None):
+    if scope is None:
+        return None
+    tag = Tag.query.filter_by(scope_id=scope.id, name=LOCAL_GITHUB_TAG_NAME).first()
+    if tag is None:
+        tag = Tag(name=LOCAL_GITHUB_TAG_NAME, scope_id=scope.id)
+        db.session.add(tag)
+        db.session.flush()
+    return tag
+
+
+def _ensure_local_github_tag(task: Task) -> None:
+    if not task.github_issue_number:
+        return
+    scope = task.scope
+    if scope is None:
+        return
+    tag = _get_or_create_local_github_tag(scope)
+    if tag and tag not in task.tags:
+        task.tags.append(tag)
+
+
+def _remove_local_github_tag(task: Task) -> None:
+    if not task.tags:
+        return
+    for tag in list(task.tags):
+        if (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+            task.tags.remove(tag)
+            break
+
+
+def _clear_github_issue_link(task: Task) -> None:
+    task.github_issue_id = None
+    task.github_issue_number = None
+    task.github_issue_url = None
+    task.github_issue_state = None
+    _remove_local_github_tag(task)
+
+
+def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
+    labels = _labels_for_github(task)
+    issue = update_issue(
+        context["token"],
+        context["owner"],
+        context["name"],
+        task.github_issue_number,
+        labels=labels,
+    )
+    task.github_issue_state = issue.state
+    _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
+
+
+def _user_github_context(user: User | None):
+    if not user or not user.github_integration_enabled:
+        return None
+    token = user.get_github_token()
+    if not token:
+        return None
+    if not user.github_repo_owner or not user.github_repo_name:
+        return None
+    return {
+        "token": token,
+        "owner": user.github_repo_owner,
+        "name": user.github_repo_name,
+        "id": user.github_repo_id,
+    }
+
+
+def _record_sync(task: Task, action: str, status: str, message: str | None = None):
+    log_entry = SyncLog(task=task, action=action, status=status, message=message)
+    db.session.add(log_entry)
+
+
+def _tags_for_labels(scope: Scope, labels: list[str]):
+    normalized = []
+    for label in labels:
+        if not label:
+            continue
+        lower = label.lower()
+        if lower == GITHUB_APP_LABEL.lower() or lower == LOCAL_GITHUB_TAG_NAME:
+            continue
+        normalized.append(label.strip().lstrip("#").lower())
+    if not normalized:
+        return []
+
+    tags = (
+        Tag.query.filter(
+            Tag.name.in_(normalized),
+            or_(Tag.scope_id == scope.id, Tag.scope_id.is_(None)),
+        ).all()
+    )
+    existing = {tag.name: tag for tag in tags}
+    created = False
+    for name in normalized:
+        if name not in existing:
+            tag = Tag(name=name, scope_id=scope.id)
+            db.session.add(tag)
+            tags.append(tag)
+            existing[name] = tag
+            created = True
+    if created:
+        try:
+            db.session.flush()
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise
+    return tags
+
+
+def _sync_task_from_issue(task: Task, issue, scope: Scope):
+    task.name = issue.title or task.name
+    task.description = issue.body or task.description
+    task.github_issue_state = issue.state
+    if issue.state == "closed":
+        if not task.completed:
+            task.complete_task()
+    else:
+        if task.completed:
+            task.uncomplete_task()
+    labels = issue.labels or []
+    try:
+        tags = _tags_for_labels(scope, labels)
+    except SQLAlchemyError as exc:
+        logging.error("Unable to sync tags from GitHub issue: %s", exc, exc_info=True)
+        raise
+    if tags is not None:
+        task.tags = tags
+    _ensure_local_github_tag(task)
+
+
+def _invalidate_github(user: User):
+    user.github_integration_enabled = False
+    user.github_repo_id = None
+    user.github_repo_name = None
+    user.github_repo_owner = None
+    user.set_github_token(None)
+
+
+def _github_error_response(error: GitHubError):
+    status = error.status_code or 500
+    if status in (401, 403):
+        message = "GitHub authentication failed. Please update your token."
+    elif status in GITHUB_MISSING_ISSUE_STATUS_CODES:
+        message = "Requested GitHub resource was not found."
+    else:
+        message = str(error)
+    return message, status
+
+
 @app.route("/scope/<int:id>")
 def set_scope(id):
     scope = Scope.query.get_or_404(id)
@@ -473,6 +739,13 @@ def task():
 
         filtered_tasks.append(task)
 
+    github_linked_task_count = sum(
+        1
+        for scope_task in g.scope.tasks
+        if scope_task.owner_id == g.user.id and scope_task.github_issue_number is not None
+    )
+    has_github_linked_tasks = github_linked_task_count > 0
+
     available_tags = (
         Tag.query.filter(
             or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None))
@@ -487,6 +760,11 @@ def task():
             db.session.rollback()
             logging.exception("Unable to assign tags to scope during task view")
             abort(500)
+
+    if not has_github_linked_tasks:
+        available_tags = [
+            tag for tag in available_tags if (tag.name or "").lower() != LOCAL_GITHUB_TAG_NAME
+        ]
 
     tag_usage = {
         tag.id: sum(
@@ -675,6 +953,12 @@ def task():
         "sort_by": sort_by,
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
+        "github_enabled": bool(_user_github_context(g.user)),
+        "github_repo": g.user.github_repo_as_dict(),
+        "github_label": GITHUB_APP_LABEL,
+        "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+        "has_github_linked_tasks": has_github_linked_tasks,
+        "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
     }
 
     available_tags_payload = [
@@ -698,10 +982,400 @@ def task():
                 "sort_by": sort_by,
                 "sortable_group_ids": sortable_group_ids,
                 "available_tags": available_tags_payload,
+                "has_github_linked_tasks": has_github_linked_tasks,
             }
         )
 
     return render_template("task.html", **response_context)
+
+
+@app.route("/api/github/connect", methods=["POST"])
+def github_connect():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    test_only = bool(payload.get("test_only"))
+    repository_payload = payload.get("repository")
+
+    if not token:
+        token = g.user.get_github_token()
+
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    if not test_connection(token):
+        return jsonify({"success": False, "message": "Unable to authenticate with GitHub."}), 403
+
+    if not test_only:
+        g.user.set_github_token(token)
+        g.user.github_integration_enabled = True
+        if isinstance(repository_payload, dict):
+            g.user.github_repo_id = repository_payload.get("id")
+            g.user.github_repo_name = repository_payload.get("name")
+            g.user.github_repo_owner = repository_payload.get("owner")
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Error saving GitHub connection: %s", exc, exc_info=True)
+            return jsonify({"success": False, "message": "Unable to save GitHub settings."}), 500
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/github/repos", methods=["POST"])
+def github_repositories():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    if not token:
+        token = g.user.get_github_token()
+
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    try:
+        repos = list_repositories(token)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        return jsonify({"success": False, "message": message}), status
+
+    payload = [
+        {"id": repo.id, "name": repo.name, "owner": repo.owner}
+        for repo in repos
+    ]
+    return jsonify({"success": True, "repositories": payload})
+
+
+def _task_owner_guard(task: Task):
+    if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+        abort(403)
+
+
+@app.route("/api/github/issue/create", methods=["POST"])
+@scope_required
+def github_issue_create():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    labels = _labels_for_github(task)
+    try:
+        issue = create_issue(context["token"], context["owner"], context["name"], task.name, task.description or "", labels)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        return jsonify({"success": False, "message": message}), status
+
+    task.github_issue_id = issue.id
+    task.github_issue_number = issue.number
+    task.github_issue_url = issue.url
+    task.github_issue_state = issue.state
+    try:
+        _ensure_local_github_tag(task)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to add local GitHub tag: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
+    _record_sync(task, "create_issue", "success", f"Issue #{issue.number} created")
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to persist GitHub issue link: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "issue": {
+                "id": issue.id,
+                "number": issue.number,
+                "url": issue.url,
+                "state": issue.state,
+                "labels": issue.labels,
+            },
+        }
+    )
+
+
+@app.route("/api/github/issue/sync", methods=["POST"])
+@scope_required
+def github_issue_sync():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    if not task.github_issue_number:
+        return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    try:
+        issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
+    except GitHubError as error:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+            _clear_github_issue_link(task)
+            _record_sync(
+                task,
+                "sync_issue",
+                "missing",
+                "Linked issue not found while syncing; link removed.",
+            )
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Unable to update task after detaching missing GitHub issue.",
+                        }
+                    ),
+                    500,
+                )
+
+            task_payload = {
+                "id": task.id,
+                "name": task.name,
+                "description": task.description or "",
+                "completed": task.completed,
+                "end_date": task.end_date.isoformat() if task.end_date else None,
+                "tag_ids": [tag.id for tag in task.tags],
+                "has_github_issue": task.has_github_issue,
+                "github_issue_state": task.github_issue_state,
+            }
+
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "issue": None,
+                        "task": task_payload,
+                        "message": GITHUB_ISSUE_MISSING_MESSAGE,
+                        "github_issue_unlinked": True,
+                    }
+                ),
+                200,
+            )
+
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        return jsonify({"success": False, "message": message}), status
+
+    try:
+        _sync_task_from_issue(task, issue, g.scope)
+        _record_sync(task, "sync_issue", "success", f"Issue #{issue.number} synced")
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to sync issue data: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Unable to sync task with GitHub."}), 500
+
+    task_payload = {
+        "id": task.id,
+        "name": task.name,
+        "description": task.description or "",
+        "completed": task.completed,
+        "end_date": task.end_date.isoformat() if task.end_date else None,
+        "tag_ids": [tag.id for tag in task.tags],
+        "has_github_issue": task.has_github_issue,
+        "github_issue_state": task.github_issue_state,
+    }
+
+    return jsonify(
+        {
+            "success": True,
+            "issue": {
+                "id": issue.id,
+                "number": issue.number,
+                "url": issue.url,
+                "state": issue.state,
+                "labels": issue.labels,
+            },
+            "task": task_payload,
+        }
+    )
+
+
+@app.route("/api/github/issue/close", methods=["POST"])
+@scope_required
+def github_issue_close():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    if not task.github_issue_number:
+        return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    issue = None
+    issue_unlinked = False
+    try:
+        issue = close_issue(
+            context["token"], context["owner"], context["name"], task.github_issue_number
+        )
+        comment_on_issue(
+            context["token"],
+            context["owner"],
+            context["name"],
+            task.github_issue_number,
+            "Closed from ProjectsManager.",
+        )
+    except GitHubError as error:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+            _clear_github_issue_link(task)
+            _record_sync(
+                task,
+                "close_issue",
+                "missing",
+                "Linked issue not found during close; link removed.",
+            )
+            issue_unlinked = True
+        else:
+            message, status = _github_error_response(error)
+            if error.status_code in (401, 403):
+                _invalidate_github(g.user)
+                try:
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+            return jsonify({"success": False, "message": message}), status
+
+    task.complete_task()
+    if issue is not None:
+        task.github_issue_state = issue.state
+        _record_sync(task, "close_issue", "success", f"Issue #{issue.number} closed")
+    else:
+        task.github_issue_state = None
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to update task after closing GitHub issue: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue closed but could not update task."}), 500
+
+    response = {"success": True, "task": {"id": task.id, "completed": task.completed}}
+    if issue is not None:
+        response["issue"] = {
+            "number": issue.number,
+            "state": issue.state,
+            "url": issue.url,
+        }
+    if issue_unlinked:
+        response["github_issue_unlinked"] = True
+        response["message"] = GITHUB_ISSUE_MISSING_MESSAGE
+
+    return jsonify(response)
+
+
+@app.route("/api/github/refresh", methods=["POST"])
+def github_refresh():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    tasks = (
+        Task.query.filter(
+            Task.owner_id == g.user.id,
+            Task.github_issue_number.isnot(None),
+        ).all()
+    )
+    updated = 0
+    for task in tasks:
+        if task.scope is None:
+            continue
+        try:
+            issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
+        except GitHubError as error:
+            if error.status_code in (401, 403):
+                _invalidate_github(g.user)
+                try:
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                message, status = _github_error_response(error)
+                return jsonify({"success": False, "message": message}), status
+            if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                _clear_github_issue_link(task)
+                continue
+            message, _ = _github_error_response(error)
+            logging.error("Unable to refresh issue %s: %s", task.github_issue_number, message)
+            continue
+
+        previous_state = task.github_issue_state
+        try:
+            _sync_task_from_issue(task, issue, task.scope)
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Unable to sync during refresh: %s", exc, exc_info=True)
+            continue
+        if issue.state == "closed" and previous_state != "closed":
+            updated += 1
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to commit GitHub refresh: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Unable to refresh GitHub data."}), 500
+
+    return jsonify({"success": True, "updated": updated})
 
 
 @app.route("/tags", methods=["GET"])
@@ -719,8 +1393,19 @@ def list_tags():
             db.session.rollback()
             logging.exception("Unable to assign tags to scope while listing tags")
             abort(500)
+    has_github_linked_tasks = (
+        Task.query.filter(
+            Task.scope_id == g.scope.id,
+            Task.owner_id == g.user.id,
+            Task.github_issue_number.isnot(None),
+        )
+        .first()
+        is not None
+    )
     serialized_tags = []
     for tag in tags:
+        if not has_github_linked_tasks and (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+            continue
         payload = tag.to_dict()
         payload["task_count"] = sum(
             1
@@ -780,7 +1465,13 @@ def delete_tag(tag_id):
         )
         .first_or_404()
     )
-    _ensure_tags_assigned_to_current_scope([tag])
+    scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+
+    if (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+        return (
+            jsonify({"error": "The github tag is managed automatically and cannot be deleted."}),
+            400,
+        )
 
     for task in tag.tasks:
         if task.owner_id != g.user.id or task.scope_id != g.scope.id:
@@ -857,23 +1548,71 @@ def add_tag_to_task(task_id):
         )
         .first_or_404()
     )
-    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+    _ensure_tags_assigned_to_current_scope([tag])
 
+    tag_name_lower = (tag.name or "").lower()
+    if tag_name_lower == LOCAL_GITHUB_TAG_NAME and not task.github_issue_number:
+        return (
+            jsonify({"error": "The github tag is reserved for tasks linked to GitHub issues."}),
+            400,
+        )
+
+    assigned_now = False
     if tag not in task.tags:
-        try:
-            task.tags.append(tag)
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in add_tag_to_task: %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
-    elif tag_scope_changed:
-        try:
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in add_tag_to_task (scope change): %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
+        task.tags.append(tag)
+        assigned_now = True
+
+    context = _user_github_context(g.user) if task.github_issue_number else None
+
+    try:
+        if (
+            assigned_now
+            and context
+            and tag_name_lower != LOCAL_GITHUB_TAG_NAME
+            and task.github_issue_number
+        ):
+            _push_task_labels_to_github(task, context)
+        db.session.commit()
+    except GitHubError as error:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+            _clear_github_issue_link(task)
+            _record_sync(
+                task,
+                "update_issue",
+                "missing",
+                "Linked issue not found while assigning tag; link removed.",
+            )
+            try:
+                db.session.commit()
+            except SQLAlchemyError as exc:
+                db.session.rollback()
+                logging.error(
+                    "Unable to persist task updates after unlinking missing issue: %s",
+                    exc,
+                    exc_info=True,
+                )
+                return jsonify({"error": "An internal server error occurred."}), 500
+            response = {
+                "tag": tag.to_dict(),
+                "assigned": True,
+                "github_issue_unlinked": True,
+                "message": GITHUB_ISSUE_MISSING_MESSAGE,
+            }
+            return jsonify(response)
+        db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        logging.error("Unable to sync labels after assigning tag: %s", message)
+        return jsonify({"error": message}), status
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error("Exception in add_tag_to_task: %s", e, exc_info=True)
+        return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": True})
 
@@ -889,23 +1628,69 @@ def remove_tag_from_task(task_id, tag_id):
         )
         .first_or_404()
     )
-    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+    scope_changed = _ensure_tags_assigned_to_current_scope([tag])
 
+    tag_name_lower = (tag.name or "").lower()
+    if tag_name_lower == LOCAL_GITHUB_TAG_NAME and task.github_issue_number:
+        return (
+            jsonify({"error": "This task is linked to GitHub and the github tag cannot be removed."}),
+            400,
+        )
+
+    removed = False
     if tag in task.tags:
-        try:
-            task.tags.remove(tag)
+        task.tags.remove(tag)
+        removed = True
+
+    context = _user_github_context(g.user) if task.github_issue_number else None
+
+    try:
+        if removed and context and task.github_issue_number:
+            _push_task_labels_to_github(task, context)
+        if removed or scope_changed:
             db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in remove_tag_from_task: %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
-    elif tag_scope_changed:
-        try:
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in remove_tag_from_task (scope change): %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
+        else:
+            return jsonify({"tag": tag.to_dict(), "assigned": False})
+    except GitHubError as error:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+            _clear_github_issue_link(task)
+            _record_sync(
+                task,
+                "update_issue",
+                "missing",
+                "Linked issue not found while removing tag; link removed.",
+            )
+            try:
+                db.session.commit()
+            except SQLAlchemyError as exc:
+                db.session.rollback()
+                logging.error(
+                    "Unable to persist task updates after unlinking missing issue: %s",
+                    exc,
+                    exc_info=True,
+                )
+                return jsonify({"error": "An internal server error occurred."}), 500
+            response = {
+                "tag": tag.to_dict(),
+                "assigned": False,
+                "github_issue_unlinked": True,
+                "message": GITHUB_ISSUE_MISSING_MESSAGE,
+            }
+            return jsonify(response)
+        db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        logging.error("Unable to sync labels after removing tag: %s", message)
+        return jsonify({"error": message}), status
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error("Exception in remove_tag_from_task: %s", e, exc_info=True)
+        return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": False})
 
@@ -1051,6 +1836,8 @@ def edit_task(id):
     )
     show_modal = False
 
+    issue_unlinked = False
+
     if form.validate_on_submit():
         #edit the item
         item.name = form.name.data
@@ -1060,10 +1847,62 @@ def edit_task(id):
         tag_ids = _parse_tag_ids(form.tags.data)
         item.tags = _get_tags_for_scope(tag_ids)
         try:
+            _ensure_local_github_tag(item)
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Unable to maintain GitHub tag during edit: %s", exc, exc_info=True)
+            generic_error_message = "An internal error occurred while updating the task. Please try again later."
+            if wants_json:
+                return jsonify({"success": False, "message": generic_error_message}), 500
+            flash(generic_error_message, "error")
+            return redirect(request.referrer or url_for("task"))
+        context = _user_github_context(g.user)
+        if item.github_issue_number and context:
+            labels = _labels_for_github(item)
+            try:
+                issue = update_issue(
+                    context["token"],
+                    context["owner"],
+                    context["name"],
+                    item.github_issue_number,
+                    title=item.name,
+                    body=item.description or "",
+                    labels=labels,
+                )
+                item.github_issue_state = issue.state
+                _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
+            except GitHubError as error:
+                if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                    _clear_github_issue_link(item)
+                    issue_unlinked = True
+                else:
+                    message, status = _github_error_response(error)
+                    if error.status_code in (401, 403):
+                        _invalidate_github(g.user)
+                        try:
+                            db.session.commit()
+                        except SQLAlchemyError:
+                            db.session.rollback()
+                    if wants_json:
+                        return jsonify({"success": False, "message": message}), status
+                    flash(message, "danger")
+                    return redirect(request.referrer or url_for("task"))
+        try:
             db.session.commit()
             success_message = f'Task "{item.name}" updated!'
+            if issue_unlinked:
+                success_message = (
+                    f"{success_message} {GITHUB_ISSUE_MISSING_MESSAGE}"
+                )
             if wants_json:
-                return jsonify({"success": True, "message": success_message, "task_id": item.id})
+                response = {
+                    "success": True,
+                    "message": success_message,
+                    "task_id": item.id,
+                }
+                if issue_unlinked:
+                    response["github_issue_unlinked"] = True
+                return jsonify(response)
             flash(success_message, "success")
             form = TaskForm()
         except SQLAlchemyError as e:
@@ -1119,6 +1958,16 @@ def delete_item(item_type, id):
                         ),
                         403,
                     )
+                if item.github_issue_is_open:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Task cannot be deleted until its linked GitHub issue is closed.",
+                            }
+                        ),
+                        400,
+                    )
 
             db.session.delete(item)
             db.session.commit()
@@ -1145,9 +1994,105 @@ def complete_task(id):
     )
     try:
         item = _get_task_in_scope_or_404(id)
+        context = _user_github_context(g.user) if item.github_issue_number else None
+        issue_unlinked = False
+        issue_reopened = False
+        issue_closed = False
         if item.completed:
+            if item.github_issue_number and context:
+                try:
+                    issue = update_issue(
+                        context["token"],
+                        context["owner"],
+                        context["name"],
+                        item.github_issue_number,
+                        state="open",
+                    )
+                    item.github_issue_state = issue.state
+                    _record_sync(item, "reopen_issue", "success", f"Issue #{issue.number} reopened")
+                    issue_reopened = True
+                except GitHubError as error:
+                    if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                        _clear_github_issue_link(item)
+                        _record_sync(
+                            item,
+                            "reopen_issue",
+                            "missing",
+                            "Linked issue not found while reopening; link removed.",
+                        )
+                        issue_unlinked = True
+                    else:
+                        message, status = _github_error_response(error)
+                        if error.status_code in (401, 403):
+                            _invalidate_github(g.user)
+                            try:
+                                db.session.commit()
+                            except SQLAlchemyError:
+                                db.session.rollback()
+                        if wants_json:
+                            return (
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": message,
+                                        "category": "danger",
+                                    }
+                                ),
+                                status,
+                            )
+                        flash(message, "danger")
+                        return redirect(request.referrer or url_for("task"))
             item.uncomplete_task()
         else:
+            if item.github_issue_number and context:
+                try:
+                    issue = close_issue(
+                        context["token"],
+                        context["owner"],
+                        context["name"],
+                        item.github_issue_number,
+                    )
+                    comment_on_issue(
+                        context["token"],
+                        context["owner"],
+                        context["name"],
+                        item.github_issue_number,
+                        "Closed from ProjectsManager.",
+                    )
+                    item.github_issue_state = issue.state
+                    _record_sync(item, "close_issue", "success", f"Issue #{issue.number} closed")
+                    issue_closed = True
+                except GitHubError as error:
+                    if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                        _clear_github_issue_link(item)
+                        _record_sync(
+                            item,
+                            "close_issue",
+                            "missing",
+                            "Linked issue not found while closing; link removed.",
+                        )
+                        issue_unlinked = True
+                    else:
+                        message, status = _github_error_response(error)
+                        if error.status_code in (401, 403):
+                            _invalidate_github(g.user)
+                            try:
+                                db.session.commit()
+                            except SQLAlchemyError:
+                                db.session.rollback()
+                        if wants_json:
+                            return (
+                                jsonify(
+                                    {
+                                        "success": False,
+                                        "message": message,
+                                        "category": "danger",
+                                    }
+                                ),
+                                status,
+                            )
+                        flash(message, "danger")
+                        return redirect(request.referrer or url_for("task"))
             item.complete_task()
         db.session.commit()
 
@@ -1163,15 +2108,30 @@ def complete_task(id):
             )
             category = "info"
 
+        notes: list[str] = []
+        if issue_reopened:
+            notes.append("Linked GitHub issue reopened.")
+        if issue_closed:
+            notes.append("Linked GitHub issue closed.")
+        if issue_unlinked:
+            notes.append(GITHUB_ISSUE_MISSING_MESSAGE)
+        if notes:
+            message = f"{message} {' '.join(notes)}"
+
         if wants_json:
-            return jsonify(
-                {
-                    "success": True,
-                    "completed": item.completed,
-                    "message": message,
-                    "category": category,
-                }
-            )
+            payload = {
+                "success": True,
+                "completed": item.completed,
+                "message": message,
+                "category": category,
+            }
+            if issue_unlinked:
+                payload["github_issue_unlinked"] = True
+            if issue_reopened:
+                payload["github_issue_reopened"] = True
+            if issue_closed:
+                payload["github_issue_closed"] = True
+            return jsonify(payload)
 
         flash(message, category)
     except SQLAlchemyError as e:
