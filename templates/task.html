@@ -1864,6 +1864,105 @@
         });
     }
 
+    function parseTaskTagString(tagString) {
+        if (!tagString) {
+            return [];
+        }
+        return tagString
+            .split(',')
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0);
+    }
+
+    function getTaskDataFromButton(button) {
+        if (!button) {
+            return {};
+        }
+        const taskId = Number(button.getAttribute('data-task-id')) || null;
+        const tagString = button.getAttribute('data-task-tags') || '';
+        return {
+            id: taskId,
+            name: button.getAttribute('data-task-name') || '',
+            description: button.getAttribute('data-task-description') || '',
+            end_date: button.getAttribute('data-task-end_date') || '',
+            tag_ids: parseTaskTagString(tagString),
+            has_github_issue: button.getAttribute('data-task-has-github') === 'true',
+            github_issue_state: button.getAttribute('data-task-github-state') || '',
+        };
+    }
+
+    function applyTaskDataToButton(button, taskData) {
+        if (!button || !taskData) {
+            return;
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'name')) {
+            button.setAttribute('data-task-name', taskData.name || '');
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'description')) {
+            button.setAttribute('data-task-description', taskData.description || '');
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'end_date')) {
+            const endDate = taskData.end_date || '';
+            if (endDate) {
+                button.setAttribute('data-task-end_date', endDate);
+            } else {
+                button.removeAttribute('data-task-end_date');
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'tag_ids')) {
+            const tags = Array.isArray(taskData.tag_ids)
+                ? taskData.tag_ids
+                      .map((value) => String(value).trim())
+                      .filter((value) => value.length > 0)
+                : parseTaskTagString(taskData.tag_ids);
+            button.setAttribute('data-task-tags', tags.join(','));
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'has_github_issue')) {
+            button.dataset.taskHasGithub = taskData.has_github_issue ? 'true' : 'false';
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'github_issue_state')) {
+            button.dataset.taskGithubState = taskData.github_issue_state || '';
+        }
+    }
+
+    function openTaskEditForm(button) {
+        if (!button) {
+            return;
+        }
+        const taskData = getTaskDataFromButton(button);
+        if (nameField) {
+            nameField.value = taskData.name || '';
+        }
+
+        editingTaskHasGithub = taskData.has_github_issue;
+
+        if (descriptionField) {
+            descriptionField.value = taskData.description || '';
+            autoResizeTextarea(descriptionField);
+        }
+
+        if (endDateField) {
+            const rawDate = taskData.end_date;
+            endDateField.value = rawDate ? convertToLocal(rawDate) : '';
+        }
+
+        const tagString = button.getAttribute('data-task-tags') || '';
+        if (tagsField) {
+            tagsField.value = tagString;
+        }
+        setInlineTagsFromString(tagString, button.getAttribute('data-task-id'));
+
+        const baseUrl = '{{ url_for("edit_task", id=0) }}';
+        const actionUrl = baseUrl.replace('/0', `/${button.getAttribute('data-task-id')}`);
+        if (taskForm) {
+            taskForm.action = actionUrl;
+        }
+
+        applyTaskFormErrors({});
+        expandAccordionItem('detailed-item-container');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
     // Use WeakSet to track attached listeners for edit-task-btn
     const editTaskListenerAttached = new WeakSet();
     function attachEditTaskListeners() {
@@ -1874,38 +1973,91 @@
             editTaskListenerAttached.add(button);
             button.addEventListener('click', (event) => {
                 event.preventDefault();
+                const fallbackData = getTaskDataFromButton(button);
+                const showForm = (taskData) => {
+                    applyTaskDataToButton(button, taskData);
+                    openTaskEditForm(button);
+                };
 
-                if (nameField) {
-                    nameField.value = button.getAttribute('data-task-name') || '';
+                if (fallbackData.has_github_issue && fallbackData.id) {
+                    const csrfField = document.getElementById('csrf_token');
+                    const csrfToken = csrfField ? csrfField.value : null;
+                    const originalContent = button.innerHTML;
+                    button.disabled = true;
+                    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+                    fetch('/api/github/issue/sync', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                        },
+                        body: JSON.stringify({ task_id: fallbackData.id }),
+                    })
+                        .then((response) =>
+                            response
+                                .json()
+                                .catch(() => ({}))
+                                .then((data) => ({ ok: response.ok, status: response.status, data }))
+                        )
+                        .then(({ ok, status, data }) => {
+                            if (ok && data && data.success && data.task) {
+                                const payload = data.task;
+                                const normalized = {
+                                    id: payload.id ?? fallbackData.id,
+                                    name:
+                                        typeof payload.name === 'string'
+                                            ? payload.name
+                                            : fallbackData.name,
+                                    description:
+                                        typeof payload.description === 'string'
+                                            ? payload.description
+                                            : fallbackData.description,
+                                    end_date: payload.end_date || '',
+                                    tag_ids: Array.isArray(payload.tag_ids)
+                                        ? payload.tag_ids.map((value) => String(value))
+                                        : fallbackData.tag_ids,
+                                    has_github_issue:
+                                        typeof payload.has_github_issue === 'boolean'
+                                            ? payload.has_github_issue
+                                            : fallbackData.has_github_issue,
+                                    github_issue_state: payload.github_issue_state || '',
+                                };
+                                showForm(normalized);
+                                if (typeof refreshTaskList === 'function') {
+                                    refreshTaskList().catch((error) => {
+                                        console.error('Unable to refresh tasks after pre-edit sync', error);
+                                    });
+                                }
+                                return;
+                            }
+                            const message = (data && data.message) || 'Unable to sync GitHub issue.';
+                            if (typeof displayFlashMessage === 'function' && message) {
+                                displayFlashMessage(message, 'danger');
+                            }
+                            showForm(fallbackData);
+                            if (status === 404 && typeof refreshTaskList === 'function') {
+                                refreshTaskList().catch((error) => {
+                                    console.error('Unable to refresh tasks after missing GitHub issue', error);
+                                });
+                            }
+                        })
+                        .catch((error) => {
+                            console.error('Unable to sync GitHub issue before editing', error);
+                            if (typeof displayFlashMessage === 'function') {
+                                displayFlashMessage('Unable to fetch the latest GitHub issue data.', 'danger');
+                            }
+                            showForm(fallbackData);
+                        })
+                        .finally(() => {
+                            button.disabled = false;
+                            button.innerHTML = originalContent;
+                        });
+                    return;
                 }
 
-                editingTaskHasGithub = button.getAttribute('data-task-has-github') === 'true';
-
-                if (descriptionField) {
-                    descriptionField.value = button.getAttribute('data-task-description') || '';
-                    autoResizeTextarea(descriptionField);
-                }
-
-                if (endDateField) {
-                    const rawDate = button.getAttribute('data-task-end_date');
-                    endDateField.value = rawDate ? convertToLocal(rawDate) : '';
-                }
-
-                const tagString = button.getAttribute('data-task-tags') || '';
-                if (tagsField) {
-                    tagsField.value = tagString;
-                }
-                setInlineTagsFromString(tagString, button.getAttribute('data-task-id'));
-
-                const baseUrl = '{{ url_for("edit_task", id=0) }}';
-                const actionUrl = baseUrl.replace('/0', `/${button.getAttribute('data-task-id')}`);
-                if (taskForm) {
-                    taskForm.action = actionUrl;
-                }
-
-                applyTaskFormErrors({});
-                expandAccordionItem('detailed-item-container');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                showForm(fallbackData);
             });
         });
     }

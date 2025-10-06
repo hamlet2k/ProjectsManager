@@ -1159,6 +1159,17 @@ def github_issue_sync():
         logging.error("Unable to sync issue data: %s", exc, exc_info=True)
         return jsonify({"success": False, "message": "Unable to sync task with GitHub."}), 500
 
+    task_payload = {
+        "id": task.id,
+        "name": task.name,
+        "description": task.description or "",
+        "completed": task.completed,
+        "end_date": task.end_date.isoformat() if task.end_date else None,
+        "tag_ids": [tag.id for tag in task.tags],
+        "has_github_issue": task.has_github_issue,
+        "github_issue_state": task.github_issue_state,
+    }
+
     return jsonify(
         {
             "success": True,
@@ -1169,7 +1180,7 @@ def github_issue_sync():
                 "state": issue.state,
                 "labels": issue.labels,
             },
-            "task": {"id": task.id, "name": task.name, "completed": task.completed},
+            "task": task_payload,
         }
     )
 
