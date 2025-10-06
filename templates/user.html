@@ -80,11 +80,14 @@
                 return;
             }
             const tokenValue = tokenField ? tokenField.value.trim() : '';
-            const url = tokenValue ? `/api/github/repos?token=${encodeURIComponent(tokenValue)}` : '/api/github/repos';
+            const url = '/api/github/repos';
             fetch(url, {
+                method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json',
                 },
+                body: JSON.stringify(tokenValue ? { token: tokenValue } : {}),
             })
                 .then((response) =>
                     response
