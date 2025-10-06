@@ -169,6 +169,9 @@
                     const count = Number(data.updated || 0);
                     const summary = `GitHub sync complete — ${count} task${count === 1 ? '' : 's'} updated.`;
                     displayFlashMessage(summary, 'success');
+                    if (typeof refreshTaskList === 'function') {
+                        refreshTaskList();
+                    }
                 })
                 .catch((error) => {
                     console.error('Unable to refresh GitHub data', error);

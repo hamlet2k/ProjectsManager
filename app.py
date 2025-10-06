@@ -62,6 +62,8 @@ from services.github_service import (
     close_issue,
 )
 
+LOCAL_GITHUB_TAG_NAME = "github"
+
 # Create flask command lines to update the db based on the model
 # Useage:
 # Create a migration script in ./migrations/versions
@@ -470,6 +472,65 @@ def _get_tags_for_scope(tag_ids):
     return tags
 
 
+def _labels_for_github(task: Task) -> list[str]:
+    labels: set[str] = set()
+    for tag in task.tags:
+        if not tag or not tag.name:
+            continue
+        name = tag.name.strip()
+        if not name:
+            continue
+        lower = name.lower()
+        if lower in {LOCAL_GITHUB_TAG_NAME, GITHUB_APP_LABEL.lower()}:
+            continue
+        labels.add(name)
+    return sorted(labels)
+
+
+def _get_or_create_local_github_tag(scope: Scope | None):
+    if scope is None:
+        return None
+    tag = Tag.query.filter_by(scope_id=scope.id, name=LOCAL_GITHUB_TAG_NAME).first()
+    if tag is None:
+        tag = Tag(name=LOCAL_GITHUB_TAG_NAME, scope_id=scope.id)
+        db.session.add(tag)
+        db.session.flush()
+    return tag
+
+
+def _ensure_local_github_tag(task: Task) -> None:
+    if not task.github_issue_number:
+        return
+    scope = task.scope
+    if scope is None:
+        return
+    tag = _get_or_create_local_github_tag(scope)
+    if tag and tag not in task.tags:
+        task.tags.append(tag)
+
+
+def _remove_local_github_tag(task: Task) -> None:
+    if not task.tags:
+        return
+    for tag in list(task.tags):
+        if (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+            task.tags.remove(tag)
+            break
+
+
+def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
+    labels = _labels_for_github(task)
+    issue = update_issue(
+        context["token"],
+        context["owner"],
+        context["name"],
+        task.github_issue_number,
+        labels=labels,
+    )
+    task.github_issue_state = issue.state
+    _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
+
+
 def _user_github_context(user: User | None):
     if not user or not user.github_integration_enabled:
         return None
@@ -494,7 +555,10 @@ def _record_sync(task: Task, action: str, status: str, message: str | None = Non
 def _tags_for_labels(scope: Scope, labels: list[str]):
     normalized = []
     for label in labels:
-        if not label or label.lower() == GITHUB_APP_LABEL.lower():
+        if not label:
+            continue
+        lower = label.lower()
+        if lower == GITHUB_APP_LABEL.lower() or lower == LOCAL_GITHUB_TAG_NAME:
             continue
         normalized.append(label.strip().lstrip("#").lower())
     if not normalized:
@@ -542,6 +606,7 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
         raise
     if tags is not None:
         task.tags = tags
+    _ensure_local_github_tag(task)
 
 
 def _invalidate_github(user: User):
@@ -657,6 +722,13 @@ def task():
 
         filtered_tasks.append(task)
 
+    github_linked_task_count = sum(
+        1
+        for scope_task in g.scope.tasks
+        if scope_task.owner_id == g.user.id and scope_task.github_issue_number is not None
+    )
+    has_github_linked_tasks = github_linked_task_count > 0
+
     available_tags = (
         Tag.query.filter(
             or_(Tag.scope_id == g.scope.id, Tag.scope_id.is_(None))
@@ -671,6 +743,11 @@ def task():
             db.session.rollback()
             logging.exception("Unable to assign tags to scope during task view")
             abort(500)
+
+    if not has_github_linked_tasks:
+        available_tags = [
+            tag for tag in available_tags if (tag.name or "").lower() != LOCAL_GITHUB_TAG_NAME
+        ]
 
     tag_usage = {
         tag.id: sum(
@@ -862,6 +939,8 @@ def task():
         "github_enabled": bool(_user_github_context(g.user)),
         "github_repo": g.user.github_repo_as_dict(),
         "github_label": GITHUB_APP_LABEL,
+        "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+        "has_github_linked_tasks": has_github_linked_tasks,
     }
 
     available_tags_payload = [
@@ -885,6 +964,7 @@ def task():
                 "sort_by": sort_by,
                 "sortable_group_ids": sortable_group_ids,
                 "available_tags": available_tags_payload,
+                "has_github_linked_tasks": has_github_linked_tasks,
             }
         )
 
@@ -982,7 +1062,7 @@ def github_issue_create():
     if not context:
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
-    labels = [tag.name for tag in task.tags]
+    labels = _labels_for_github(task)
     try:
         issue = create_issue(context["token"], context["owner"], context["name"], task.name, task.description or "", labels)
     except GitHubError as error:
@@ -999,6 +1079,12 @@ def github_issue_create():
     task.github_issue_number = issue.number
     task.github_issue_url = issue.url
     task.github_issue_state = issue.state
+    try:
+        _ensure_local_github_tag(task)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to add local GitHub tag: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
     _record_sync(task, "create_issue", "success", f"Issue #{issue.number} created")
     try:
         db.session.commit()
@@ -1057,6 +1143,7 @@ def github_issue_sync():
             task.github_issue_number = None
             task.github_issue_url = None
             task.github_issue_state = None
+            _remove_local_github_tag(task)
             try:
                 db.session.commit()
             except SQLAlchemyError:
@@ -1214,8 +1301,19 @@ def list_tags():
             db.session.rollback()
             logging.exception("Unable to assign tags to scope while listing tags")
             abort(500)
+    has_github_linked_tasks = (
+        Task.query.filter(
+            Task.scope_id == g.scope.id,
+            Task.owner_id == g.user.id,
+            Task.github_issue_number.isnot(None),
+        )
+        .first()
+        is not None
+    )
     serialized_tags = []
     for tag in tags:
+        if not has_github_linked_tasks and (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+            continue
         payload = tag.to_dict()
         payload["task_count"] = sum(
             1
@@ -1275,7 +1373,13 @@ def delete_tag(tag_id):
         )
         .first_or_404()
     )
-    _ensure_tags_assigned_to_current_scope([tag])
+    scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+
+    if (tag.name or "").lower() == LOCAL_GITHUB_TAG_NAME:
+        return (
+            jsonify({"error": "The github tag is managed automatically and cannot be deleted."}),
+            400,
+        )
 
     for task in tag.tasks:
         if task.owner_id != g.user.id or task.scope_id != g.scope.id:
@@ -1352,23 +1456,46 @@ def add_tag_to_task(task_id):
         )
         .first_or_404()
     )
-    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+    _ensure_tags_assigned_to_current_scope([tag])
 
+    tag_name_lower = (tag.name or "").lower()
+    if tag_name_lower == LOCAL_GITHUB_TAG_NAME and not task.github_issue_number:
+        return (
+            jsonify({"error": "The github tag is reserved for tasks linked to GitHub issues."}),
+            400,
+        )
+
+    assigned_now = False
     if tag not in task.tags:
-        try:
-            task.tags.append(tag)
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in add_tag_to_task: %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
-    elif tag_scope_changed:
-        try:
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in add_tag_to_task (scope change): %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
+        task.tags.append(tag)
+        assigned_now = True
+
+    context = _user_github_context(g.user) if task.github_issue_number else None
+
+    try:
+        if (
+            assigned_now
+            and context
+            and tag_name_lower != LOCAL_GITHUB_TAG_NAME
+            and task.github_issue_number
+        ):
+            _push_task_labels_to_github(task, context)
+        db.session.commit()
+    except GitHubError as error:
+        db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        logging.error("Unable to sync labels after assigning tag: %s", message)
+        return jsonify({"error": message}), status
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error("Exception in add_tag_to_task: %s", e, exc_info=True)
+        return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": True})
 
@@ -1384,23 +1511,44 @@ def remove_tag_from_task(task_id, tag_id):
         )
         .first_or_404()
     )
-    tag_scope_changed = _ensure_tags_assigned_to_current_scope([tag])
+    scope_changed = _ensure_tags_assigned_to_current_scope([tag])
 
+    tag_name_lower = (tag.name or "").lower()
+    if tag_name_lower == LOCAL_GITHUB_TAG_NAME and task.github_issue_number:
+        return (
+            jsonify({"error": "This task is linked to GitHub and the github tag cannot be removed."}),
+            400,
+        )
+
+    removed = False
     if tag in task.tags:
-        try:
-            task.tags.remove(tag)
+        task.tags.remove(tag)
+        removed = True
+
+    context = _user_github_context(g.user) if task.github_issue_number else None
+
+    try:
+        if removed and context and task.github_issue_number:
+            _push_task_labels_to_github(task, context)
+        if removed or scope_changed:
             db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in remove_tag_from_task: %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
-    elif tag_scope_changed:
-        try:
-            db.session.commit()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            logging.error("Exception in remove_tag_from_task (scope change): %s", e, exc_info=True)
-            return jsonify({"error": "An internal server error occurred."}), 500
+        else:
+            return jsonify({"tag": tag.to_dict(), "assigned": False})
+    except GitHubError as error:
+        db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        logging.error("Unable to sync labels after removing tag: %s", message)
+        return jsonify({"error": message}), status
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logging.error("Exception in remove_tag_from_task: %s", e, exc_info=True)
+        return jsonify({"error": "An internal server error occurred."}), 500
 
     return jsonify({"tag": tag.to_dict(), "assigned": False})
 
@@ -1554,9 +1702,19 @@ def edit_task(id):
 
         tag_ids = _parse_tag_ids(form.tags.data)
         item.tags = _get_tags_for_scope(tag_ids)
+        try:
+            _ensure_local_github_tag(item)
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Unable to maintain GitHub tag during edit: %s", exc, exc_info=True)
+            generic_error_message = "An internal error occurred while updating the task. Please try again later."
+            if wants_json:
+                return jsonify({"success": False, "message": generic_error_message}), 500
+            flash(generic_error_message, "error")
+            return redirect(request.referrer or url_for("task"))
         context = _user_github_context(g.user)
         if item.github_issue_number and context:
-            labels = [tag.name for tag in item.tags]
+            labels = _labels_for_github(item)
             try:
                 issue = update_issue(
                     context["token"],

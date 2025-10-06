@@ -1,4 +1,4 @@
-<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}'>
+<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}">
     {% set ns = namespace(has_tasks=false) %}
     {% for group in task_groups %}
         {% if group.tasks %}
@@ -44,7 +44,9 @@
                              data-task-completed="{{ 'true' if task.completed else 'false' }}"
                              data-task-completed-date="{{ task.completed_date.isoformat() if task.completed_date else '' }}"
                              data-task-tags='{{ task.tags | map(attribute="name") | list | tojson | e }}'
-                             data-task-subtasks='{{ subtask_ns.items | tojson | e }}'>
+                             data-task-subtasks='{{ subtask_ns.items | tojson | e }}'
+                             data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                             data-task-github-state="{{ task.github_issue_state or '' }}">
                             <div class="task-item-header my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
                                 <div class="d-flex align-items-center flex-grow-1">
                                     <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
@@ -77,6 +79,8 @@
                                             data-has-issue="{{ 'true' if task.has_github_issue else 'false' }}"
                                             {% if task.github_issue_number %}data-issue-number="{{ task.github_issue_number }}"{% endif %}
                                             {% if task.github_issue_url %}data-issue-url="{{ task.github_issue_url }}"{% endif %}
+                                            data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                                            data-task-github-state="{{ task.github_issue_state or '' }}"
                                             title="{{ 'Sync GitHub issue' if task.has_github_issue else 'Create GitHub issue' }}">
                                             {% if task.has_github_issue %}
                                                 <i class="bi bi-arrow-repeat"></i>
@@ -108,7 +112,7 @@
                                     <button type="button" class="btn task-action-btn task-copy-btn" aria-label="Copy task {{ task.name | e }}">
                                         <i class="bi bi-clipboard"></i>
                                     </button>
-                                    <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}">
+                                    <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}" data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}">
                                         <i class="bi bi-tags"></i>
                                     </button>
                                     <button type="button" class="btn task-action-btn edit-task-btn"
@@ -117,6 +121,7 @@
                                         data-task-description="{{ task.description | default('') | e }}"
                                         data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
                                         data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
+                                        data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>
@@ -128,6 +133,8 @@
                                         {% if task.end_date %}data-task-due-date="{{ task.end_date.isoformat() }}"{% endif %}
                                         data-task-tag-count="{{ task.tags | length }}"
                                         data-task-tags='{{ task.tags | map(attribute="name") | list | tojson | e }}'
+                                        data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                                        data-task-github-state="{{ task.github_issue_state or '' }}"
                                         aria-label="Delete task {{ task.name }}">
                                         <i class="bi bi-trash"></i>
                                     </button>

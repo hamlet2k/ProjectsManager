@@ -456,6 +456,7 @@
 {% block scripts %}
 {{ super() }}
 <script>
+    const GITHUB_LOCAL_TAG_NAME = {{ github_local_tag_name|tojson }};
     function debounce(fn, delay = 300) {
         let timeoutId;
         return (...args) => {
@@ -579,6 +580,7 @@
         if (taskForm) {
             taskForm.action = defaultTaskAction;
         }
+        editingTaskHasGithub = false;
     }
 
     function applyTaskFormErrors(errors = {}) {
@@ -902,7 +904,15 @@
             if (inlineSelectedTags.has(String(tag.id))) {
                 chip.classList.add('active');
             }
-            chip.addEventListener('click', handleInlineTagToggle);
+            const isGithubTag = (tag.name || '').toLowerCase() === GITHUB_LOCAL_TAG_NAME;
+            if (isGithubTag) {
+                chip.disabled = true;
+                chip.setAttribute('aria-disabled', 'true');
+                chip.classList.add('disabled');
+                chip.title = 'The github tag is managed automatically via GitHub integration.';
+            } else {
+                chip.addEventListener('click', handleInlineTagToggle);
+            }
             inlineTagOptions.appendChild(chip);
         });
     }
@@ -915,6 +925,15 @@
         }
         const tag = availableTagsMap.get(tagId);
         if (!tag) {
+            return;
+        }
+        if ((tag.name || '').toLowerCase() === GITHUB_LOCAL_TAG_NAME) {
+            if (typeof displayFlashMessage === 'function') {
+                const message = editingTaskHasGithub
+                    ? 'The github tag is managed automatically for linked GitHub issues.'
+                    : 'The github tag can only be added by linking this task to a GitHub issue.';
+                displayFlashMessage(message, 'info');
+            }
             return;
         }
         if (inlineSelectedTags.has(tagId)) {
@@ -1265,6 +1284,8 @@
     let currentTaskId = null;
     let currentTaskTags = new Map();
     let inlineSelectedTags = new Map();
+    let currentTaskHasGithub = false;
+    let editingTaskHasGithub = false;
     const pendingTagDeletions = new Map();
 
     function updateFilterEmptyState() {
@@ -1315,6 +1336,10 @@
         remove.appendChild(icon);
 
         button.append(label, remove);
+        if ((tag.name || '').toLowerCase() === GITHUB_LOCAL_TAG_NAME) {
+            remove.classList.add('d-none');
+            remove.setAttribute('aria-hidden', 'true');
+        }
         return button;
     }
 
@@ -1566,6 +1591,10 @@
         }
 
         tags.forEach((tag) => {
+            const isGithubTag = (tag.name || '').toLowerCase() === GITHUB_LOCAL_TAG_NAME;
+            if (isGithubTag && !currentTaskHasGithub) {
+                return;
+            }
             const chip = document.createElement('button');
             chip.type = 'button';
             chip.className = 'btn btn-sm tag-chip';
@@ -1574,7 +1603,14 @@
             if (currentTaskTags.has(String(tag.id))) {
                 chip.classList.add('active', 'assigned');
             }
-            chip.addEventListener('click', () => toggleTagAssignment(tag));
+            if (isGithubTag) {
+                chip.disabled = true;
+                chip.setAttribute('aria-disabled', 'true');
+                chip.classList.add('disabled');
+                chip.title = 'The github tag is managed automatically for linked GitHub issues.';
+            } else {
+                chip.addEventListener('click', () => toggleTagAssignment(tag));
+            }
             tagModalAvailable.appendChild(chip);
         });
     }
@@ -1606,25 +1642,51 @@
             options.body = JSON.stringify({ tag_id: Number(tagId) });
         }
 
+        const tagKey = String(tagId);
+        const tagInfo = currentTaskTags.get(tagKey) || availableTagsMap.get(tagKey);
+        const tagNameLower = tagInfo && tagInfo.name ? tagInfo.name.toLowerCase() : '';
+        const isGithubTag = tagNameLower === GITHUB_LOCAL_TAG_NAME;
+        const isLinkedTask = currentTaskHasGithub || editingTaskHasGithub;
+
+        if (!assign && isGithubTag && isLinkedTask) {
+            if (typeof displayFlashMessage === 'function') {
+                displayFlashMessage('The github tag is managed automatically for linked GitHub issues.', 'info');
+            }
+            return;
+        }
+
+        if (assign && isGithubTag && !isLinkedTask) {
+            if (typeof displayFlashMessage === 'function') {
+                displayFlashMessage('The github tag can only be added by linking this task to a GitHub issue.', 'info');
+            }
+            return;
+        }
+
         fetch(url, options)
-            .then((response) => {
-                if (!response.ok) {
-                    throw response;
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    const message = data && (data.error || data.message) ? data.error || data.message : 'Unable to update tag.';
+                    if (typeof displayFlashMessage === 'function') {
+                        displayFlashMessage(message, 'danger');
+                    }
+                    return;
                 }
-                return response.json();
-            })
-            .then((data) => {
                 if (data && data.tag) {
                     const tag = data.tag;
-                    const tagKey = String(tag.id);
-                    let updatedCount = null;
+                    const key = String(tag.id);
                     if (assign) {
-                        currentTaskTags.set(tagKey, tag);
+                        currentTaskTags.set(key, tag);
                         ensureTagInFilter(tag);
-                        adjustFilterTagCount(tagKey, 1);
+                        adjustFilterTagCount(key, 1);
                     } else {
-                        currentTaskTags.delete(tagKey);
-                        updatedCount = adjustFilterTagCount(tagKey, -1);
+                        currentTaskTags.delete(key);
+                        adjustFilterTagCount(key, -1);
                     }
                     updateTaskTagDisplay(currentTaskId, Array.from(currentTaskTags.values()));
                     renderTagOptions();
@@ -1639,6 +1701,9 @@
             })
             .catch((error) => {
                 console.error('Unable to update tag assignment', error);
+                if (typeof displayFlashMessage === 'function') {
+                    displayFlashMessage('Unable to update tag assignment.', 'danger');
+                }
             });
     }
 
@@ -1747,6 +1812,15 @@
         if (!tagId || !csrfToken) {
             return;
         }
+        const tagKey = String(tagId);
+        const tagInfo = availableTagsMap.get(tagKey);
+        const tagNameNormalized = tagInfo && tagInfo.name ? tagInfo.name.toLowerCase() : '';
+        if (tagNameNormalized === GITHUB_LOCAL_TAG_NAME) {
+            if (typeof displayFlashMessage === 'function') {
+                displayFlashMessage('The github tag is managed automatically and cannot be deleted.', 'info');
+            }
+            return;
+        }
         const button = triggerElement
             ? triggerElement.closest('.tag-filter-button')
             : filterContainer
@@ -1755,7 +1829,6 @@
         if (!button) {
             return;
         }
-        const tagKey = String(tagId);
         const tagName = button.dataset.tagName || '';
         const currentCount = setFilterTagCount(tagKey, getFilterTagCount(tagKey));
         const shouldConfirm = currentCount > 0 && typeof showConfirmationModal === 'function';
@@ -1806,6 +1879,8 @@
                     nameField.value = button.getAttribute('data-task-name') || '';
                 }
 
+                editingTaskHasGithub = button.getAttribute('data-task-has-github') === 'true';
+
                 if (descriptionField) {
                     descriptionField.value = button.getAttribute('data-task-description') || '';
                     autoResizeTextarea(descriptionField);
@@ -1845,6 +1920,26 @@
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 if (typeof showConfirmationModal !== 'function') {
+                    const hasGithub = button.dataset.taskHasGithub === 'true';
+                    const githubState = (button.dataset.taskGithubState || '').toLowerCase();
+                    if (hasGithub && githubState !== 'closed' && typeof displayFlashMessage === 'function') {
+                        displayFlashMessage('Task cannot be deleted until its linked GitHub issue is closed.', 'warning');
+                    }
+                    if (hasGithub && githubState !== 'closed') {
+                        return;
+                    }
+                    return;
+                }
+                const hasGithub = button.dataset.taskHasGithub === 'true';
+                const githubState = (button.dataset.taskGithubState || '').toLowerCase();
+                if (hasGithub && githubState !== 'closed') {
+                    showConfirmationModal({
+                        title: 'Linked GitHub issue',
+                        message: 'Task cannot be deleted until its linked GitHub issue is closed.',
+                        description: '',
+                        confirmLabel: 'Got it',
+                        confirmVariant: 'primary',
+                    });
                     return;
                 }
                 const actionUrl = button.dataset.confirmUrl;
@@ -1972,12 +2067,15 @@
                         response
                             .json()
                             .catch(() => ({}))
-                            .then((data) => ({ ok: response.ok, data }))
+                            .then((data) => ({ ok: response.ok, status: response.status, data }))
                     )
-                    .then(({ ok, data }) => {
+                    .then(({ ok, status, data }) => {
                         if (!ok || !data || !data.success) {
                             const message = (data && data.message) || 'GitHub action failed.';
                             displayFlashMessage(message, 'danger');
+                            if (status === 404 && typeof refreshTaskList === 'function') {
+                                refreshTaskList();
+                            }
                             return;
                         }
                         const issue = data.issue || {};
@@ -2095,6 +2193,7 @@
 
                 currentTaskId = button.dataset.taskId;
                 currentTaskTags = new Map();
+                currentTaskHasGithub = button.dataset.taskHasGithub === 'true';
 
                 if (tagModalTaskName) {
                     const taskLabel = button.dataset.taskName || 'this task';
@@ -2145,6 +2244,7 @@
             if (descriptionField) {
                 descriptionField.style.height = '';
             }
+            editingTaskHasGithub = false;
         });
         if (typeof window.fetch === 'function') {
             taskForm.addEventListener('submit', handleTaskFormSubmit);
