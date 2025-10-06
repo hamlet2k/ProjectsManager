@@ -1344,7 +1344,7 @@
                     if (typeof displayFlashMessage === 'function' && message) {
                         displayFlashMessage(message, 'danger');
                     }
-                    if (status === 404 && typeof refreshTaskList === 'function') {
+                    if ((status === 404 || status === 410) && typeof refreshTaskList === 'function') {
                         try {
                             await refreshTaskList();
                         } catch (error) {
@@ -2141,7 +2141,7 @@
                                 displayFlashMessage(message, 'danger');
                             }
                             showForm(fallbackData);
-                            if (status === 404 && typeof refreshTaskList === 'function') {
+                            if ((status === 404 || status === 410) && typeof refreshTaskList === 'function') {
                                 refreshTaskList().catch((error) => {
                                     console.error('Unable to refresh tasks after missing GitHub issue', error);
                                 });
@@ -2329,7 +2329,7 @@
                         if (!ok || !data || !data.success) {
                             const message = (data && data.message) || 'GitHub action failed.';
                             displayFlashMessage(message, 'danger');
-                            if (status === 404 && typeof refreshTaskList === 'function') {
+                            if ((status === 404 || status === 410) && typeof refreshTaskList === 'function') {
                                 refreshTaskList();
                             }
                             return;

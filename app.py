@@ -52,6 +52,7 @@ from forms import (
 )
 from services.github_service import (
     GITHUB_APP_LABEL,
+    MISSING_ISSUE_STATUS_CODES,
     GitHubError,
     comment_on_issue,
     create_issue,
@@ -66,6 +67,7 @@ LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
     "Linked GitHub issue could not be found and the link has been removed."
 )
+GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
 
 # Create flask command lines to update the db based on the model
 # Useage:
@@ -636,7 +638,7 @@ def _github_error_response(error: GitHubError):
     status = error.status_code or 500
     if status in (401, 403):
         message = "GitHub authentication failed. Please update your token."
-    elif status == 404:
+    elif status in GITHUB_MISSING_ISSUE_STATUS_CODES:
         message = "Requested GitHub resource was not found."
     else:
         message = str(error)
@@ -1147,7 +1149,7 @@ def github_issue_sync():
     try:
         issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
     except GitHubError as error:
-        if error.status_code == 404:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
             _clear_github_issue_link(task)
             _record_sync(
                 task,
@@ -1272,7 +1274,7 @@ def github_issue_close():
             "Closed from ProjectsManager.",
         )
     except GitHubError as error:
-        if error.status_code == 404:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
             _clear_github_issue_link(task)
             _record_sync(
                 task,
@@ -1349,7 +1351,7 @@ def github_refresh():
                     db.session.rollback()
                 message, status = _github_error_response(error)
                 return jsonify({"success": False, "message": message}), status
-            if error.status_code == 404:
+            if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
                 _clear_github_issue_link(task)
                 continue
             message, _ = _github_error_response(error)
@@ -1572,7 +1574,7 @@ def add_tag_to_task(task_id):
             _push_task_labels_to_github(task, context)
         db.session.commit()
     except GitHubError as error:
-        if error.status_code == 404:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
             _clear_github_issue_link(task)
             _record_sync(
                 task,
@@ -1650,7 +1652,7 @@ def remove_tag_from_task(task_id, tag_id):
         else:
             return jsonify({"tag": tag.to_dict(), "assigned": False})
     except GitHubError as error:
-        if error.status_code == 404:
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
             _clear_github_issue_link(task)
             _record_sync(
                 task,
@@ -1870,7 +1872,7 @@ def edit_task(id):
                 item.github_issue_state = issue.state
                 _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
             except GitHubError as error:
-                if error.status_code == 404:
+                if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
                     _clear_github_issue_link(item)
                     issue_unlinked = True
                 else:
@@ -2010,7 +2012,7 @@ def complete_task(id):
                     _record_sync(item, "reopen_issue", "success", f"Issue #{issue.number} reopened")
                     issue_reopened = True
                 except GitHubError as error:
-                    if error.status_code == 404:
+                    if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
                         _clear_github_issue_link(item)
                         _record_sync(
                             item,
@@ -2061,7 +2063,7 @@ def complete_task(id):
                     _record_sync(item, "close_issue", "success", f"Issue #{issue.number} closed")
                     issue_closed = True
                 except GitHubError as error:
-                    if error.status_code == 404:
+                    if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
                         _clear_github_issue_link(item)
                         _record_sync(
                             item,

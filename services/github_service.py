@@ -16,6 +16,7 @@ from flask import current_app
 
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_APP_LABEL = "ProjectsManager"
+MISSING_ISSUE_STATUS_CODES = {404, 410}
 
 
 class GitHubError(RuntimeError):
@@ -191,7 +192,7 @@ def create_issue(token: str, owner: str, repo: str, title: str, body: str, label
 
 def fetch_issue(token: str, owner: str, repo: str, issue_number: int) -> GitHubIssue:
     status, payload = _request("GET", f"/repos/{owner}/{repo}/issues/{issue_number}", token)
-    if status == 404:
+    if status in MISSING_ISSUE_STATUS_CODES:
         raise GitHubError("Issue not found", status)
     if status in (401, 403):
         raise GitHubError("Unauthorized", status)
@@ -223,7 +224,7 @@ def update_issue(token: str, owner: str, repo: str, issue_number: int, *, title:
         payload["state"] = state
 
     status, data = _request("PATCH", f"/repos/{owner}/{repo}/issues/{issue_number}", token, payload=payload)
-    if status == 404:
+    if status in MISSING_ISSUE_STATUS_CODES:
         raise GitHubError("Issue not found", status)
     if status in (401, 403):
         raise GitHubError("Unauthorized", status)
@@ -251,7 +252,7 @@ def comment_on_issue(token: str, owner: str, repo: str, issue_number: int, body:
         token,
         payload={"body": body},
     )
-    if status == 404:
+    if status in MISSING_ISSUE_STATUS_CODES:
         raise GitHubError("Issue not found", status)
     if status in (401, 403):
         raise GitHubError("Unauthorized", status)
