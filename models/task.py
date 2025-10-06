@@ -12,6 +12,8 @@ A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 
 """
 from datetime import datetime
+
+import bleach
 from database import db
 from .tag import task_tags
 from markdown import markdown as render_markdown
@@ -62,15 +64,19 @@ class Task(db.Model):
             return Markup("")
         html = render_markdown(
             self.description,
-            extensions=["extra"],
+            extensions=["extra", "sane_lists", "codehilite"],
             output_format="html5",
         )
-        import bleach
-        sanitized_html = bleach.clean(html, tags=bleach.sanitizer.ALLOWED_TAGS + ["p", "br"], attributes=bleach.sanitizer.ALLOWED_ATTRIBUTES)
-        return Markup(sanitized_html)
-        import bleach
-        allowed_tags = bleach.sanitizer.ALLOWED_TAGS + ["p", "pre", "code", "ul", "ol", "li", "strong", "em", "blockquote"]
-        allowed_attributes = bleach.sanitizer.ALLOWED_ATTRIBUTES
+        allowed_tags = list(bleach.sanitizer.ALLOWED_TAGS) + [
+            "p", "pre", "code", "ul", "ol", "li",
+            "strong", "em", "blockquote", "br", "h1", "h2", "h3", "h4", "h5"
+        ]
+        allowed_attributes = {
+            **bleach.sanitizer.ALLOWED_ATTRIBUTES,
+            "a": ["href", "title", "target", "rel"],
+            "img": ["src", "alt", "title"],
+            "code": ["class"],
+        }
         sanitized_html = bleach.clean(html, tags=allowed_tags, attributes=allowed_attributes)
         return Markup(sanitized_html)
 
