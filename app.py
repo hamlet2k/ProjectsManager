@@ -208,12 +208,17 @@ def user():
     github_form = GitHubSettingsForm()
 
     selected_repo = g.user.github_repo_as_dict()
-    if selected_repo:
+    if not github_form.is_submitted():
+        if selected_repo:
+            github_form.repository.choices = [
+                (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
+            ]
+            github_form.repository.data = json.dumps(selected_repo)
+        github_form.enabled.data = g.user.github_integration_enabled
+    elif selected_repo and not github_form.repository.choices:
         github_form.repository.choices = [
             (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
         ]
-        github_form.repository.data = json.dumps(selected_repo)
-    github_form.enabled.data = g.user.github_integration_enabled
 
     if user_form.submit.data and user_form.validate_on_submit():
         g.user.username = user_form.username.data
