@@ -457,6 +457,7 @@
 {{ super() }}
 <script>
     const GITHUB_LOCAL_TAG_NAME = {{ github_local_tag_name|tojson }};
+    const GITHUB_ISSUE_MISSING_MESSAGE = {{ github_issue_missing_message|tojson }};
     function debounce(fn, delay = 300) {
         let timeoutId;
         return (...args) => {
@@ -1357,6 +1358,14 @@
                     return;
                 }
 
+                if (
+                    data.github_issue_unlinked &&
+                    typeof displayFlashMessage === 'function'
+                ) {
+                    const message = data.message || GITHUB_ISSUE_MISSING_MESSAGE;
+                    displayFlashMessage(message, 'warning');
+                }
+
                 let targetCollapse = collapseElement;
                 if (typeof refreshTaskList === 'function') {
                     try {
@@ -2112,6 +2121,13 @@
                                             : fallbackData.has_github_issue,
                                     github_issue_state: payload.github_issue_state || '',
                                 };
+                                if (
+                                    data.github_issue_unlinked &&
+                                    typeof displayFlashMessage === 'function'
+                                ) {
+                                    const message = data.message || GITHUB_ISSUE_MISSING_MESSAGE;
+                                    displayFlashMessage(message, 'warning');
+                                }
                                 showForm(normalized);
                                 if (typeof refreshTaskList === 'function') {
                                     refreshTaskList().catch((error) => {
@@ -2318,12 +2334,22 @@
                             }
                             return;
                         }
-                        const issue = data.issue || {};
-                        const issueNumber = issue.number ? `#${issue.number}` : '';
-                        const message = hasIssue
-                            ? `GitHub issue ${issueNumber} synced.`
-                            : `GitHub issue ${issueNumber} created.`;
-                        displayFlashMessage(message.trim(), 'success');
+                        if (data.github_issue_unlinked) {
+                            if (typeof displayFlashMessage === 'function') {
+                                const infoMessage = data.message || GITHUB_ISSUE_MISSING_MESSAGE;
+                                displayFlashMessage(infoMessage, 'warning');
+                            }
+                            button.dataset.hasIssue = 'false';
+                            button.dataset.taskHasGithub = 'false';
+                            button.dataset.taskGithubState = '';
+                        } else {
+                            const issue = data.issue || {};
+                            const issueNumber = issue.number ? `#${issue.number}` : '';
+                            const message = hasIssue
+                                ? `GitHub issue ${issueNumber} synced.`
+                                : `GitHub issue ${issueNumber} created.`;
+                            displayFlashMessage(message.trim(), 'success');
+                        }
                         refreshTaskList().catch((error) => {
                             console.error('Unable to refresh tasks after GitHub action', error);
                         });

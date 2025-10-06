@@ -136,7 +136,11 @@ def inject_forms():
     Returns:
         Dictionary listing the forms available in templates
     """
-    return {"login_form": LoginForm()}
+    return {
+        "login_form": LoginForm(),
+        "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
+        "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+    }
 
 
 def authenticate_user(username, password):
@@ -952,6 +956,7 @@ def task():
         "github_label": GITHUB_APP_LABEL,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,
+        "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
     }
 
     available_tags_payload = [
@@ -1142,15 +1147,55 @@ def github_issue_sync():
     try:
         issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
     except GitHubError as error:
-        message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
+        if error.status_code == 404:
+            _clear_github_issue_link(task)
+            _record_sync(
+                task,
+                "sync_issue",
+                "missing",
+                "Linked issue not found while syncing; link removed.",
+            )
             try:
                 db.session.commit()
             except SQLAlchemyError:
                 db.session.rollback()
-        elif error.status_code == 404:
-            _clear_github_issue_link(task)
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Unable to update task after detaching missing GitHub issue.",
+                        }
+                    ),
+                    500,
+                )
+
+            task_payload = {
+                "id": task.id,
+                "name": task.name,
+                "description": task.description or "",
+                "completed": task.completed,
+                "end_date": task.end_date.isoformat() if task.end_date else None,
+                "tag_ids": [tag.id for tag in task.tags],
+                "has_github_issue": task.has_github_issue,
+                "github_issue_state": task.github_issue_state,
+            }
+
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "issue": None,
+                        "task": task_payload,
+                        "message": GITHUB_ISSUE_MISSING_MESSAGE,
+                        "github_issue_unlinked": True,
+                    }
+                ),
+                200,
+            )
+
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
             try:
                 db.session.commit()
             except SQLAlchemyError:
