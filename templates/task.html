@@ -1939,6 +1939,69 @@
         });
     }
 
+    const githubButtonListenerAttached = new WeakSet();
+    function attachGitHubButtons() {
+        document.querySelectorAll('.task-github-btn').forEach((button) => {
+            if (githubButtonListenerAttached.has(button)) {
+                return;
+            }
+            githubButtonListenerAttached.add(button);
+            button.addEventListener('click', () => {
+                const taskId = Number(button.dataset.taskId || 0);
+                if (!taskId) {
+                    return;
+                }
+                const hasIssue = button.dataset.hasIssue === 'true';
+                const endpoint = hasIssue ? '/api/github/issue/sync' : '/api/github/issue/create';
+                const csrfField = document.getElementById('csrf_token');
+                const csrfToken = csrfField ? csrfField.value : null;
+                const originalContent = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+                fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                    },
+                    body: JSON.stringify({ task_id: taskId }),
+                })
+                    .then((response) =>
+                        response
+                            .json()
+                            .catch(() => ({}))
+                            .then((data) => ({ ok: response.ok, data }))
+                    )
+                    .then(({ ok, data }) => {
+                        if (!ok || !data || !data.success) {
+                            const message = (data && data.message) || 'GitHub action failed.';
+                            displayFlashMessage(message, 'danger');
+                            return;
+                        }
+                        const issue = data.issue || {};
+                        const issueNumber = issue.number ? `#${issue.number}` : '';
+                        const message = hasIssue
+                            ? `GitHub issue ${issueNumber} synced.`
+                            : `GitHub issue ${issueNumber} created.`;
+                        displayFlashMessage(message.trim(), 'success');
+                        refreshTaskList().catch((error) => {
+                            console.error('Unable to refresh tasks after GitHub action', error);
+                        });
+                    })
+                    .catch((error) => {
+                        console.error('GitHub action failed', error);
+                        displayFlashMessage('Unable to communicate with GitHub.', 'danger');
+                    })
+                    .finally(() => {
+                        button.disabled = false;
+                        button.innerHTML = originalContent;
+                    });
+            });
+        });
+    }
+
     const taskCompleteListenerAttached = new WeakSet();
     function attachTaskCompleteListeners() {
         document.querySelectorAll('.task-complete-btn').forEach((button) => {
@@ -1953,46 +2016,67 @@
                     return;
                 }
                 const taskName = button.dataset.taskName || button.getAttribute('aria-label') || 'this task';
+                const hasGithubIssue = button.dataset.taskHasGithub === 'true';
+                const githubState = (button.dataset.taskGithubState || '').toLowerCase();
 
-                fetch(url, {
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',
-                        Accept: 'application/json',
-                    },
-                })
-                    .then((response) =>
-                        response
-                            .json()
-                            .catch(() => null)
-                            .then((data) => ({ ok: response.ok, data }))
-                    )
-                    .then(({ ok, data }) => {
-                        if (!ok || !data) {
-                            throw new Error('Invalid response');
-                        }
-                        if (!data.success) {
-                            const errorMessage = data.message || `Unable to update "${taskName}".`;
-                            displayFlashMessage(errorMessage, data.category || 'danger');
-                            return;
-                        }
-
-                        const message =
-                            data.message
-                            || (data.completed
-                                ? `Task "${taskName}" completed.`
-                                : `Task "${taskName}" restored.`);
-                        const category = data.category || 'success';
-                        displayFlashMessage(message, category);
-
-                        return refreshTaskList().catch((error) => {
-                            console.error('Unable to refresh tasks after completion', error);
-                            displayFlashMessage('Task updated, but the list could not be refreshed.', 'warning');
-                        });
+                const executeToggle = () => {
+                    fetch(url, {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            Accept: 'application/json',
+                        },
                     })
-                    .catch((error) => {
-                        console.error('Unable to toggle task completion', error);
-                        displayFlashMessage(`Unable to update "${taskName}".`, 'danger');
+                        .then((response) =>
+                            response
+                                .json()
+                                .catch(() => null)
+                                .then((data) => ({ ok: response.ok, data }))
+                        )
+                        .then(({ ok, data }) => {
+                            if (!ok || !data) {
+                                throw new Error('Invalid response');
+                            }
+                            if (!data.success) {
+                                const errorMessage = data.message || `Unable to update "${taskName}".`;
+                                displayFlashMessage(errorMessage, data.category || 'danger');
+                                return;
+                            }
+
+                            const message =
+                                data.message
+                                || (data.completed
+                                    ? `Task "${taskName}" completed.`
+                                    : `Task "${taskName}" restored.`);
+                            const category = data.category || 'success';
+                            displayFlashMessage(message, category);
+
+                            return refreshTaskList().catch((error) => {
+                                console.error('Unable to refresh tasks after completion', error);
+                                displayFlashMessage('Task updated, but the list could not be refreshed.', 'warning');
+                            });
+                        })
+                        .catch((error) => {
+                            console.error('Unable to toggle task completion', error);
+                            displayFlashMessage(`Unable to update "${taskName}".`, 'danger');
+                        });
+                };
+
+                if (hasGithubIssue && githubState !== 'closed' && typeof showConfirmationModal === 'function') {
+                    showConfirmationModal({
+                        title: 'Complete task',
+                        message: 'This will close the linked GitHub issue. Continue?',
+                        confirmLabel: 'Close issue',
+                        cancelLabel: 'Cancel',
+                        confirmVariant: 'primary',
+                    }).then((confirmed) => {
+                        if (confirmed) {
+                            executeToggle();
+                        }
                     });
+                    return;
+                }
+
+                executeToggle();
             });
         });
     }
@@ -2165,6 +2249,7 @@
                 attachEditTaskListeners();
                 attachTagManagerListeners();
                 attachTaskDeleteListeners();
+                attachGitHubButtons();
                 attachTaskCopyListeners();
                 attachGroupCopyListeners();
                 attachGroupAddListeners();
@@ -2184,6 +2269,7 @@
     attachEditTaskListeners();
     attachTagManagerListeners();
     attachTaskDeleteListeners();
+    attachGitHubButtons();
     attachTaskCopyListeners();
     attachGroupCopyListeners();
     attachGroupAddListeners();

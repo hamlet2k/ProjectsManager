@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from functools import wraps
 import logging
 
@@ -38,8 +39,28 @@ from models.scope import Scope
 from models.tag import Tag
 from models.task import Task
 from models.user import User
+from models.sync_log import SyncLog
 
-from forms import ScopeForm, TaskForm,SignupForm, LoginForm, UserSettingsForm, THEME_CHOICES
+from forms import (
+    ScopeForm,
+    TaskForm,
+    SignupForm,
+    LoginForm,
+    UserSettingsForm,
+    GitHubSettingsForm,
+    THEME_CHOICES,
+)
+from services.github_service import (
+    GITHUB_APP_LABEL,
+    GitHubError,
+    comment_on_issue,
+    create_issue,
+    fetch_issue,
+    list_repositories,
+    test_connection,
+    update_issue,
+    close_issue,
+)
 
 # Create flask command lines to update the db based on the model
 # Useage:
@@ -184,8 +205,17 @@ def signup():
 def user():
     """User settings page"""
     user_form = UserSettingsForm(obj=g.user)
+    github_form = GitHubSettingsForm()
 
-    if user_form.validate_on_submit():
+    selected_repo = g.user.github_repo_as_dict()
+    if selected_repo:
+        github_form.repository.choices = [
+            (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
+        ]
+        github_form.repository.data = json.dumps(selected_repo)
+    github_form.enabled.data = g.user.github_integration_enabled
+
+    if user_form.submit.data and user_form.validate_on_submit():
         g.user.username = user_form.username.data
         g.user.name = user_form.name.data
         g.user.email = user_form.email.data
@@ -200,10 +230,66 @@ def user():
             db.session.rollback()  # Roll back the transaction
             flash(f"An error occurred: {str(e)}", "error")
 
-    # user_form.theme.choices = THEME_CHOICES
-    # user_form.role.choices = [(User.USER,'System User'),(User.ADMIN, 'Administrator')]
+    if github_form.submit.data and github_form.validate_on_submit():
+        token_input = (github_form.token.data or "").strip()
+        if github_form.enabled.data:
+            if token_input:
+                g.user.set_github_token(token_input)
+                token_to_use = token_input
+            else:
+                token_to_use = g.user.get_github_token()
+            if not token_to_use:
+                github_form.token.errors.append("Token is required when enabling integration.")
+            repo_value = github_form.repository.data
+            repo_payload = None
+            if repo_value:
+                try:
+                    repo_payload = json.loads(repo_value)
+                except ValueError:
+                    github_form.repository.errors.append("Invalid repository selection.")
+            elif not selected_repo:
+                github_form.repository.errors.append("Please select a repository.")
 
-    return render_template("user.html", user_form=user_form)
+            if not github_form.errors:
+                g.user.github_integration_enabled = True
+                if repo_payload:
+                    g.user.github_repo_id = repo_payload.get("id")
+                    g.user.github_repo_name = repo_payload.get("name")
+                    g.user.github_repo_owner = repo_payload.get("owner")
+                elif selected_repo:
+                    g.user.github_repo_id = selected_repo.get("id")
+                    g.user.github_repo_name = selected_repo.get("name")
+                    g.user.github_repo_owner = selected_repo.get("owner")
+                try:
+                    db.session.commit()
+                    flash("GitHub settings saved.", "success")
+                    return redirect(url_for("user"))
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    flash(f"An error occurred: {str(e)}", "error")
+        else:
+            g.user.github_integration_enabled = False
+            g.user.github_repo_id = None
+            g.user.github_repo_name = None
+            g.user.github_repo_owner = None
+            g.user.set_github_token(None)
+            try:
+                db.session.commit()
+                flash("GitHub integration disabled.", "info")
+                return redirect(url_for("user"))
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                flash(f"An error occurred: {str(e)}", "error")
+
+    token_present = bool(g.user.github_token_encrypted)
+
+    return render_template(
+        "user.html",
+        user_form=user_form,
+        github_form=github_form,
+        github_token_present=token_present,
+        github_repo=selected_repo,
+    )
 
 
 # Custom form validators
@@ -377,6 +463,99 @@ def _get_tags_for_scope(tag_ids):
 
     _ensure_tags_assigned_to_current_scope(tags)
     return tags
+
+
+def _user_github_context(user: User | None):
+    if not user or not user.github_integration_enabled:
+        return None
+    token = user.get_github_token()
+    if not token:
+        return None
+    if not user.github_repo_owner or not user.github_repo_name:
+        return None
+    return {
+        "token": token,
+        "owner": user.github_repo_owner,
+        "name": user.github_repo_name,
+        "id": user.github_repo_id,
+    }
+
+
+def _record_sync(task: Task, action: str, status: str, message: str | None = None):
+    log_entry = SyncLog(task=task, action=action, status=status, message=message)
+    db.session.add(log_entry)
+
+
+def _tags_for_labels(scope: Scope, labels: list[str]):
+    normalized = []
+    for label in labels:
+        if not label or label.lower() == GITHUB_APP_LABEL.lower():
+            continue
+        normalized.append(label.strip().lstrip("#").lower())
+    if not normalized:
+        return []
+
+    tags = (
+        Tag.query.filter(
+            Tag.name.in_(normalized),
+            or_(Tag.scope_id == scope.id, Tag.scope_id.is_(None)),
+        ).all()
+    )
+    existing = {tag.name: tag for tag in tags}
+    created = False
+    for name in normalized:
+        if name not in existing:
+            tag = Tag(name=name, scope_id=scope.id)
+            db.session.add(tag)
+            tags.append(tag)
+            existing[name] = tag
+            created = True
+    if created:
+        try:
+            db.session.flush()
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise
+    return tags
+
+
+def _sync_task_from_issue(task: Task, issue, scope: Scope):
+    task.name = issue.title or task.name
+    task.description = issue.body or task.description
+    task.github_issue_state = issue.state
+    if issue.state == "closed":
+        if not task.completed:
+            task.complete_task()
+    else:
+        if task.completed:
+            task.uncomplete_task()
+    labels = issue.labels or []
+    try:
+        tags = _tags_for_labels(scope, labels)
+    except SQLAlchemyError as exc:
+        logging.error("Unable to sync tags from GitHub issue: %s", exc, exc_info=True)
+        raise
+    if tags is not None:
+        task.tags = tags
+
+
+def _invalidate_github(user: User):
+    user.github_integration_enabled = False
+    user.github_repo_id = None
+    user.github_repo_name = None
+    user.github_repo_owner = None
+    user.set_github_token(None)
+
+
+def _github_error_response(error: GitHubError):
+    status = error.status_code or 500
+    if status in (401, 403):
+        message = "GitHub authentication failed. Please update your token."
+    elif status == 404:
+        message = "Requested GitHub resource was not found."
+    else:
+        message = str(error)
+    return message, status
 
 
 @app.route("/scope/<int:id>")
@@ -675,6 +854,9 @@ def task():
         "sort_by": sort_by,
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
+        "github_enabled": bool(_user_github_context(g.user)),
+        "github_repo": g.user.github_repo_as_dict(),
+        "github_label": GITHUB_APP_LABEL,
     }
 
     available_tags_payload = [
@@ -702,6 +884,314 @@ def task():
         )
 
     return render_template("task.html", **response_context)
+
+
+@app.route("/api/github/connect", methods=["POST"])
+def github_connect():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get("token") or "").strip()
+    test_only = bool(payload.get("test_only"))
+    repository_payload = payload.get("repository")
+
+    if not token:
+        token = g.user.get_github_token()
+
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    if not test_connection(token):
+        return jsonify({"success": False, "message": "Unable to authenticate with GitHub."}), 403
+
+    if not test_only:
+        g.user.set_github_token(token)
+        g.user.github_integration_enabled = True
+        if isinstance(repository_payload, dict):
+            g.user.github_repo_id = repository_payload.get("id")
+            g.user.github_repo_name = repository_payload.get("name")
+            g.user.github_repo_owner = repository_payload.get("owner")
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Error saving GitHub connection: %s", exc, exc_info=True)
+            return jsonify({"success": False, "message": "Unable to save GitHub settings."}), 500
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/github/repos", methods=["GET"])
+def github_repositories():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    token = g.user.get_github_token()
+    override_token = request.args.get("token")
+    if override_token:
+        token = override_token.strip()
+
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    try:
+        repos = list_repositories(token)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        return jsonify({"success": False, "message": message}), status
+
+    payload = [
+        {"id": repo.id, "name": repo.name, "owner": repo.owner}
+        for repo in repos
+    ]
+    return jsonify({"success": True, "repositories": payload})
+
+
+def _task_owner_guard(task: Task):
+    if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+        abort(403)
+
+
+@app.route("/api/github/issue/create", methods=["POST"])
+@scope_required
+def github_issue_create():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    labels = [tag.name for tag in task.tags]
+    try:
+        issue = create_issue(context["token"], context["owner"], context["name"], task.name, task.description or "", labels)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        return jsonify({"success": False, "message": message}), status
+
+    task.github_issue_id = issue.id
+    task.github_issue_number = issue.number
+    task.github_issue_url = issue.url
+    task.github_issue_state = issue.state
+    _record_sync(task, "create_issue", "success", f"Issue #{issue.number} created")
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to persist GitHub issue link: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "issue": {
+                "id": issue.id,
+                "number": issue.number,
+                "url": issue.url,
+                "state": issue.state,
+                "labels": issue.labels,
+            },
+        }
+    )
+
+
+@app.route("/api/github/issue/sync", methods=["POST"])
+@scope_required
+def github_issue_sync():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    if not task.github_issue_number:
+        return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    try:
+        issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
+    except GitHubError as error:
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        elif error.status_code == 404:
+            task.github_issue_id = None
+            task.github_issue_number = None
+            task.github_issue_url = None
+            task.github_issue_state = None
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        return jsonify({"success": False, "message": message}), status
+
+    try:
+        _sync_task_from_issue(task, issue, g.scope)
+        _record_sync(task, "sync_issue", "success", f"Issue #{issue.number} synced")
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to sync issue data: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Unable to sync task with GitHub."}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "issue": {
+                "id": issue.id,
+                "number": issue.number,
+                "url": issue.url,
+                "state": issue.state,
+                "labels": issue.labels,
+            },
+            "task": {"id": task.id, "name": task.name, "completed": task.completed},
+        }
+    )
+
+
+@app.route("/api/github/issue/close", methods=["POST"])
+@scope_required
+def github_issue_close():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    if not task_id:
+        return jsonify({"success": False, "message": "task_id is required."}), 400
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    if not task.github_issue_number:
+        return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    try:
+        issue = close_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
+        comment_on_issue(context["token"], context["owner"], context["name"], task.github_issue_number, "Closed from ProjectsManager.")
+    except GitHubError as error:
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        return jsonify({"success": False, "message": message}), status
+
+    task.complete_task()
+    task.github_issue_state = issue.state
+    _record_sync(task, "close_issue", "success", f"Issue #{issue.number} closed")
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to update task after closing GitHub issue: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Issue closed but could not update task."}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "issue": {
+                "number": issue.number,
+                "state": issue.state,
+                "url": issue.url,
+            },
+            "task": {"id": task.id, "completed": task.completed},
+        }
+    )
+
+
+@app.route("/api/github/refresh", methods=["POST"])
+def github_refresh():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    context = _user_github_context(g.user)
+    if not context:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
+
+    tasks = (
+        Task.query.filter(
+            Task.owner_id == g.user.id,
+            Task.github_issue_number.isnot(None),
+        ).all()
+    )
+    updated = 0
+    for task in tasks:
+        if task.scope is None:
+            continue
+        try:
+            issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
+        except GitHubError as error:
+            if error.status_code in (401, 403):
+                _invalidate_github(g.user)
+                try:
+                    db.session.commit()
+                except SQLAlchemyError:
+                    db.session.rollback()
+                message, status = _github_error_response(error)
+                return jsonify({"success": False, "message": message}), status
+            message, _ = _github_error_response(error)
+            logging.error("Unable to refresh issue %s: %s", task.github_issue_number, message)
+            continue
+
+        previous_state = task.github_issue_state
+        try:
+            _sync_task_from_issue(task, issue, task.scope)
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            logging.error("Unable to sync during refresh: %s", exc, exc_info=True)
+            continue
+        if issue.state == "closed" and previous_state != "closed":
+            updated += 1
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to commit GitHub refresh: %s", exc, exc_info=True)
+        return jsonify({"success": False, "message": "Unable to refresh GitHub data."}), 500
+
+    return jsonify({"success": True, "updated": updated})
 
 
 @app.route("/tags", methods=["GET"])
@@ -1059,6 +1549,33 @@ def edit_task(id):
 
         tag_ids = _parse_tag_ids(form.tags.data)
         item.tags = _get_tags_for_scope(tag_ids)
+        context = _user_github_context(g.user)
+        if item.github_issue_number and context:
+            labels = [tag.name for tag in item.tags]
+            try:
+                issue = update_issue(
+                    context["token"],
+                    context["owner"],
+                    context["name"],
+                    item.github_issue_number,
+                    title=item.name,
+                    body=item.description or "",
+                    labels=labels,
+                )
+                item.github_issue_state = issue.state
+                _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
+            except GitHubError as error:
+                message, status = _github_error_response(error)
+                if error.status_code in (401, 403):
+                    _invalidate_github(g.user)
+                    try:
+                        db.session.commit()
+                    except SQLAlchemyError:
+                        db.session.rollback()
+                if wants_json:
+                    return jsonify({"success": False, "message": message}), status
+                flash(message, "danger")
+                return redirect(request.referrer or url_for("task"))
         try:
             db.session.commit()
             success_message = f'Task "{item.name}" updated!'
@@ -1119,6 +1636,16 @@ def delete_item(item_type, id):
                         ),
                         403,
                     )
+                if item.github_issue_is_open:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Task cannot be deleted until its linked GitHub issue is closed.",
+                            }
+                        ),
+                        400,
+                    )
 
             db.session.delete(item)
             db.session.commit()
@@ -1148,6 +1675,31 @@ def complete_task(id):
         if item.completed:
             item.uncomplete_task()
         else:
+            context = _user_github_context(g.user)
+            if item.github_issue_number and context:
+                try:
+                    issue = close_issue(context["token"], context["owner"], context["name"], item.github_issue_number)
+                    comment_on_issue(
+                        context["token"],
+                        context["owner"],
+                        context["name"],
+                        item.github_issue_number,
+                        "Closed from ProjectsManager.",
+                    )
+                    item.github_issue_state = issue.state
+                    _record_sync(item, "close_issue", "success", f"Issue #{issue.number} closed")
+                except GitHubError as error:
+                    message, status = _github_error_response(error)
+                    if error.status_code in (401, 403):
+                        _invalidate_github(g.user)
+                        try:
+                            db.session.commit()
+                        except SQLAlchemyError:
+                            db.session.rollback()
+                    if wants_json:
+                        return jsonify({"success": False, "message": message, "category": "danger"}), status
+                    flash(message, "danger")
+                    return redirect(request.referrer or url_for("task"))
             item.complete_task()
         db.session.commit()
 

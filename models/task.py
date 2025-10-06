@@ -26,7 +26,12 @@ class Task(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     completed = db.Column(db.Boolean, default=False, nullable=False)
     completed_date = db.Column(db.DateTime, nullable=True)
-    
+
+    github_issue_id = db.Column(db.BigInteger, nullable=True)
+    github_issue_number = db.Column(db.Integer, nullable=True)
+    github_issue_url = db.Column(db.String(255), nullable=True)
+    github_issue_state = db.Column(db.String(32), nullable=True)
+
     scope_id = db.Column(db.Integer, db.ForeignKey('scope.id'), nullable=True)
     subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True, cascade="all, delete-orphan")
     tags = db.relationship(
@@ -34,6 +39,12 @@ class Task(db.Model):
         secondary=task_tags,
         back_populates="tasks",
         lazy="selectin",
+    )
+    sync_logs = db.relationship(
+        "SyncLog",
+        back_populates="task",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
     )
     
     def complete_task(self):
@@ -53,6 +64,18 @@ class Task(db.Model):
             return True
         else:
             return False
+
+    @property
+    def has_github_issue(self) -> bool:
+        return bool(self.github_issue_id and self.github_issue_number)
+
+    @property
+    def github_issue_is_open(self) -> bool:
+        if not self.has_github_issue:
+            return False
+        if self.github_issue_state is None:
+            return True
+        return self.github_issue_state.lower() == "open"
 
     def __repr__(self):
         return f"<Task {self.name}>"
