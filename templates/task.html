@@ -1287,6 +1287,110 @@
     let currentTaskHasGithub = false;
     let editingTaskHasGithub = false;
     const pendingTagDeletions = new Map();
+    const collapseSkipGithubSync = new WeakSet();
+
+    function fetchGitHubIssueSync(taskId) {
+        if (!taskId) {
+            return Promise.resolve({ ok: false, status: 400, data: null });
+        }
+        const token = csrfTokenInput ? csrfTokenInput.value : null;
+        return fetch('/api/github/issue/sync', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(token ? { 'X-CSRFToken': token } : {}),
+            },
+            body: JSON.stringify({ task_id: taskId }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, status: response.status, data }))
+            )
+            .catch((error) => {
+                console.error('GitHub sync request failed', error);
+                return { ok: false, status: 0, data: null, error };
+            });
+    }
+
+    document.addEventListener('show.bs.collapse', (event) => {
+        const collapseElement = event.target;
+        if (!collapseElement || !collapseElement.classList || !collapseElement.classList.contains('accordion-collapse')) {
+            return;
+        }
+        if (collapseSkipGithubSync.has(collapseElement)) {
+            collapseSkipGithubSync.delete(collapseElement);
+            return;
+        }
+        const taskElement = collapseElement.closest('.task-item');
+        if (!taskElement || taskElement.dataset.taskHasGithub !== 'true') {
+            return;
+        }
+        const taskId = Number(taskElement.dataset.taskId || '0');
+        if (!taskId) {
+            return;
+        }
+
+        event.preventDefault();
+
+        (async () => {
+            try {
+                const { ok, status, data } = await fetchGitHubIssueSync(taskId);
+                if (!ok || !data || !data.success) {
+                    const message = (data && data.message) || 'Unable to sync GitHub issue.';
+                    if (typeof displayFlashMessage === 'function' && message) {
+                        displayFlashMessage(message, 'danger');
+                    }
+                    if (status === 404 && typeof refreshTaskList === 'function') {
+                        try {
+                            await refreshTaskList();
+                        } catch (error) {
+                            console.error('Unable to refresh tasks after missing GitHub issue', error);
+                        }
+                    }
+                    if (collapseElement && collapseElement.isConnected) {
+                        collapseSkipGithubSync.add(collapseElement);
+                        bootstrap.Collapse.getOrCreateInstance(collapseElement, { toggle: false }).show();
+                    }
+                    return;
+                }
+
+                let targetCollapse = collapseElement;
+                if (typeof refreshTaskList === 'function') {
+                    try {
+                        await refreshTaskList();
+                        const nextTaskElement = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
+                        const nextCollapse = nextTaskElement ? nextTaskElement.querySelector('.accordion-collapse') : null;
+                        if (nextCollapse) {
+                            targetCollapse = nextCollapse;
+                        }
+                    } catch (error) {
+                        console.error('Unable to refresh tasks after GitHub detail sync', error);
+                    }
+                }
+
+                if (!targetCollapse || !targetCollapse.isConnected) {
+                    if (typeof displayFlashMessage === 'function') {
+                        displayFlashMessage('GitHub issue synced. The task list has been refreshed.', 'info');
+                    }
+                    return;
+                }
+                collapseSkipGithubSync.add(targetCollapse);
+                bootstrap.Collapse.getOrCreateInstance(targetCollapse, { toggle: false }).show();
+            } catch (error) {
+                console.error('Unable to sync GitHub issue before expanding', error);
+                if (typeof displayFlashMessage === 'function') {
+                    displayFlashMessage('Unable to fetch the latest GitHub issue data.', 'danger');
+                }
+                if (collapseElement && collapseElement.isConnected) {
+                    collapseSkipGithubSync.add(collapseElement);
+                    bootstrap.Collapse.getOrCreateInstance(collapseElement, { toggle: false }).show();
+                }
+            }
+        })();
+    });
 
     function updateFilterEmptyState() {
         if (!filterContainer || !filterEmptyMessage) {
@@ -1980,27 +2084,11 @@
                 };
 
                 if (fallbackData.has_github_issue && fallbackData.id) {
-                    const csrfField = document.getElementById('csrf_token');
-                    const csrfToken = csrfField ? csrfField.value : null;
                     const originalContent = button.innerHTML;
                     button.disabled = true;
                     button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
 
-                    fetch('/api/github/issue/sync', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest',
-                            ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
-                        },
-                        body: JSON.stringify({ task_id: fallbackData.id }),
-                    })
-                        .then((response) =>
-                            response
-                                .json()
-                                .catch(() => ({}))
-                                .then((data) => ({ ok: response.ok, status: response.status, data }))
-                        )
+                    fetchGitHubIssueSync(fallbackData.id)
                         .then(({ ok, status, data }) => {
                             if (ok && data && data.success && data.task) {
                                 const payload = data.task;

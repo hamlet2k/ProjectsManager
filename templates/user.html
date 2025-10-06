@@ -38,14 +38,23 @@
             return field ? field.value : null;
         }
 
-        function toggleSectionVisibility() {
+        function hasStoredToken() {
+            return tokenStatus ? !tokenStatus.classList.contains('d-none') : false;
+        }
+
+        function toggleSectionVisibility(options = {}) {
             if (!section) {
                 return;
             }
             const shouldShow = toggle ? toggle.checked : false;
             section.style.display = shouldShow ? '' : 'none';
             if (shouldShow && !reposLoaded) {
-                loadRepositories();
+                const tokenValue = tokenField ? tokenField.value.trim() : '';
+                let silent = options.silent;
+                if (silent === undefined) {
+                    silent = !tokenValue && !hasStoredToken();
+                }
+                loadRepositories({ silent });
             }
         }
 
@@ -66,7 +75,7 @@
             }
         }
 
-        function loadRepositories() {
+        function loadRepositories({ silent = false } = {}) {
             if (!repoSelect) {
                 return;
             }
@@ -86,7 +95,9 @@
                 .then(({ ok, data }) => {
                     if (!ok || !data || !data.success) {
                         const message = (data && data.message) || 'Unable to load GitHub repositories.';
-                        displayFlashMessage(message, 'danger');
+                        if (!silent && typeof displayFlashMessage === 'function') {
+                            displayFlashMessage(message, 'danger');
+                        }
                         return;
                     }
                     repoSelect.innerHTML = '';
@@ -115,7 +126,9 @@
                 })
                 .catch((error) => {
                     console.error('Unable to load repositories', error);
-                    displayFlashMessage('Unable to load GitHub repositories.', 'danger');
+                    if (!silent && typeof displayFlashMessage === 'function') {
+                        displayFlashMessage('Unable to load GitHub repositories.', 'danger');
+                    }
                 });
         }
 
@@ -127,10 +140,9 @@
 
         if (toggle) {
             toggle.addEventListener('change', () => {
-                if (toggle.checked && !reposLoaded) {
-                    loadRepositories();
-                }
-                toggleSectionVisibility();
+                const tokenValue = tokenField ? tokenField.value.trim() : '';
+                const shouldSilence = !tokenValue && !hasStoredToken();
+                toggleSectionVisibility({ silent: shouldSilence });
             });
         }
 
@@ -177,9 +189,6 @@
         }
 
         toggleSectionVisibility();
-        if (toggle && toggle.checked) {
-            loadRepositories();
-        }
     });
 </script>
 {% endblock %}
