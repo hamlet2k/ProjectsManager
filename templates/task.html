@@ -1856,20 +1856,39 @@
 
         const hasActiveTags = activeTags.length > 0;
 
+        // Filter individual tasks
         document.querySelectorAll('.task-item').forEach((taskElement) => {
             const taskTags = (taskElement.dataset.tagIds || '').split(',').filter(Boolean);
-            const matches = activeTags.every((tagId) => taskTags.includes(tagId));
+            const matches = hasActiveTags ? activeTags.every((tagId) => taskTags.includes(tagId)) : true;
             taskElement.style.display = matches ? '' : 'none';
         });
 
+        // Filter groups
         document.querySelectorAll('.task-group').forEach((group) => {
-            if (!hasActiveTags && currentSort !== 'tags') {
+            if (!hasActiveTags) {
+                // No active filters - show all groups
                 group.style.display = '';
                 return;
             }
 
-            const hasVisibleTask = Array.from(group.querySelectorAll('.task-item')).some((task) => task.style.display !== 'none');
-            group.style.display = hasVisibleTask ? '' : 'none';
+            if (currentSort === 'tags') {
+                // When sorting by tags, only show groups for selected tags
+                const groupTagId = group.dataset.tagId;
+                if (groupTagId && activeTags.includes(groupTagId)) {
+                    // This is a tag group for one of the selected tags
+                    group.style.display = '';
+                } else if (!groupTagId && activeTags.length > 0) {
+                    // This is the "Untagged" group - hide it when filtering by tags
+                    group.style.display = 'none';
+                } else {
+                    // This is a tag group for a non-selected tag
+                    group.style.display = 'none';
+                }
+            } else {
+                // For other sorting methods, show groups that have visible tasks
+                const hasVisibleTask = Array.from(group.querySelectorAll('.task-item')).some((task) => task.style.display !== 'none');
+                group.style.display = hasVisibleTask ? '' : 'none';
+            }
         });
     }
 
