@@ -1,0 +1,41 @@
+<form method="post" action="{{ url_for('user') }}" id="github-settings-form">
+    {{ github_form.hidden_tag() }}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+            <h5 class="mb-1">GitHub Integration</h5>
+            <p class="text-muted small mb-0">Connect your ProjectsManager tasks with GitHub issues.</p>
+        </div>
+        <div class="form-check form-switch">
+            {{ github_form.enabled(class="form-check-input", role="switch", id="github-integration-toggle") }}
+            <label class="form-check-label" for="github-integration-toggle">Enable</label>
+        </div>
+    </div>
+    <div class="github-settings-body" data-github-settings-section style="display: {{ 'block' if github_form.enabled.data else 'none' }};">
+        <div class="mb-3">
+            <label class="form-label" for="github-token-field">Personal Access Token</label>
+            {{ github_form.token(class="form-control" + (' is-invalid' if github_form.token.errors else ''), placeholder="ghp_...", id="github-token-field") }}
+            {% if github_form.token.errors %}
+                {% for error in github_form.token.errors %}
+                    <div class="invalid-feedback d-block">{{ error }}</div>
+                {% endfor %}
+            {% else %}
+                <div class="form-text">Token is stored encrypted and never shown again.</div>
+            {% endif %}
+            {% if github_token_present %}
+                <div class="form-text text-success" data-token-status>Token already stored securely.</div>
+            {% endif %}
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="github-repo-select">Repository</label>
+            {{ github_form.repository(class="form-select" + (' is-invalid' if github_form.repository.errors else ''), id="github-repo-select", **{'data-selected-repo': github_repo | tojson if github_repo else ''}) }}
+            {% for error in github_form.repository.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+            <div class="form-text">Select the repository where issues should be created.</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-secondary" type="button" id="github-test-connection">Test connection</button>
+            {{ github_form.submit(class="btn btn-primary") }}
+        </div>
+    </div>
+</form>

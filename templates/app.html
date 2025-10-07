@@ -42,6 +42,34 @@
     font-weight: 600;
 }
 
+
+.markdown-content {
+    line-height: 1.5;
+}
+.markdown-content p:last-child,
+.markdown-content ul:last-child,
+.markdown-content ol:last-child,
+.markdown-content pre:last-child {
+    margin-bottom: 0;
+}
+.markdown-content ul,
+.markdown-content ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+.markdown-content pre {
+    padding: 0.5rem;
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 0.5rem;
+    overflow: auto;
+}
+.markdown-content code {
+    font-size: inherit;
+    background-color: var(--bs-tertiary-bg);
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.25rem;
+}
+
 </style>
 {% endblock css %}
 
@@ -134,6 +162,55 @@
         })
         .catch((error) => console.error("Error:", error));
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const refreshButton = document.getElementById('github-refresh-btn');
+        if (!refreshButton) {
+            return;
+        }
+        refreshButton.addEventListener('click', () => {
+            const csrfField = document.querySelector('input[name="csrf_token"]');
+            const csrfToken = csrfField ? csrfField.value : null;
+            const originalContent = refreshButton.innerHTML;
+            refreshButton.disabled = true;
+            refreshButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            fetch('/api/github/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                },
+            })
+                .then((response) =>
+                    response
+                        .json()
+                        .catch(() => ({}))
+                        .then((data) => ({ ok: response.ok, data }))
+                )
+                .then(({ ok, data }) => {
+                    if (!ok || !data || !data.success) {
+                        const message = (data && data.message) || 'Unable to refresh GitHub data.';
+                        displayFlashMessage(message, 'danger');
+                        return;
+                    }
+                    const count = Number(data.updated || 0);
+                    const summary = `GitHub sync complete — ${count} task${count === 1 ? '' : 's'} updated.`;
+                    displayFlashMessage(summary, 'success');
+                    if (typeof refreshTaskList === 'function') {
+                        refreshTaskList();
+                    }
+                })
+                .catch((error) => {
+                    console.error('Unable to refresh GitHub data', error);
+                    displayFlashMessage('Unable to refresh GitHub data.', 'danger');
+                })
+                .finally(() => {
+                    refreshButton.disabled = false;
+                    refreshButton.innerHTML = originalContent;
+                });
+        });
+    });
 
 </script>
 {% endblock %}
