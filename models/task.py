@@ -80,6 +80,7 @@ class Task(db.Model):
         if self.github_issue_state is None:
             return True
         return self.github_issue_state.lower() == "open"
+    @property
     def description_html(self):
         if not self.description:
             return Markup("")
