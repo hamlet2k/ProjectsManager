@@ -150,7 +150,7 @@
     document.querySelectorAll('.edit-scope-btn').forEach((item) => {
         item.addEventListener('click', () => {
             {% for field in scope_form %}
-                {% if field.name not in ['csrf_token', 'github_enabled', 'github_repository'] and field.type != 'SubmitField' %}
+                {% if field.type not in ['HiddenField', 'BooleanField', 'SelectField', 'SubmitField'] %}
                     const fieldElement_{{ field.name }} = document.getElementById('{{ field.name }}');
                     if (fieldElement_{{ field.name }}) {
                         fieldElement_{{ field.name }}.value = item.getAttribute('data-scope-{{ field.name }}') || '';
