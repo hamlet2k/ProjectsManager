@@ -1,4 +1,4 @@
-<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}">
+<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}" data-scope-id="{{ g.scope.id if g.scope else '' }}">
     {% set ns = namespace(has_tasks=false) %}
     {% for group in task_groups %}
         {% if group.tasks %}
