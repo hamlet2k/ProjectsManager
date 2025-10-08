@@ -35,6 +35,8 @@
                             data-scope-id="{{ scope.id }}"
                             data-scope-name="{{ scope.name }}"
                             data-scope-description="{{ scope.description }}"
+                            data-scope-github_enabled="{{ 'true' if scope.github_integration_enabled else 'false' }}"
+                            data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
                             aria-label="Edit scope {{ scope.name }}">
                             <i class="bi bi-pencil"></i>
                         </button>
