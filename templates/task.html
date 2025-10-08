@@ -1462,6 +1462,7 @@
         }
 
         event.preventDefault();
+        const collapseId = collapseElement.id;
 
         (async () => {
             try {
@@ -1497,8 +1498,11 @@
                 if (typeof refreshTaskList === 'function') {
                     try {
                         await refreshTaskList();
-                        const nextTaskElement = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
-                        const nextCollapse = nextTaskElement ? nextTaskElement.querySelector('.accordion-collapse') : null;
+                        let nextCollapse = collapseId ? document.getElementById(collapseId) : null;
+                        if (!nextCollapse) {
+                            const nextTaskElement = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
+                            nextCollapse = nextTaskElement ? nextTaskElement.querySelector('.accordion-collapse') : null;
+                        }
                         if (nextCollapse) {
                             targetCollapse = nextCollapse;
                         }
