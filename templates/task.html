@@ -555,72 +555,20 @@
     const filterCollapse = filterCollapseElement ? new bootstrap.Collapse(filterCollapseElement, { toggle: false }) : null;
     const filterMediaQuery = window.matchMedia('(min-width: 992px)');
 
-    const PREFERENCE_STORAGE_KEY = 'pm:preferences';
-    const ACTIVE_SCOPE_ID = {{ g.scope.id | tojson if g.scope else 'null' }};
-
-    function readPreferenceData() {
-        const fallback = { lastScopeId: null, scopes: {} };
-        if (typeof window === 'undefined' || !('localStorage' in window)) {
-            return { ...fallback };
-        }
-        try {
-            const raw = window.localStorage.getItem(PREFERENCE_STORAGE_KEY);
-            if (!raw) {
-                return { ...fallback };
-            }
-            const parsed = JSON.parse(raw);
-            const scopes = parsed && typeof parsed.scopes === 'object' && parsed.scopes !== null ? parsed.scopes : {};
-            const lastScopeId = parsed && parsed.lastScopeId != null ? String(parsed.lastScopeId) : null;
-            return { lastScopeId, scopes };
-        } catch (error) {
-            console.warn('Unable to read task preferences from localStorage.', error);
-            return { ...fallback };
-        }
-    }
-
-    function writePreferenceData(data) {
-        if (typeof window === 'undefined' || !('localStorage' in window)) {
-            return;
-        }
-        try {
-            window.localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(data));
-        } catch (error) {
-            console.warn('Unable to persist task preferences to localStorage.', error);
-        }
-    }
-
-    function updatePreferenceData(updater) {
-        const current = readPreferenceData();
-        const draft = {
-            lastScopeId: current.lastScopeId,
-            scopes: { ...current.scopes },
-        };
-        const result = typeof updater === 'function' ? updater(draft) || draft : draft;
-        const normalized = {
-            lastScopeId: result.lastScopeId != null ? String(result.lastScopeId) : null,
-            scopes: result.scopes && typeof result.scopes === 'object' ? result.scopes : {},
-        };
-        writePreferenceData(normalized);
-        return normalized;
-    }
-
-    function getStoredScopePreferences(scopeId) {
-        if (scopeId == null) {
+    // Use shared preferences utilities from preferences.js
+    // Derive the active scope id from the DOM (task-groups-container data attribute)
+    // instead of embedding server-side templating into the JS.
+    const ACTIVE_SCOPE_ID = (function () {
+        const container = getTaskGroupsContainer();
+        if (!container) {
             return null;
         }
-        const data = readPreferenceData();
-        const scopeKey = String(scopeId);
-        const stored = data.scopes && typeof data.scopes === 'object' ? data.scopes[scopeKey] : null;
-        if (!stored || typeof stored !== 'object') {
+        const id = container.dataset.scopeId;
+        if (!id || id === 'null' || id === 'undefined') {
             return null;
         }
-        return {
-            search: typeof stored.search === 'string' ? stored.search : '',
-            sortBy: typeof stored.sortBy === 'string' ? stored.sortBy : '',
-            showCompleted: Boolean(stored.showCompleted),
-            tags: Array.isArray(stored.tags) ? stored.tags.map((value) => String(value)) : [],
-        };
-    }
+        return String(id);
+    })();
 
     function getCurrentScopeId() {
         const container = getTaskGroupsContainer();

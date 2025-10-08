@@ -69,54 +69,8 @@
 <script>
     initializeSortable('scopes-list', 'scope');
 
-    const PREFERENCE_STORAGE_KEY = 'pm:preferences';
-
-    function readPreferenceData() {
-        const fallback = { lastScopeId: null, scopes: {} };
-        if (typeof window === 'undefined' || !('localStorage' in window)) {
-            return { ...fallback };
-        }
-        try {
-            const raw = window.localStorage.getItem(PREFERENCE_STORAGE_KEY);
-            if (!raw) {
-                return { ...fallback };
-            }
-            const parsed = JSON.parse(raw);
-            const scopes = parsed && typeof parsed.scopes === 'object' && parsed.scopes !== null ? parsed.scopes : {};
-            const lastScopeId = parsed && parsed.lastScopeId != null ? String(parsed.lastScopeId) : null;
-            return { lastScopeId, scopes };
-        } catch (error) {
-            console.warn('Unable to read scope preferences from localStorage.', error);
-            return { ...fallback };
-        }
-    }
-
-    function writePreferenceData(data) {
-        if (typeof window === 'undefined' || !('localStorage' in window)) {
-            return;
-        }
-        try {
-            window.localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(data));
-        } catch (error) {
-            console.warn('Unable to persist scope preferences to localStorage.', error);
-        }
-    }
-
-    function updatePreferenceData(updater) {
-        const current = readPreferenceData();
-        const draft = {
-            lastScopeId: current.lastScopeId,
-            scopes: { ...current.scopes },
-        };
-        const result = typeof updater === 'function' ? updater(draft) || draft : draft;
-        const normalized = {
-            lastScopeId: result.lastScopeId != null ? String(result.lastScopeId) : null,
-            scopes: result.scopes && typeof result.scopes === 'object' ? result.scopes : {},
-        };
-        writePreferenceData(normalized);
-        return normalized;
-    }
-
+    // Use shared preferences utilities from preferences.js
+    
     function setLastScopePreference(scopeId) {
         updatePreferenceData((data) => {
             data.lastScopeId = scopeId != null ? String(scopeId) : null;
@@ -178,9 +132,15 @@
         if (!targetScopeUrl || !shouldAutoNavigateToScope()) {
             return;
         }
+        // Small delay to allow any pending UI event handlers (for example the
+        // click listener that updates localStorage or shows a flash) to complete
+        // before navigating away. This prevents lost state when navigation happens
+        // immediately.
+
+        const NAVIGATE_DELAY_MS = 150;
         window.setTimeout(() => {
             window.location.href = targetScopeUrl;
-        }, 150);
+        }, NAVIGATE_DELAY_MS);
     }
 
     attemptStoredScopeRedirect();
