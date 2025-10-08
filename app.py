@@ -245,8 +245,8 @@ def user():
             if not github_form.errors:
                 if token_input:
                     g.user.set_github_token(token_input)
-                elif not g.user.get_github_token():
-                    g.user.set_github_token(token_to_use)
+                # Only set the token if a new value is provided
+                # Do not set the token to None or empty if not provided
                 g.user.github_integration_enabled = True
                 try:
                     db.session.commit()
