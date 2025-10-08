@@ -61,6 +61,7 @@ from services.github_service import (
     test_connection,
     update_issue,
     close_issue,
+    remove_label_from_issue,
 )
 
 LOCAL_GITHUB_TAG_NAME = "github"
@@ -2076,6 +2077,30 @@ def delete_item(item_type, id):
                         ),
                         400,
                     )
+                github_context = (
+                    _task_github_context(item, g.user) if item.github_issue_number else None
+                )
+                if github_context and item.github_issue_number:
+                    try:
+                        remove_label_from_issue(
+                            github_context["token"],
+                            github_context["owner"],
+                            github_context["name"],
+                            item.github_issue_number,
+                            GITHUB_APP_LABEL,
+                        )
+                    except GitHubError as error:
+                        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                            pass
+                        else:
+                            message, status = _github_error_response(error)
+                            if error.status_code in (401, 403):
+                                _invalidate_github(g.user)
+                                try:
+                                    db.session.commit()
+                                except SQLAlchemyError:
+                                    db.session.rollback()
+                            return jsonify({"success": False, "message": message}), status
 
             db.session.delete(item)
             db.session.commit()

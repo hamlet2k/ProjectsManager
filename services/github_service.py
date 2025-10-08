@@ -259,3 +259,22 @@ def comment_on_issue(token: str, owner: str, repo: str, issue_number: int, body:
         raise GitHubError("Unauthorized", status)
     if status >= 400:
         raise GitHubError("Unable to comment on issue", status)
+
+
+def remove_label_from_issue(token: str, owner: str, repo: str, issue_number: int, label: str) -> List[str]:
+    """
+    Remove a specific label from a GitHub issue.
+
+    Returns the remaining labels when successful.
+    """
+    endpoint = f"/repos/{owner}/{repo}/issues/{issue_number}/labels/{quote(label)}"
+    status, payload = _request("DELETE", endpoint, token)
+    if status in MISSING_ISSUE_STATUS_CODES:
+        raise GitHubError("Issue not found", status)
+    if status in (401, 403):
+        raise GitHubError("Unauthorized", status)
+    if status >= 400:
+        raise GitHubError(f"Unable to remove label '{label}' from issue", status)
+    if isinstance(payload, list):
+        return [entry.get("name") for entry in payload if isinstance(entry, dict) and entry.get("name")]
+    return []
