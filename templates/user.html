@@ -81,13 +81,17 @@
             }
             const tokenValue = tokenField ? tokenField.value.trim() : '';
             const url = '/api/github/repos';
+            const headers = {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json',
+            };
+            if (tokenValue) {
+                headers.Authorization = `Bearer ${tokenValue}`;
+            }
             fetch(url, {
                 method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(tokenValue ? { token: tokenValue } : {}),
+                headers,
+                body: JSON.stringify({}),
             })
                 .then((response) =>
                     response

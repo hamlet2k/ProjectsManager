@@ -995,7 +995,12 @@ def github_connect():
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
     payload = request.get_json(silent=True) or {}
-    token = (payload.get("token") or "").strip()
+    auth_header = request.headers.get("Authorization", "").strip()
+    token = ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = (payload.get("token") or "").strip()
     test_only = bool(payload.get("test_only"))
     repository_payload = payload.get("repository")
 
@@ -1031,7 +1036,12 @@ def github_repositories():
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
     payload = request.get_json(silent=True) or {}
-    token = (payload.get("token") or "").strip()
+    auth_header = request.headers.get("Authorization", "").strip()
+    token = ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = (payload.get("token") or "").strip()
     if not token:
         token = g.user.get_github_token()
 
