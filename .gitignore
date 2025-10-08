@@ -5,4 +5,5 @@ instance/
 admin/
 tools/
 patch/
+outputs/
 *.db
