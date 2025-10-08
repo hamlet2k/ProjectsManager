@@ -25,9 +25,6 @@ class User(db.Model):
     theme = db.Column(db.String(50), nullable=False, default="light")
     github_integration_enabled = db.Column(db.Boolean, nullable=False, default=False)
     github_token_encrypted = db.Column(db.LargeBinary, nullable=True)
-    github_repo_id = db.Column(db.BigInteger, nullable=True)
-    github_repo_name = db.Column(db.String(200), nullable=True)
-    github_repo_owner = db.Column(db.String(200), nullable=True)
 
     owned_tasks = db.relationship("Task", backref="task_owner", lazy=True)
     owned_scopes = db.relationship("Scope", backref="scope_owner", lazy=True)
@@ -54,15 +51,6 @@ class User(db.Model):
         from services.github_service import decrypt_token
 
         return decrypt_token(self.github_token_encrypted)
-
-    def github_repo_as_dict(self):
-        if not self.github_repo_id or not self.github_repo_name or not self.github_repo_owner:
-            return None
-        return {
-            "id": self.github_repo_id,
-            "name": self.github_repo_name,
-            "owner": self.github_repo_owner,
-        }
 
     def __repr__(self):
         return f"<User {self.id}>"

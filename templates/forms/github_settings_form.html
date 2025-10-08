@@ -19,19 +19,11 @@
                     <div class="invalid-feedback d-block">{{ error }}</div>
                 {% endfor %}
             {% else %}
-                <div class="form-text">Token is stored encrypted and never shown again.</div>
+                <div class="form-text">Token is stored encrypted and never shown again. Repositories are selected within each scope.</div>
             {% endif %}
             {% if github_token_present %}
                 <div class="form-text text-success" data-token-status>Token already stored securely.</div>
             {% endif %}
-        </div>
-        <div class="mb-3">
-            <label class="form-label" for="github-repo-select">Repository</label>
-            {{ github_form.repository(class="form-select" + (' is-invalid' if github_form.repository.errors else ''), id="github-repo-select", **{'data-selected-repo': github_repo | tojson if github_repo else ''}) }}
-            {% for error in github_form.repository.errors %}
-                <div class="invalid-feedback d-block">{{ error }}</div>
-            {% endfor %}
-            <div class="form-text">Select the repository where issues should be created.</div>
         </div>
         <div class="d-flex flex-wrap gap-2">
             <button class="btn btn-outline-secondary" type="button" id="github-test-connection">Test connection</button>

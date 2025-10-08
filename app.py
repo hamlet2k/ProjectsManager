@@ -218,18 +218,8 @@ def user():
     user_form = UserSettingsForm(obj=g.user)
     github_form = GitHubSettingsForm()
 
-    selected_repo = g.user.github_repo_as_dict()
     if not github_form.is_submitted():
-        if selected_repo:
-            github_form.repository.choices = [
-                (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
-            ]
-            github_form.repository.data = json.dumps(selected_repo)
         github_form.enabled.data = g.user.github_integration_enabled
-    elif selected_repo and not github_form.repository.choices:
-        github_form.repository.choices = [
-            (json.dumps(selected_repo), f"{selected_repo['owner']}/{selected_repo['name']}")
-        ]
 
     if user_form.submit.data and user_form.validate_on_submit():
         g.user.username = user_form.username.data
@@ -249,33 +239,15 @@ def user():
     if github_form.submit.data and github_form.validate_on_submit():
         token_input = (github_form.token.data or "").strip()
         if github_form.enabled.data:
-            if token_input:
-                g.user.set_github_token(token_input)
-                token_to_use = token_input
-            else:
-                token_to_use = g.user.get_github_token()
+            token_to_use = token_input or g.user.get_github_token()
             if not token_to_use:
                 github_form.token.errors.append("Token is required when enabling integration.")
-            repo_value = github_form.repository.data
-            repo_payload = None
-            if repo_value:
-                try:
-                    repo_payload = json.loads(repo_value)
-                except ValueError:
-                    github_form.repository.errors.append("Invalid repository selection.")
-            elif not selected_repo:
-                github_form.repository.errors.append("Please select a repository.")
-
             if not github_form.errors:
+                if token_input:
+                    g.user.set_github_token(token_input)
+                elif not g.user.get_github_token():
+                    g.user.set_github_token(token_to_use)
                 g.user.github_integration_enabled = True
-                if repo_payload:
-                    g.user.github_repo_id = repo_payload.get("id")
-                    g.user.github_repo_name = repo_payload.get("name")
-                    g.user.github_repo_owner = repo_payload.get("owner")
-                elif selected_repo:
-                    g.user.github_repo_id = selected_repo.get("id")
-                    g.user.github_repo_name = selected_repo.get("name")
-                    g.user.github_repo_owner = selected_repo.get("owner")
                 try:
                     db.session.commit()
                     flash("GitHub settings saved.", "success")
@@ -285,9 +257,6 @@ def user():
                     flash(f"An error occurred: {str(e)}", "error")
         else:
             g.user.github_integration_enabled = False
-            g.user.github_repo_id = None
-            g.user.github_repo_name = None
-            g.user.github_repo_owner = None
             g.user.set_github_token(None)
             try:
                 db.session.commit()
@@ -304,7 +273,6 @@ def user():
         user_form=user_form,
         github_form=github_form,
         github_token_present=token_present,
-        github_repo=selected_repo,
     )
 
 
@@ -532,6 +500,9 @@ def _clear_github_issue_link(task: Task) -> None:
     task.github_issue_number = None
     task.github_issue_url = None
     task.github_issue_state = None
+    task.github_repo_id = None
+    task.github_repo_name = None
+    task.github_repo_owner = None
     _remove_local_github_tag(task)
 
 
@@ -548,19 +519,49 @@ def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
     _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
 
 
-def _user_github_context(user: User | None):
+def _user_github_token(user: User | None) -> str | None:
     if not user or not user.github_integration_enabled:
         return None
     token = user.get_github_token()
     if not token:
         return None
-    if not user.github_repo_owner or not user.github_repo_name:
+    return token
+
+
+def _scope_github_context(scope: Scope | None, user: User | None):
+    if scope is None or user is None:
+        return None
+    if not scope.github_integration_enabled:
+        return None
+    token = _user_github_token(user)
+    if not token:
+        return None
+    if not scope.github_repo_owner or not scope.github_repo_name:
         return None
     return {
         "token": token,
-        "owner": user.github_repo_owner,
-        "name": user.github_repo_name,
-        "id": user.github_repo_id,
+        "owner": scope.github_repo_owner,
+        "name": scope.github_repo_name,
+        "id": scope.github_repo_id,
+    }
+
+
+def _task_github_context(task: Task | None, user: User | None):
+    if task is None or user is None:
+        return None
+    scope_context = _scope_github_context(task.scope, user)
+    if not scope_context:
+        return None
+    owner = task.github_repo_owner or scope_context["owner"]
+    name = task.github_repo_name or scope_context["name"]
+    repo_id = task.github_repo_id or scope_context["id"]
+    if not owner or not name:
+        return None
+    return {
+        "token": scope_context["token"],
+        "owner": owner,
+        "name": name,
+        "id": repo_id,
     }
 
 
@@ -628,9 +629,6 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
 
 def _invalidate_github(user: User):
     user.github_integration_enabled = False
-    user.github_repo_id = None
-    user.github_repo_name = None
-    user.github_repo_owner = None
     user.set_github_token(None)
 
 
@@ -662,7 +660,8 @@ def scope():
     form = ScopeForm()
     session.pop("selected_scope", None)
     g.scope = None
-    return render_template("scope.html", scopes=items, scope_form=form)
+    token_present = bool(g.user.github_token_encrypted) if g.user else False
+    return render_template("scope.html", scopes=items, scope_form=form, github_token_present=token_present)
 
 
 @app.route("/scope/<int:id>/tasks/export", methods=["GET"])
@@ -953,8 +952,7 @@ def task():
         "sort_by": sort_by,
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
-        "github_enabled": bool(_user_github_context(g.user)),
-        "github_repo": g.user.github_repo_as_dict(),
+        "github_enabled": bool(_scope_github_context(g.scope, g.user)),
         "github_label": GITHUB_APP_LABEL,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,
@@ -1002,8 +1000,6 @@ def github_connect():
     if not token:
         token = (payload.get("token") or "").strip()
     test_only = bool(payload.get("test_only"))
-    repository_payload = payload.get("repository")
-
     if not token:
         token = g.user.get_github_token()
 
@@ -1016,10 +1012,6 @@ def github_connect():
     if not test_only:
         g.user.set_github_token(token)
         g.user.github_integration_enabled = True
-        if isinstance(repository_payload, dict):
-            g.user.github_repo_id = repository_payload.get("id")
-            g.user.github_repo_name = repository_payload.get("name")
-            g.user.github_repo_owner = repository_payload.get("owner")
         try:
             db.session.commit()
         except SQLAlchemyError as exc:
@@ -1086,7 +1078,7 @@ def github_issue_create():
     task = _get_task_in_scope_or_404(task_id)
     _task_owner_guard(task)
 
-    context = _user_github_context(g.user)
+    context = _scope_github_context(task.scope, g.user)
     if not context:
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
@@ -1107,6 +1099,9 @@ def github_issue_create():
     task.github_issue_number = issue.number
     task.github_issue_url = issue.url
     task.github_issue_state = issue.state
+    task.github_repo_id = context.get("id")
+    task.github_repo_name = context["name"]
+    task.github_repo_owner = context["owner"]
     try:
         _ensure_local_github_tag(task)
     except SQLAlchemyError as exc:
@@ -1152,7 +1147,7 @@ def github_issue_sync():
     if not task.github_issue_number:
         return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
 
-    context = _user_github_context(g.user)
+    context = _task_github_context(task, g.user)
     if not context:
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
@@ -1266,7 +1261,7 @@ def github_issue_close():
     if not task.github_issue_number:
         return jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}), 400
 
-    context = _user_github_context(g.user)
+    context = _task_github_context(task, g.user)
     if not context:
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
@@ -1336,10 +1331,6 @@ def github_refresh():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
-    context = _user_github_context(g.user)
-    if not context:
-        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
-
     tasks = (
         Task.query.filter(
             Task.owner_id == g.user.id,
@@ -1347,9 +1338,14 @@ def github_refresh():
         ).all()
     )
     updated = 0
+    processed_any = False
     for task in tasks:
         if task.scope is None:
             continue
+        context = _task_github_context(task, g.user)
+        if not context:
+            continue
+        processed_any = True
         try:
             issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
         except GitHubError as error:
@@ -1377,6 +1373,9 @@ def github_refresh():
             continue
         if issue.state == "closed" and previous_state != "closed":
             updated += 1
+
+    if not processed_any:
+        return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
     try:
         db.session.commit()
@@ -1572,7 +1571,7 @@ def add_tag_to_task(task_id):
         task.tags.append(tag)
         assigned_now = True
 
-    context = _user_github_context(g.user) if task.github_issue_number else None
+    context = _task_github_context(task, g.user) if task.github_issue_number else None
 
     try:
         if (
@@ -1652,7 +1651,7 @@ def remove_tag_from_task(task_id, tag_id):
         task.tags.remove(tag)
         removed = True
 
-    context = _user_github_context(g.user) if task.github_issue_number else None
+    context = _task_github_context(task, g.user) if task.github_issue_number else None
 
     try:
         if removed and context and task.github_issue_number:
@@ -1723,6 +1722,7 @@ def add_scope():
     form = ScopeForm()
     items = g.user.owned_scopes + g.user.scopes
     show_modal = False
+    token_present = bool(g.user.github_token_encrypted)
 
     if form.validate_on_submit():
         # Set the data for the new scope
@@ -1731,7 +1731,45 @@ def add_scope():
 
         item.name = form.name.data
         item.description = form.description.data
-        
+
+        enable_integration = bool(form.github_enabled.data)
+        repo_payload = None
+        if enable_integration:
+            if not _user_github_token(g.user):
+                form.github_enabled.errors.append(
+                    "A GitHub token must be configured in your user settings before enabling integration."
+                )
+            repo_value = (form.github_repository.data or "").strip()
+            if not repo_value:
+                form.github_repository.errors.append(
+                    "A repository must be selected to enable GitHub integration for this scope."
+                )
+            else:
+                try:
+                    repo_payload = json.loads(repo_value)
+                except ValueError:
+                    form.github_repository.errors.append("Invalid repository selection.")
+
+        if form.errors:
+            show_modal = "scope-modal"
+            return render_template(
+                'scope.html',
+                scope_form=form,
+                show_modal=show_modal,
+                scopes=items,
+                github_token_present=token_present,
+            )
+
+        item.github_integration_enabled = enable_integration
+        if enable_integration and repo_payload:
+            item.github_repo_id = repo_payload.get("id")
+            item.github_repo_name = repo_payload.get("name")
+            item.github_repo_owner = repo_payload.get("owner")
+        else:
+            item.github_repo_id = None
+            item.github_repo_name = None
+            item.github_repo_owner = None
+
         # will use the following line when a user shares a scope with another user
         # g.user.scopes.append(item)
 
@@ -1747,7 +1785,13 @@ def add_scope():
     else:
         show_modal = "scope-modal"
     # TODO: This needs to be tested
-    return render_template('scope.html', scope_form=form, show_modal=show_modal, scopes=items)
+    return render_template(
+        'scope.html',
+        scope_form=form,
+        show_modal=show_modal,
+        scopes=items,
+        github_token_present=token_present,
+    )
 
 @app.route("/task/add", methods=["GET", "POST"])
 @scope_required
@@ -1812,11 +1856,59 @@ def edit_scope(id):
     if not _user_owns_scope(item):
         abort(404)
     form = ScopeForm(obj=item)
+    token_present = bool(g.user.github_token_encrypted)
+    if not form.is_submitted():
+        form.github_enabled.data = item.github_integration_enabled
+        if item.github_repo_owner and item.github_repo_name:
+            form.github_repository.data = json.dumps(
+                {
+                    "id": item.github_repo_id,
+                    "name": item.github_repo_name,
+                    "owner": item.github_repo_owner,
+                }
+            )
     show_modal = False
 
     if form.validate_on_submit():
         item.name = form.name.data
         item.description = form.description.data
+        enable_integration = bool(form.github_enabled.data)
+        repo_payload = None
+        if enable_integration:
+            if not _user_github_token(g.user):
+                form.github_enabled.errors.append(
+                    "A GitHub token must be configured in your user settings before enabling integration."
+                )
+            repo_value = (form.github_repository.data or "").strip()
+            if not repo_value:
+                form.github_repository.errors.append(
+                    "A repository must be selected to enable GitHub integration for this scope."
+                )
+            else:
+                try:
+                    repo_payload = json.loads(repo_value)
+                except ValueError:
+                    form.github_repository.errors.append("Invalid repository selection.")
+
+        if form.errors:
+            show_modal = "scope-modal"
+            return render_template(
+                'scope.html',
+                scope_form=form,
+                show_modal=show_modal,
+                scopes=items,
+                github_token_present=token_present,
+            )
+
+        item.github_integration_enabled = enable_integration
+        if enable_integration and repo_payload:
+            item.github_repo_id = repo_payload.get("id")
+            item.github_repo_name = repo_payload.get("name")
+            item.github_repo_owner = repo_payload.get("owner")
+        else:
+            item.github_repo_id = None
+            item.github_repo_name = None
+            item.github_repo_owner = None
         try:
             db.session.commit()
             flash("Scope edited!", "success")
@@ -1827,7 +1919,13 @@ def edit_scope(id):
         return redirect(request.referrer or url_for("scope"))
     else:
         show_modal = "scope-modal"
-    return render_template('scope.html', scope_form=form, show_modal=show_modal, scopes=items)
+    return render_template(
+        'scope.html',
+        scope_form=form,
+        show_modal=show_modal,
+        scopes=items,
+        github_token_present=token_present,
+    )
 
 
 @app.route("/task/edit/<int:id>", methods=["GET", "POST"])
@@ -1866,7 +1964,7 @@ def edit_task(id):
                 return jsonify({"success": False, "message": generic_error_message}), 500
             flash(generic_error_message, "error")
             return redirect(request.referrer or url_for("task"))
-        context = _user_github_context(g.user)
+        context = _task_github_context(item, g.user)
         if item.github_issue_number and context:
             labels = _labels_for_github(item)
             try:
@@ -2004,7 +2102,7 @@ def complete_task(id):
     )
     try:
         item = _get_task_in_scope_or_404(id)
-        context = _user_github_context(g.user) if item.github_issue_number else None
+        context = _task_github_context(item, g.user) if item.github_issue_number else None
         issue_unlinked = False
         issue_reopened = False
         issue_closed = False

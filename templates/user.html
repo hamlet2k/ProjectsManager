@@ -27,11 +27,9 @@
     document.addEventListener('DOMContentLoaded', () => {
         const toggle = document.getElementById('github-integration-toggle');
         const section = document.querySelector('[data-github-settings-section]');
-        const repoSelect = document.getElementById('github-repo-select');
         const tokenField = document.getElementById('github-token-field');
         const testButton = document.getElementById('github-test-connection');
         const tokenStatus = document.querySelector('[data-token-status]');
-        let reposLoaded = false;
 
         function getCsrfToken() {
             const field = document.querySelector('input[name="csrf_token"]');
@@ -42,20 +40,12 @@
             return tokenStatus ? !tokenStatus.classList.contains('d-none') : false;
         }
 
-        function toggleSectionVisibility(options = {}) {
+        function toggleSectionVisibility() {
             if (!section) {
                 return;
             }
             const shouldShow = toggle ? toggle.checked : false;
             section.style.display = shouldShow ? '' : 'none';
-            if (shouldShow && !reposLoaded) {
-                const tokenValue = tokenField ? tokenField.value.trim() : '';
-                let silent = options.silent;
-                if (silent === undefined) {
-                    silent = !tokenValue && !hasStoredToken();
-                }
-                loadRepositories({ silent });
-            }
         }
 
         function setLoading(button, isLoading) {
@@ -75,70 +65,6 @@
             }
         }
 
-        function loadRepositories({ silent = false } = {}) {
-            if (!repoSelect) {
-                return;
-            }
-            const tokenValue = tokenField ? tokenField.value.trim() : '';
-            const url = '/api/github/repos';
-            const headers = {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/json',
-            };
-            if (tokenValue) {
-                headers.Authorization = `Bearer ${tokenValue}`;
-            }
-            fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({}),
-            })
-                .then((response) =>
-                    response
-                        .json()
-                        .catch(() => ({}))
-                        .then((data) => ({ ok: response.ok, data }))
-                )
-                .then(({ ok, data }) => {
-                    if (!ok || !data || !data.success) {
-                        const message = (data && data.message) || 'Unable to load GitHub repositories.';
-                        if (!silent && typeof displayFlashMessage === 'function') {
-                            displayFlashMessage(message, 'danger');
-                        }
-                        return;
-                    }
-                    repoSelect.innerHTML = '';
-                    const placeholder = document.createElement('option');
-                    placeholder.value = '';
-                    placeholder.textContent = 'Select a repository';
-                    repoSelect.appendChild(placeholder);
-                    const selectedValue = repoSelect.dataset.selectedRepo || '';
-                    data.repositories.forEach((repo) => {
-                        const option = document.createElement('option');
-                        option.value = JSON.stringify(repo);
-                        option.textContent = `${repo.owner}/${repo.name}`;
-                        if (selectedValue) {
-                            try {
-                                const parsed = JSON.parse(selectedValue);
-                                if (parsed && parsed.id === repo.id) {
-                                    option.selected = true;
-                                }
-                            } catch (error) {
-                                // Ignore parsing errors and fallback to default
-                            }
-                        }
-                        repoSelect.appendChild(option);
-                    });
-                    reposLoaded = true;
-                })
-                .catch((error) => {
-                    console.error('Unable to load repositories', error);
-                    if (!silent && typeof displayFlashMessage === 'function') {
-                        displayFlashMessage('Unable to load GitHub repositories.', 'danger');
-                    }
-                });
-        }
-
         if (tokenField && tokenStatus) {
             tokenField.addEventListener('input', () => {
                 tokenStatus.classList.add('d-none');
@@ -147,9 +73,10 @@
 
         if (toggle) {
             toggle.addEventListener('change', () => {
-                const tokenValue = tokenField ? tokenField.value.trim() : '';
-                const shouldSilence = !tokenValue && !hasStoredToken();
-                toggleSectionVisibility({ silent: shouldSilence });
+                if (toggle.checked && !hasStoredToken() && tokenField && !tokenField.value.trim()) {
+                    displayFlashMessage('Enter a GitHub Personal Access Token to enable integration.', 'info');
+                }
+                toggleSectionVisibility();
             });
         }
 
@@ -184,8 +111,6 @@
                             return;
                         }
                         displayFlashMessage('Successfully connected to GitHub.', 'success');
-                        reposLoaded = false;
-                        loadRepositories();
                     })
                     .catch((error) => {
                         console.error('Unable to test GitHub connection', error);
