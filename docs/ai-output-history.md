@@ -76,3 +76,5 @@ The application has a solid foundation but requires attention to security and bu
 --------------------------------------------------------
 --------------------------------------------------------
 2025-10-01 – UI polish: unified modal styling, confirmation modals, task AJAX + filter retention, and copy updates.
+--------------------------------------------------------
+2025-10-10 – GitHub integration: added scope-level default project & milestone settings, milestone editing for linked tasks, API/migration updates, and supporting UI fetch logic.

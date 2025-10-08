@@ -70,3 +70,9 @@ The application should now be running and accessible via `http://localhost:5000`
 - Ensure you have Python 3.x installed, as this application is compatible with Python 3.
 - Always activate the virtual environment (`source .venv/bin/activate` on macOS/Linux or `.venv\Scripts\activate` on Windows) before running the application to ensure you are using the correct dependencies.
 - For production deployment, additional steps for server setup, environment configuration, and security considerations will be necessary.
+
+## GitHub Integration Defaults
+
+ProjectsManager can automatically create GitHub issues for tasks inside a scope. When GitHub integration is enabled on a scope, administrators can optionally pick a default project and milestone for the linked repository. New issues created from that scope will inherit the configured milestone and will be added to the selected project’s first column. You can also adjust a task’s milestone after linking it to GitHub; the change is pushed back to the GitHub issue.
+
+> **Note:** The integration fetches projects and milestones from the configured repository. Users must ensure their personal access token has the necessary permissions (typically `repo` and `project`) or the selectors may show a warning and defaults will not be applied.

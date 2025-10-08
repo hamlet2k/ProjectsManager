@@ -5,6 +5,34 @@ This is the **single source** for entities, fields, relationships, and migration
 
 ## Entities (current + planned)
 
+### Scope (current)
+- `id` – PK, int
+- `name` – str, required
+- `description` – text, optional
+- `rank` – int ordering field
+- `owner_id` – FK → `user.id`
+- GitHub integration fields
+  - `github_integration_enabled` – bool
+  - `github_repo_id`, `github_repo_name`, `github_repo_owner`
+  - `github_project_id`, `github_project_name`
+  - `github_project_column_id`, `github_project_column_name`
+  - `github_milestone_number`, `github_milestone_title`
+- Relationships: 1–N `Task`, 1–N `Tag`
+
+### Task (current)
+- `id` – PK, int
+- `name` – str, required
+- `description` – text, optional
+- `start_date`, `end_date` – datetime, optional
+- `completed`, `completed_date`
+- `owner_id` – FK → `user.id`
+- `scope_id` – FK → `scope.id`
+- GitHub fields
+  - `github_issue_id`, `github_issue_number`, `github_issue_url`, `github_issue_state`
+  - `github_repo_id`, `github_repo_name`, `github_repo_owner`
+  - `github_milestone_number`, `github_milestone_title` _(new)_
+- Relationships: 1–N `Tag` (via association), self-referential subtasks
+
 ### Project (current)
 Fields (baseline; confirm with `models/*.py` and update):
 - `id` – PK, int

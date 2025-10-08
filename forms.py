@@ -56,6 +56,18 @@ class ScopeForm(FlaskForm):
         validators=[Optional()],
         validate_choice=False,
     )
+    github_project = SelectField(
+        "Project",
+        choices=[],
+        validators=[Optional()],
+        validate_choice=False,
+    )
+    github_milestone = SelectField(
+        "Milestone",
+        choices=[],
+        validators=[Optional()],
+        validate_choice=False,
+    )
     submit = SubmitField("Save Scope")
 
 
@@ -64,6 +76,12 @@ class TaskForm(FlaskForm):
     description = TextAreaField("Description")
     end_date = DateTimeLocalField("End Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
     tags = HiddenField("Tags")
+    github_milestone = SelectField(
+        "GitHub Milestone",
+        choices=[],
+        validators=[Optional()],
+        validate_choice=False,
+    )
     # completed = SelectField("Completed", choices=[(True, "Yes"), (False, "No")], coerce=bool)
     # rank = IntegerField("Rank")
     

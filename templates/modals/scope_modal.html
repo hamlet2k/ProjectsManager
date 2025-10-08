@@ -55,9 +55,27 @@
                             {% endfor %}
                             <div class="form-text">Choose the repository to use for GitHub actions in this scope.</div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-project-select">Project (optional)</label>
+                            {{ scope_form.github_project(class="form-select" + (' is-invalid' if scope_form.github_project.errors else ''), id="scope-github-project-select", **{'data-selected-project': scope_form.github_project.data or ''}) }}
+                            {% for error in scope_form.github_project.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                            <div class="form-text">Issues created for this scope will be added to the selected project column.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-milestone-select">Milestone (optional)</label>
+                            {{ scope_form.github_milestone(class="form-select" + (' is-invalid' if scope_form.github_milestone.errors else ''), id="scope-github-milestone-select", **{'data-selected-milestone': scope_form.github_milestone.data or ''}) }}
+                            {% for error in scope_form.github_milestone.errors %}
+                                <div class="invalid-feedback d-block">{{ error }}</div>
+                            {% endfor %}
+                            <div class="form-text">New issues will use this milestone by default. You can change it per task later.</div>
+                        </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-warning role="alert">
                             A repository must be selected to enable GitHub integration for this scope.
                         </div>
+                        <div class="alert alert-warning py-2 px-3 d-none" data-github-project-warning role="alert"></div>
+                        <div class="alert alert-warning py-2 px-3 d-none" data-github-milestone-warning role="alert"></div>
                     </div>
                     {% for error in scope_form.github_enabled.errors %}
                         <div class="invalid-feedback d-block">{{ error }}</div>
@@ -134,6 +152,16 @@
                 repoSelect.dataset.selectedRepo = '';
                 repoSelect.dataset.reposLoaded = 'false';
             }
+            const projectSelect = document.getElementById('scope-github-project-select');
+            if (projectSelect) {
+                projectSelect.dataset.selectedProject = '';
+                projectSelect.dataset.metadataLoaded = 'false';
+            }
+            const milestoneSelect = document.getElementById('scope-github-milestone-select');
+            if (milestoneSelect) {
+                milestoneSelect.dataset.selectedMilestone = '';
+                milestoneSelect.dataset.metadataLoaded = 'false';
+            }
             setScopeModalContent({
                 title: 'Create scope',
                 description: buildCreateScopeDescription(),
@@ -166,6 +194,8 @@
 
             const githubToggle = document.getElementById('scope-github-toggle');
             const repoSelect = document.getElementById('scope-github-repo-select');
+            const projectSelect = document.getElementById('scope-github-project-select');
+            const milestoneSelect = document.getElementById('scope-github-milestone-select');
             if (repoSelect) {
                 const repoData = item.getAttribute('data-scope-github_repository') || '';
                 repoSelect.dataset.selectedRepo = repoData;
@@ -173,6 +203,16 @@
                 if (!repoData) {
                     repoSelect.value = '';
                 }
+            }
+            if (projectSelect) {
+                const projectData = item.getAttribute('data-scope-github_project') || '';
+                projectSelect.dataset.selectedProject = projectData;
+                projectSelect.dataset.metadataLoaded = projectSelect.dataset.metadataLoaded || 'false';
+            }
+            if (milestoneSelect) {
+                const milestoneData = item.getAttribute('data-scope-github_milestone') || '';
+                milestoneSelect.dataset.selectedMilestone = milestoneData;
+                milestoneSelect.dataset.metadataLoaded = milestoneSelect.dataset.metadataLoaded || 'false';
             }
             if (githubToggle) {
                 const enabledValue = (item.getAttribute('data-scope-github_enabled') || '').toLowerCase();
@@ -192,50 +232,114 @@
     (function initScopeGithubSettings() {
         const toggle = document.getElementById('scope-github-toggle');
         const section = document.querySelector('[data-github-settings-section]');
-        const warning = document.querySelector('[data-github-warning]');
-        const select = document.getElementById('scope-github-repo-select');
+        const repoWarning = document.querySelector('[data-github-warning]');
+        const repoSelect = document.getElementById('scope-github-repo-select');
+        const projectSelect = document.getElementById('scope-github-project-select');
+        const milestoneSelect = document.getElementById('scope-github-milestone-select');
+        const projectWarning = document.querySelector('[data-github-project-warning]');
+        const milestoneWarning = document.querySelector('[data-github-milestone-warning]');
 
-        if (select && !select.dataset.reposLoaded) {
-            select.dataset.reposLoaded = 'false';
+        if (repoSelect && !repoSelect.dataset.reposLoaded) {
+            repoSelect.dataset.reposLoaded = 'false';
+        }
+        if (projectSelect && !projectSelect.dataset.metadataLoaded) {
+            projectSelect.dataset.metadataLoaded = 'false';
+        }
+        if (milestoneSelect && !milestoneSelect.dataset.metadataLoaded) {
+            milestoneSelect.dataset.metadataLoaded = 'false';
+        }
+        if (projectSelect && typeof projectSelect.dataset.selectedProject === 'undefined') {
+            projectSelect.dataset.selectedProject = projectSelect.dataset.selectedProject || '';
+        }
+        if (milestoneSelect && typeof milestoneSelect.dataset.selectedMilestone === 'undefined') {
+            milestoneSelect.dataset.selectedMilestone = milestoneSelect.dataset.selectedMilestone || '';
         }
 
-        function markReposLoaded(isLoaded) {
-            if (select) {
-                select.dataset.reposLoaded = isLoaded ? 'true' : 'false';
+        function hide(element) {
+            if (element) {
+                element.classList.add('d-none');
             }
         }
 
-        function reposLoaded() {
-            return select ? select.dataset.reposLoaded === 'true' : false;
+        function show(element) {
+            if (element) {
+                element.classList.remove('d-none');
+            }
         }
 
-        function setLoading(isLoading) {
+        function setWarning(element, message) {
+            if (!element) {
+                return;
+            }
+            if (message) {
+                element.textContent = message;
+                show(element);
+            } else {
+                element.textContent = '';
+                hide(element);
+            }
+        }
+
+        function resetSelect(select, placeholder) {
             if (!select) {
                 return;
             }
+            select.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = placeholder;
+            select.appendChild(option);
+            select.disabled = true;
+        }
+
+        function prepareMetadataControls() {
+            resetSelect(projectSelect, 'Select a repository first');
+            resetSelect(milestoneSelect, 'Select a repository first');
+            setWarning(projectWarning, null);
+            setWarning(milestoneWarning, null);
+            if (projectSelect) {
+                projectSelect.dataset.metadataLoaded = 'false';
+            }
+            if (milestoneSelect) {
+                milestoneSelect.dataset.metadataLoaded = 'false';
+            }
+        }
+
+        prepareMetadataControls();
+
+        function markReposLoaded(isLoaded) {
+            if (repoSelect) {
+                repoSelect.dataset.reposLoaded = isLoaded ? 'true' : 'false';
+            }
+        }
+
+        function setRepoLoading(isLoading) {
+            if (!repoSelect) {
+                return;
+            }
             if (isLoading) {
-                select.disabled = true;
+                repoSelect.disabled = true;
                 const option = document.createElement('option');
                 option.value = '';
                 option.textContent = 'Loading repositories...';
-                select.innerHTML = '';
-                select.appendChild(option);
+                repoSelect.innerHTML = '';
+                repoSelect.appendChild(option);
             } else if (toggle && !toggle.disabled) {
-                select.disabled = false;
+                repoSelect.disabled = false;
             }
         }
 
         function applySelectedRepo() {
-            if (!select) {
+            if (!repoSelect) {
                 return;
             }
-            const selectedValue = select.dataset.selectedRepo || '';
+            const selectedValue = repoSelect.dataset.selectedRepo || '';
             if (!selectedValue) {
                 return;
             }
             try {
                 const parsed = JSON.parse(selectedValue);
-                Array.from(select.options).forEach((option) => {
+                Array.from(repoSelect.options).forEach((option) => {
                     if (!option.value) {
                         return;
                     }
@@ -245,7 +349,7 @@
                             option.selected = true;
                         }
                     } catch (error) {
-                        // ignore invalid option values
+                        // ignore
                     }
                 });
             } catch (error) {
@@ -253,11 +357,196 @@
             }
         }
 
-        function loadRepositories({ silent = false } = {}) {
-            if (!select || !toggle || toggle.disabled) {
+        function applySelectedProject() {
+            if (!projectSelect) {
                 return;
             }
-            setLoading(true);
+            const selectedValue = projectSelect.dataset.selectedProject || '';
+            if (!selectedValue) {
+                return;
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(selectedValue);
+            } catch (error) {
+                return;
+            }
+            Array.from(projectSelect.options).forEach((option) => {
+                if (!option.value) {
+                    return;
+                }
+                try {
+                    const value = JSON.parse(option.value);
+                    if (
+                        value
+                        && value.id === parsed.id
+                        && value.column
+                        && parsed.column
+                        && value.column.id === parsed.column.id
+                    ) {
+                        option.selected = true;
+                    }
+                } catch (error) {
+                    // ignore
+                }
+            });
+        }
+
+        function applySelectedMilestone() {
+            if (!milestoneSelect) {
+                return;
+            }
+            const selectedValue = milestoneSelect.dataset.selectedMilestone || '';
+            if (!selectedValue) {
+                return;
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(selectedValue);
+            } catch (error) {
+                return;
+            }
+            Array.from(milestoneSelect.options).forEach((option) => {
+                if (!option.value) {
+                    return;
+                }
+                try {
+                    const value = JSON.parse(option.value);
+                    if (value && value.number === parsed.number) {
+                        option.selected = true;
+                    }
+                } catch (error) {
+                    // ignore
+                }
+            });
+        }
+
+        function getSelectedRepoPayload() {
+            if (!repoSelect || !repoSelect.value) {
+                return null;
+            }
+            try {
+                return JSON.parse(repoSelect.value);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function loadRepoMetadata({ silent = false, clearStoredSelection = false } = {}) {
+            if (!toggle || toggle.disabled || !toggle.checked) {
+                return;
+            }
+            const repoPayload = getSelectedRepoPayload();
+            if (!repoPayload) {
+                prepareMetadataControls();
+                return;
+            }
+            if (clearStoredSelection) {
+                if (projectSelect) {
+                    projectSelect.dataset.selectedProject = '';
+                }
+                if (milestoneSelect) {
+                    milestoneSelect.dataset.selectedMilestone = '';
+                }
+            }
+            setWarning(projectWarning, null);
+            setWarning(milestoneWarning, null);
+            resetSelect(projectSelect, 'Loading projects...');
+            resetSelect(milestoneSelect, 'Loading milestones...');
+
+            fetch('/api/github/repo/metadata', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ owner: repoPayload.owner, name: repoPayload.name }),
+            })
+                .then((response) =>
+                    response
+                        .json()
+                        .catch(() => ({}))
+                        .then((data) => ({ ok: response.ok, data }))
+                )
+                .then(({ ok, data }) => {
+                    if (!projectSelect || !milestoneSelect) {
+                        return;
+                    }
+                    projectSelect.innerHTML = '';
+                    milestoneSelect.innerHTML = '';
+
+                    const projectPlaceholder = document.createElement('option');
+                    projectPlaceholder.value = '';
+                    projectPlaceholder.textContent = 'Do not assign a project';
+                    projectSelect.appendChild(projectPlaceholder);
+
+                    const milestonePlaceholder = document.createElement('option');
+                    milestonePlaceholder.value = '';
+                    milestonePlaceholder.textContent = 'No milestone';
+                    milestoneSelect.appendChild(milestonePlaceholder);
+
+                    if (!ok || !data || !data.success) {
+                        if (!silent && typeof displayFlashMessage === 'function') {
+                            const message = (data && data.message) || 'Unable to load GitHub metadata.';
+                            displayFlashMessage(message, 'danger');
+                        }
+                        projectSelect.disabled = true;
+                        milestoneSelect.disabled = true;
+                        return;
+                    }
+
+                    const projectItems = Array.isArray(data.projects) ? data.projects : [];
+                    projectItems.forEach((project) => {
+                        const columns = Array.isArray(project.columns) ? project.columns : [];
+                        if (!columns.length) {
+                            return;
+                        }
+                        const column = columns[0];
+                        const optionPayload = {
+                            id: project.id,
+                            name: project.name,
+                            column,
+                        };
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify(optionPayload);
+                        option.textContent = `${project.name} — ${column.name}`;
+                        projectSelect.appendChild(option);
+                    });
+
+                    const milestoneItems = Array.isArray(data.milestones) ? data.milestones : [];
+                    milestoneItems.forEach((milestone) => {
+                        const option = document.createElement('option');
+                        option.value = JSON.stringify(milestone);
+                        const state = milestone.state ? ` (${milestone.state})` : '';
+                        option.textContent = `${milestone.title}${state}`;
+                        milestoneSelect.appendChild(option);
+                    });
+
+                    projectSelect.disabled = false;
+                    milestoneSelect.disabled = false;
+                    projectSelect.dataset.metadataLoaded = 'true';
+                    milestoneSelect.dataset.metadataLoaded = 'true';
+
+                    applySelectedProject();
+                    applySelectedMilestone();
+
+                    setWarning(projectWarning, data.project_warning || null);
+                    setWarning(milestoneWarning, data.milestone_warning || null);
+                })
+                .catch((error) => {
+                    console.error('Unable to load GitHub metadata', error);
+                    if (!silent && typeof displayFlashMessage === 'function') {
+                        displayFlashMessage('Unable to load GitHub projects and milestones.', 'danger');
+                    }
+                    prepareMetadataControls();
+                });
+        }
+
+        function loadRepositories({ silent = false } = {}) {
+            if (!repoSelect || !toggle || toggle.disabled) {
+                return;
+            }
+            setRepoLoading(true);
             fetch('/api/github/repos', {
                 method: 'POST',
                 headers: {
@@ -273,21 +562,21 @@
                         .then((data) => ({ ok: response.ok, data }))
                 )
                 .then(({ ok, data }) => {
-                    if (!select) {
+                    if (!repoSelect) {
                         return;
                     }
-                    select.innerHTML = '';
+                    repoSelect.innerHTML = '';
                     const placeholder = document.createElement('option');
                     placeholder.value = '';
                     placeholder.textContent = 'Select a repository';
-                    select.appendChild(placeholder);
+                    repoSelect.appendChild(placeholder);
 
                     if (!ok || !data || !data.success) {
                         if (!silent && typeof displayFlashMessage === 'function') {
                             const message = (data && data.message) || 'Unable to load GitHub repositories.';
                             displayFlashMessage(message, 'danger');
                         }
-                        select.disabled = true;
+                        repoSelect.disabled = true;
                         return;
                     }
 
@@ -295,15 +584,16 @@
                         const option = document.createElement('option');
                         option.value = JSON.stringify(repo);
                         option.textContent = `${repo.owner}/${repo.name}`;
-                        select.appendChild(option);
+                        repoSelect.appendChild(option);
                     });
                     markReposLoaded(true);
                     applySelectedRepo();
-                    select.disabled = false;
+                    repoSelect.disabled = false;
+                    loadRepoMetadata({ silent: true });
                 })
                 .catch((error) => {
                     console.error('Unable to load repositories', error);
-                    select.disabled = true;
+                    repoSelect.disabled = true;
                     markReposLoaded(false);
                     if (!silent && typeof displayFlashMessage === 'function') {
                         displayFlashMessage('Unable to load GitHub repositories.', 'danger');
@@ -317,49 +607,77 @@
             }
             const shouldShow = toggle && toggle.checked && !toggle.disabled;
             section.style.display = shouldShow ? '' : 'none';
-            if (!shouldShow && warning) {
-                warning.classList.add('d-none');
+            if (!shouldShow) {
+                hide(repoWarning);
+                prepareMetadataControls();
+                return;
             }
-            if (shouldShow && !reposLoaded()) {
+            if (repoSelect && repoSelect.dataset.reposLoaded !== 'true') {
                 loadRepositories({ silent: true });
+                return;
             }
+            loadRepoMetadata({ silent: true });
         }
 
         if (toggle) {
             toggle.addEventListener('change', () => {
                 updateSectionVisibility();
-                if (toggle.checked && select && !select.value) {
-                    if (warning) {
-                        warning.classList.remove('d-none');
-                    }
+                if (toggle.checked && repoSelect && !repoSelect.value) {
+                    show(repoWarning);
                 }
             });
         }
 
         if (scopeForm) {
             scopeForm.addEventListener('submit', () => {
-                if (!toggle || !select || toggle.disabled || !toggle.checked) {
+                if (!toggle || !repoSelect || toggle.disabled || !toggle.checked) {
                     return;
                 }
-                if (!select.value && warning) {
-                    warning.classList.remove('d-none');
+                if (!repoSelect.value) {
+                    show(repoWarning);
                 }
             });
         }
 
-        if (select) {
-            select.addEventListener('change', () => {
-                if (warning) {
-                    warning.classList.add('d-none');
+        if (repoSelect) {
+            repoSelect.addEventListener('change', () => {
+                hide(repoWarning);
+                loadRepoMetadata({ clearStoredSelection: true });
+            });
+        }
+
+        if (projectSelect) {
+            projectSelect.addEventListener('change', () => {
+                projectSelect.dataset.selectedProject = projectSelect.value || '';
+                setWarning(projectWarning, null);
+            });
+        }
+
+        if (milestoneSelect) {
+            milestoneSelect.addEventListener('change', () => {
+                if (!milestoneSelect.value) {
+                    milestoneSelect.dataset.selectedMilestone = '';
+                } else {
+                    const selectedOption = milestoneSelect.options[milestoneSelect.selectedIndex];
+                    const title = selectedOption ? selectedOption.dataset.milestoneTitle || '' : '';
+                    milestoneSelect.dataset.selectedMilestone = JSON.stringify({
+                        number: Number.parseInt(milestoneSelect.value, 10),
+                        title,
+                    });
                 }
+                setWarning(milestoneWarning, null);
             });
         }
 
         updateSectionVisibility();
         applySelectedRepo();
+        applySelectedProject();
+        applySelectedMilestone();
 
         document.addEventListener('scopeGithubRefresh', () => {
             applySelectedRepo();
+            applySelectedProject();
+            applySelectedMilestone();
             updateSectionVisibility();
         });
     }());

@@ -54,9 +54,12 @@ from services.github_service import (
     GITHUB_APP_LABEL,
     MISSING_ISSUE_STATUS_CODES,
     GitHubError,
+    add_issue_to_project,
     comment_on_issue,
     create_issue,
     fetch_issue,
+    list_repository_milestones,
+    list_repository_projects,
     list_repositories,
     test_connection,
     update_issue,
@@ -504,6 +507,8 @@ def _clear_github_issue_link(task: Task) -> None:
     task.github_repo_id = None
     task.github_repo_name = None
     task.github_repo_owner = None
+    task.github_milestone_number = None
+    task.github_milestone_title = None
     _remove_local_github_tag(task)
 
 
@@ -539,12 +544,25 @@ def _scope_github_context(scope: Scope | None, user: User | None):
         return None
     if not scope.github_repo_owner or not scope.github_repo_name:
         return None
-    return {
+    context: dict[str, object] = {
         "token": token,
         "owner": scope.github_repo_owner,
         "name": scope.github_repo_name,
         "id": scope.github_repo_id,
     }
+    if scope.github_project_id and scope.github_project_column_id:
+        context["project"] = {
+            "id": scope.github_project_id,
+            "name": scope.github_project_name,
+            "column_id": scope.github_project_column_id,
+            "column_name": scope.github_project_column_name,
+        }
+    if scope.github_milestone_number is not None:
+        context["default_milestone"] = {
+            "number": scope.github_milestone_number,
+            "title": scope.github_milestone_title,
+        }
+    return context
 
 
 def _task_github_context(task: Task | None, user: User | None):
@@ -558,12 +576,23 @@ def _task_github_context(task: Task | None, user: User | None):
     repo_id = task.github_repo_id or scope_context["id"]
     if not owner or not name:
         return None
-    return {
+    context: dict[str, object] = {
         "token": scope_context["token"],
         "owner": owner,
         "name": name,
         "id": repo_id,
     }
+    project = scope_context.get("project")
+    if isinstance(project, dict):
+        context["project"] = project
+    if task.github_milestone_number is not None:
+        context["milestone"] = {
+            "number": task.github_milestone_number,
+            "title": task.github_milestone_title,
+        }
+    elif "default_milestone" in scope_context:
+        context["milestone"] = scope_context["default_milestone"]
+    return context
 
 
 def _record_sync(task: Task, action: str, status: str, message: str | None = None):
@@ -611,6 +640,8 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
     task.name = issue.title or task.name
     task.description = issue.body or task.description
     task.github_issue_state = issue.state
+    task.github_milestone_number = issue.milestone_number
+    task.github_milestone_title = issue.milestone_title
     if issue.state == "closed":
         if not task.completed:
             task.complete_task()
@@ -1060,6 +1091,88 @@ def github_repositories():
     return jsonify({"success": True, "repositories": payload})
 
 
+@app.route("/api/github/repo/metadata", methods=["POST"])
+def github_repo_metadata():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    owner = (payload.get("owner") or "").strip()
+    name = (payload.get("name") or "").strip()
+
+    if not owner or not name:
+        return (
+            jsonify({"success": False, "message": "Repository owner and name are required."}),
+            400,
+        )
+
+    token = _user_github_token(g.user)
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    project_warning = None
+    milestone_warning = None
+
+    try:
+        projects = list_repository_projects(token, owner, name)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+            project_warning = "Unable to load GitHub projects. Please update your token permissions."
+        elif error.status_code in (404, 410):
+            project_warning = "GitHub projects are unavailable for the selected repository."
+        else:
+            project_warning = "Unable to load GitHub projects for the selected repository."
+        projects = []
+
+    try:
+        milestones = list_repository_milestones(token, owner, name)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+            milestone_warning = "Unable to load GitHub milestones. Please update your token permissions."
+        elif error.status_code in (404, 410):
+            milestone_warning = "GitHub milestones are unavailable for the selected repository."
+        else:
+            milestone_warning = "Unable to load GitHub milestones for the selected repository."
+        milestones = []
+
+    project_payload = [
+        {
+            "id": project.id,
+            "name": project.name,
+            "columns": [
+                {"id": column.id, "name": column.name}
+                for column in project.columns
+            ],
+        }
+        for project in projects
+    ]
+    milestone_payload = [
+        {"number": milestone.number, "title": milestone.title, "state": milestone.state}
+        for milestone in milestones
+    ]
+
+    response: dict[str, object] = {
+        "success": True,
+        "projects": project_payload,
+        "milestones": milestone_payload,
+    }
+    if project_warning:
+        response["project_warning"] = project_warning
+    if milestone_warning:
+        response["milestone_warning"] = milestone_warning
+    return jsonify(response)
+
+
 def _task_owner_guard(task: Task):
     if task.owner_id != g.user.id or task.scope_id != g.scope.id:
         abort(403)
@@ -1084,8 +1197,23 @@ def github_issue_create():
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
     labels = _labels_for_github(task)
+    default_milestone = None
+    project_context = None
+    if isinstance(context.get("default_milestone"), dict):
+        default_milestone = context["default_milestone"].get("number")
+    if isinstance(context.get("project"), dict):
+        project_context = context["project"]
+    project_warning = None
     try:
-        issue = create_issue(context["token"], context["owner"], context["name"], task.name, task.description or "", labels)
+        issue = create_issue(
+            context["token"],
+            context["owner"],
+            context["name"],
+            task.name,
+            task.description or "",
+            labels,
+            milestone=default_milestone,
+        )
     except GitHubError as error:
         if error.status_code in (401, 403):
             _invalidate_github(g.user)
@@ -1096,6 +1224,24 @@ def github_issue_create():
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
 
+    if project_context and project_context.get("column_id"):
+        try:
+            add_issue_to_project(
+                context["token"],
+                project_context["column_id"],
+                issue.id,
+            )
+        except GitHubError as error:
+            if error.status_code in (401, 403):
+                project_warning = (
+                    "Issue created, but it could not be added to the configured GitHub project. "
+                    "Please verify that your token has the required project permissions."
+                )
+            elif error.status_code in (404, 410):
+                project_warning = "The configured GitHub project column could not be found."
+            else:
+                project_warning = "Issue created, but assigning it to the GitHub project failed."
+
     task.github_issue_id = issue.id
     task.github_issue_number = issue.number
     task.github_issue_url = issue.url
@@ -1103,6 +1249,8 @@ def github_issue_create():
     task.github_repo_id = context.get("id")
     task.github_repo_name = context["name"]
     task.github_repo_owner = context["owner"]
+    task.github_milestone_number = issue.milestone_number
+    task.github_milestone_title = issue.milestone_title
     try:
         _ensure_local_github_tag(task)
     except SQLAlchemyError as exc:
@@ -1117,18 +1265,26 @@ def github_issue_create():
         logging.error("Unable to persist GitHub issue link: %s", exc, exc_info=True)
         return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
 
-    return jsonify(
-        {
-            "success": True,
-            "issue": {
-                "id": issue.id,
-                "number": issue.number,
-                "url": issue.url,
-                "state": issue.state,
-                "labels": issue.labels,
-            },
-        }
-    )
+    response_payload = {
+        "success": True,
+        "issue": {
+            "id": issue.id,
+            "number": issue.number,
+            "url": issue.url,
+            "state": issue.state,
+            "labels": issue.labels,
+            "milestone": {
+                "number": issue.milestone_number,
+                "title": issue.milestone_title,
+                "state": issue.milestone_state,
+            }
+            if issue.milestone_number is not None
+            else None,
+        },
+    }
+    if project_warning:
+        response_payload["project_warning"] = project_warning
+    return jsonify(response_payload)
 
 
 @app.route("/api/github/issue/sync", methods=["POST"])
@@ -1186,6 +1342,10 @@ def github_issue_sync():
                 "tag_ids": [tag.id for tag in task.tags],
                 "has_github_issue": task.has_github_issue,
                 "github_issue_state": task.github_issue_state,
+                "github_repo_owner": task.github_repo_owner,
+                "github_repo_name": task.github_repo_name,
+                "github_milestone_number": task.github_milestone_number,
+                "github_milestone_title": task.github_milestone_title,
             }
 
             return (
@@ -1228,6 +1388,10 @@ def github_issue_sync():
         "tag_ids": [tag.id for tag in task.tags],
         "has_github_issue": task.has_github_issue,
         "github_issue_state": task.github_issue_state,
+        "github_repo_owner": task.github_repo_owner,
+        "github_repo_name": task.github_repo_name,
+        "github_milestone_number": task.github_milestone_number,
+        "github_milestone_title": task.github_milestone_title,
     }
 
     return jsonify(
@@ -1239,6 +1403,13 @@ def github_issue_sync():
                 "url": issue.url,
                 "state": issue.state,
                 "labels": issue.labels,
+                "milestone": {
+                    "number": issue.milestone_number,
+                    "title": issue.milestone_title,
+                    "state": issue.milestone_state,
+                }
+                if issue.milestone_number is not None
+                else None,
             },
             "task": task_payload,
         }
@@ -1735,6 +1906,8 @@ def add_scope():
 
         enable_integration = bool(form.github_enabled.data)
         repo_payload = None
+        project_payload = None
+        milestone_payload = None
         if enable_integration:
             if not _user_github_token(g.user):
                 form.github_enabled.errors.append(
@@ -1750,6 +1923,18 @@ def add_scope():
                     repo_payload = json.loads(repo_value)
                 except ValueError:
                     form.github_repository.errors.append("Invalid repository selection.")
+            project_value = (form.github_project.data or "").strip()
+            if project_value:
+                try:
+                    project_payload = json.loads(project_value)
+                except ValueError:
+                    form.github_project.errors.append("Invalid project selection.")
+            milestone_value = (form.github_milestone.data or "").strip()
+            if milestone_value:
+                try:
+                    milestone_payload = json.loads(milestone_value)
+                except ValueError:
+                    form.github_milestone.errors.append("Invalid milestone selection.")
 
         if form.errors:
             show_modal = "scope-modal"
@@ -1766,10 +1951,33 @@ def add_scope():
             item.github_repo_id = repo_payload.get("id")
             item.github_repo_name = repo_payload.get("name")
             item.github_repo_owner = repo_payload.get("owner")
+            if project_payload:
+                column_data = project_payload.get("column") or {}
+                item.github_project_id = project_payload.get("id")
+                item.github_project_name = project_payload.get("name")
+                item.github_project_column_id = column_data.get("id")
+                item.github_project_column_name = column_data.get("name")
+            else:
+                item.github_project_id = None
+                item.github_project_name = None
+                item.github_project_column_id = None
+                item.github_project_column_name = None
+            if milestone_payload:
+                item.github_milestone_number = milestone_payload.get("number")
+                item.github_milestone_title = milestone_payload.get("title")
+            else:
+                item.github_milestone_number = None
+                item.github_milestone_title = None
         else:
             item.github_repo_id = None
             item.github_repo_name = None
             item.github_repo_owner = None
+            item.github_project_id = None
+            item.github_project_name = None
+            item.github_project_column_id = None
+            item.github_project_column_name = None
+            item.github_milestone_number = None
+            item.github_milestone_title = None
 
         # will use the following line when a user shares a scope with another user
         # g.user.scopes.append(item)
@@ -1868,6 +2076,24 @@ def edit_scope(id):
                     "owner": item.github_repo_owner,
                 }
             )
+        if item.github_project_id and item.github_project_column_id:
+            form.github_project.data = json.dumps(
+                {
+                    "id": item.github_project_id,
+                    "name": item.github_project_name,
+                    "column": {
+                        "id": item.github_project_column_id,
+                        "name": item.github_project_column_name,
+                    },
+                }
+            )
+        if item.github_milestone_number is not None:
+            form.github_milestone.data = json.dumps(
+                {
+                    "number": item.github_milestone_number,
+                    "title": item.github_milestone_title,
+                }
+            )
     show_modal = False
 
     if form.validate_on_submit():
@@ -1875,6 +2101,8 @@ def edit_scope(id):
         item.description = form.description.data
         enable_integration = bool(form.github_enabled.data)
         repo_payload = None
+        project_payload = None
+        milestone_payload = None
         if enable_integration:
             if not _user_github_token(g.user):
                 form.github_enabled.errors.append(
@@ -1890,6 +2118,18 @@ def edit_scope(id):
                     repo_payload = json.loads(repo_value)
                 except ValueError:
                     form.github_repository.errors.append("Invalid repository selection.")
+            project_value = (form.github_project.data or "").strip()
+            if project_value:
+                try:
+                    project_payload = json.loads(project_value)
+                except ValueError:
+                    form.github_project.errors.append("Invalid project selection.")
+            milestone_value = (form.github_milestone.data or "").strip()
+            if milestone_value:
+                try:
+                    milestone_payload = json.loads(milestone_value)
+                except ValueError:
+                    form.github_milestone.errors.append("Invalid milestone selection.")
 
         if form.errors:
             show_modal = "scope-modal"
@@ -1906,10 +2146,33 @@ def edit_scope(id):
             item.github_repo_id = repo_payload.get("id")
             item.github_repo_name = repo_payload.get("name")
             item.github_repo_owner = repo_payload.get("owner")
+            if project_payload:
+                column_data = project_payload.get("column") or {}
+                item.github_project_id = project_payload.get("id")
+                item.github_project_name = project_payload.get("name")
+                item.github_project_column_id = column_data.get("id")
+                item.github_project_column_name = column_data.get("name")
+            else:
+                item.github_project_id = None
+                item.github_project_name = None
+                item.github_project_column_id = None
+                item.github_project_column_name = None
+            if milestone_payload:
+                item.github_milestone_number = milestone_payload.get("number")
+                item.github_milestone_title = milestone_payload.get("title")
+            else:
+                item.github_milestone_number = None
+                item.github_milestone_title = None
         else:
             item.github_repo_id = None
             item.github_repo_name = None
             item.github_repo_owner = None
+            item.github_project_id = None
+            item.github_project_name = None
+            item.github_project_column_id = None
+            item.github_project_column_name = None
+            item.github_milestone_number = None
+            item.github_milestone_title = None
         try:
             db.session.commit()
             flash("Scope edited!", "success")
@@ -1939,6 +2202,11 @@ def edit_task(id):
     form = TaskForm(obj=item)
     if not form.is_submitted():
         form.tags.data = ",".join(str(tag.id) for tag in item.tags)
+        form.github_milestone.data = (
+            str(item.github_milestone_number)
+            if item.github_milestone_number is not None
+            else ""
+        )
     wants_json = (
         request.headers.get("X-Requested-With") == "XMLHttpRequest"
         or request.accept_mimetypes["application/json"] >= request.accept_mimetypes["text/html"]
@@ -1955,6 +2223,29 @@ def edit_task(id):
 
         tag_ids = _parse_tag_ids(form.tags.data)
         item.tags = _get_tags_for_scope(tag_ids)
+
+        milestone_value = (form.github_milestone.data or "").strip()
+        milestone_to_send = None
+        if milestone_value != "":
+            try:
+                milestone_to_send = int(milestone_value)
+            except ValueError:
+                form.github_milestone.errors.append("Invalid milestone selection.")
+
+        if form.github_milestone.errors:
+            if wants_json:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Please correct the highlighted fields.",
+                            "errors": form.errors,
+                        }
+                    ),
+                    400,
+                )
+            show_modal = "task-modal"
+            return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items)
         try:
             _ensure_local_github_tag(item)
         except SQLAlchemyError as exc:
@@ -1977,8 +2268,11 @@ def edit_task(id):
                     title=item.name,
                     body=item.description or "",
                     labels=labels,
+                    milestone=milestone_to_send,
                 )
                 item.github_issue_state = issue.state
+                item.github_milestone_number = issue.milestone_number
+                item.github_milestone_title = issue.milestone_title
                 _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
             except GitHubError as error:
                 if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
@@ -2008,6 +2302,8 @@ def edit_task(id):
                     "success": True,
                     "message": success_message,
                     "task_id": item.id,
+                    "github_milestone_number": item.github_milestone_number,
+                    "github_milestone_title": item.github_milestone_title,
                 }
                 if issue_unlinked:
                     response["github_issue_unlinked"] = True

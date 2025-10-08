@@ -21,6 +21,12 @@ class Scope(db.Model):
     github_repo_id = db.Column(db.BigInteger, nullable=True)
     github_repo_name = db.Column(db.String(200), nullable=True)
     github_repo_owner = db.Column(db.String(200), nullable=True)
+    github_project_id = db.Column(db.BigInteger, nullable=True)
+    github_project_name = db.Column(db.String(255), nullable=True)
+    github_project_column_id = db.Column(db.BigInteger, nullable=True)
+    github_project_column_name = db.Column(db.String(255), nullable=True)
+    github_milestone_number = db.Column(db.Integer, nullable=True)
+    github_milestone_title = db.Column(db.String(255), nullable=True)
 
     tasks = db.relationship("Task", backref="scope", lazy=True, cascade="all, delete-orphan")
     tags = db.relationship(
