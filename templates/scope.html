@@ -16,7 +16,7 @@
     <div class="row g-3 justify-content-center" id="scopes-list">
     {% for scope in scopes %}
         <div class="col">
-            <div class="card border-secondary" >
+            <div class="card border-secondary" data-scope-id="{{ scope.id }}" data-scope-url="{{ url_for('set_scope', id=scope.id) }}">
                 <div class="card-header d-flex justify-content-between align-items-top" {% if scope.owner_id == g.user.id %}id="grip" data-item-id="{{ scope.id }}"{% endif %}>
                     <i class="bi bi-grip-vertical text-muted {% if scope.owner_id != g.user.id %}opacity-50{% endif %}"></i>
                     <div class="d-flex justify-content-between align-items-start">
@@ -48,7 +48,7 @@
                     {% endif %}
                     </div>
                 </div>
-                <a class="text-decoration-none no-visited" href="{{url_for('set_scope',id=scope.id)}}">
+                <a class="text-decoration-none no-visited" href="{{url_for('set_scope',id=scope.id)}}" data-scope-id="{{ scope.id }}">
                     <div class="card-body text-center">{{scope.name}}</div>
                 </a>
             </div>
@@ -68,6 +68,88 @@
     {{ super() }}
 <script>
     initializeSortable('scopes-list', 'scope');
+
+    // Use shared preferences utilities from preferences.js
+    
+    function setLastScopePreference(scopeId) {
+        updatePreferenceData((data) => {
+            data.lastScopeId = scopeId != null ? String(scopeId) : null;
+            return data;
+        });
+    }
+
+    function getLastScopePreference() {
+        const data = readPreferenceData();
+        return data.lastScopeId != null ? String(data.lastScopeId) : null;
+    }
+
+    function shouldAutoNavigateToScope() {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('stay') === '1' || params.get('stay') === 'true') {
+            return false;
+        }
+        const referrer = document.referrer || '';
+        if (!referrer) {
+            return true;
+        }
+        try {
+            const refUrl = new URL(referrer, window.location.origin);
+            if (refUrl.origin !== window.location.origin) {
+                return false;
+            }
+            const allowedPaths = new Set(['', '/', '/login', '/signup']);
+            return allowedPaths.has(refUrl.pathname);
+        } catch (error) {
+            console.warn('Unable to evaluate referrer for auto scope selection.', error);
+            return false;
+        }
+    }
+
+    function attemptStoredScopeRedirect() {
+        const scopeCards = Array.from(document.querySelectorAll('.card[data-scope-id][data-scope-url]'));
+        if (scopeCards.length === 0) {
+            setLastScopePreference(null);
+            return;
+        }
+        const storedScopeId = getLastScopePreference();
+        let targetCard = null;
+        if (storedScopeId) {
+            targetCard = scopeCards.find((card) => card.dataset.scopeId === storedScopeId) || null;
+        }
+        if (!targetCard) {
+            targetCard = scopeCards[0];
+        }
+        if (!targetCard) {
+            setLastScopePreference(null);
+            return;
+        }
+        const targetScopeId = targetCard.dataset.scopeId || null;
+        const targetScopeUrl = targetCard.dataset.scopeUrl || '';
+        setLastScopePreference(targetScopeId);
+        if (!targetScopeUrl || !shouldAutoNavigateToScope()) {
+            return;
+        }
+        // Small delay to allow any pending UI event handlers (for example the
+        // click listener that updates localStorage or shows a flash) to complete
+        // before navigating away. This prevents lost state when navigation happens
+        // immediately.
+
+        const NAVIGATE_DELAY_MS = 150;
+        window.setTimeout(() => {
+            window.location.href = targetScopeUrl;
+        }, NAVIGATE_DELAY_MS);
+    }
+
+    attemptStoredScopeRedirect();
+
+    document.querySelectorAll('a[data-scope-id]').forEach((link) => {
+        link.addEventListener('click', () => {
+            setLastScopePreference(link.dataset.scopeId);
+        });
+    });
 
     function formatDateTimeDisplay(utcDateString) {
         if (!utcDateString) {

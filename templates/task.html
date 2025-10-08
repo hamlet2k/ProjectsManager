@@ -555,6 +555,133 @@
     const filterCollapse = filterCollapseElement ? new bootstrap.Collapse(filterCollapseElement, { toggle: false }) : null;
     const filterMediaQuery = window.matchMedia('(min-width: 992px)');
 
+    // Use shared preferences utilities from preferences.js
+    // Derive the active scope id from the DOM (task-groups-container data attribute)
+    // instead of embedding server-side templating into the JS.
+    const ACTIVE_SCOPE_ID = (function () {
+        const container = getTaskGroupsContainer();
+        if (!container) {
+            return null;
+        }
+        const id = container.dataset.scopeId;
+        if (!id || id === 'null' || id === 'undefined') {
+            return null;
+        }
+        return String(id);
+    })();
+
+    function getCurrentScopeId() {
+        const container = getTaskGroupsContainer();
+        if (container) {
+            const { scopeId } = container.dataset;
+            if (scopeId && scopeId !== 'null' && scopeId !== 'undefined') {
+                return scopeId;
+            }
+        }
+        if (ACTIVE_SCOPE_ID !== null && ACTIVE_SCOPE_ID !== undefined) {
+            return String(ACTIVE_SCOPE_ID);
+        }
+        return null;
+    }
+
+    function persistTaskPreferences() {
+        const scopeId = getCurrentScopeId();
+        if (!scopeId) {
+            updatePreferenceData((data) => {
+                data.lastScopeId = null;
+                return data;
+            });
+            return;
+        }
+        const scopeKey = String(scopeId);
+        const searchValue = searchInput ? (searchInput.value || '').trim() : '';
+        const sortValue = sortSelect ? (sortSelect.value || '').trim() : '';
+        const showCompletedValue = Boolean(filterCompleted && filterCompleted.checked);
+        const activeTags = filterContainer
+            ? Array.from(filterContainer.querySelectorAll('.tag-filter-button.active'))
+                  .map((button) => String(button.dataset.tagId))
+                  .filter((value) => value)
+            : [];
+        updatePreferenceData((data) => {
+            data.lastScopeId = scopeKey;
+            const existing = data.scopes[scopeKey];
+            data.scopes[scopeKey] = {
+                ...(existing && typeof existing === 'object' ? existing : {}),
+                search: searchValue,
+                sortBy: sortValue,
+                showCompleted: showCompletedValue,
+                tags: activeTags,
+            };
+            return data;
+        });
+    }
+
+    function restoreTaskPreferences() {
+        const scopeId = getCurrentScopeId();
+        updatePreferenceData((data) => {
+            data.lastScopeId = scopeId != null ? String(scopeId) : null;
+            return data;
+        });
+        if (!scopeId) {
+            return;
+        }
+        const stored = getStoredScopePreferences(scopeId);
+        if (!stored) {
+            persistTaskPreferences();
+            return;
+        }
+        let shouldRefresh = false;
+        if (searchInput && typeof stored.search === 'string') {
+            const trimmed = stored.search;
+            if (searchInput.value !== trimmed) {
+                searchInput.value = trimmed;
+                shouldRefresh = true;
+            }
+        }
+        if (filterCompleted) {
+            const desired = Boolean(stored.showCompleted);
+            if (filterCompleted.checked !== desired) {
+                filterCompleted.checked = desired;
+                shouldRefresh = true;
+            }
+        }
+        if (sortSelect && typeof stored.sortBy === 'string' && stored.sortBy) {
+            const availableOptions = Array.from(sortSelect.options || []);
+            if (availableOptions.some((option) => option.value === stored.sortBy) && sortSelect.value !== stored.sortBy) {
+                sortSelect.value = stored.sortBy;
+                shouldRefresh = true;
+            }
+        }
+
+        let tagsChanged = false;
+        let desiredTagCount = 0;
+        if (filterContainer && Array.isArray(stored.tags)) {
+            const desiredTags = stored.tags.map((value) => String(value)).filter((value) => value);
+            desiredTagCount = desiredTags.length;
+            const desiredSet = new Set(desiredTags);
+            const buttons = Array.from(filterContainer.querySelectorAll('.tag-filter-button'));
+            buttons.forEach((button) => {
+                const tagId = button.dataset.tagId;
+                const shouldBeActive = desiredSet.has(tagId);
+                if (button.classList.contains('active') !== shouldBeActive) {
+                    button.classList.toggle('active', shouldBeActive);
+                    tagsChanged = true;
+                }
+            });
+            if (tagsChanged || desiredTagCount > 0) {
+                applyTagFilters();
+            }
+        }
+
+        const refreshPromise = shouldRefresh ? refreshTaskList() : Promise.resolve();
+        refreshPromise.finally(() => {
+            if (!tagsChanged && desiredTagCount === 0) {
+                applyTagFilters();
+            }
+            persistTaskPreferences();
+        });
+    }
+
     if (detailedItemContainer && quickToggleIcon) {
         const setQuickToggleIcon = (isExpanded) => {
             quickToggleIcon.classList.toggle('bi-chevron-down', !isExpanded);
@@ -1533,6 +1660,7 @@
         if (showMessage && typeof displayFlashMessage === 'function' && tagName) {
             displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
         }
+        persistTaskPreferences();
     }
 
     function deleteTagFromServer(tagId, tagName = '', { onSuccess = null, onError = null, showError = true } = {}) {
@@ -1914,6 +2042,7 @@
         }
         button.classList.toggle('active');
         applyTagFilters();
+        persistTaskPreferences();
     }
 
     const handleFilterRemoveKeydown = (event) => {
@@ -1940,6 +2069,7 @@
                 button.classList.remove('active');
             });
             applyTagFilters();
+            persistTaskPreferences();
         });
     }
 
@@ -2644,6 +2774,7 @@
                 syncChevronStates();
                 updateDateDisplays();
                 applyTagFilters();
+                persistTaskPreferences();
             })
             .catch((error) => {
                 console.error('Unable to refresh tasks', error);
@@ -2664,6 +2795,8 @@
     applyTagFilters();
     updateDateDisplays();
     syncChevronStates();
+
+    restoreTaskPreferences();
 
     if (filterCollapseElement && filterCollapse) {
         const handleBreakpointChange = () => {
@@ -2795,24 +2928,28 @@
     if (filterForm) {
         filterForm.addEventListener('submit', (event) => {
             event.preventDefault();
+            persistTaskPreferences();
             refreshTaskList();
         });
     }
 
     if (sortSelect) {
         sortSelect.addEventListener('change', () => {
+            persistTaskPreferences();
             refreshTaskList();
         });
     }
 
     if (filterCompleted) {
         filterCompleted.addEventListener('change', () => {
+            persistTaskPreferences();
             refreshTaskList();
         });
     }
 
     if (searchInput) {
         const debouncedSearch = debounce(() => {
+            persistTaskPreferences();
             refreshTaskList();
         }, 300);
         searchInput.addEventListener('input', () => {
