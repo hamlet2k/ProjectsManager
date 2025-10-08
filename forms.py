@@ -44,12 +44,18 @@ class UserSettingsForm(FlaskForm):
 class GitHubSettingsForm(FlaskForm):
     enabled = BooleanField("Enable GitHub Integration")
     token = PasswordField("GitHub Personal Access Token", [Optional()])
-    repository = SelectField("Repository", choices=[], validators=[Optional()], validate_choice=False)
     submit = SubmitField("Save GitHub Settings")
 
 class ScopeForm(FlaskForm):
     name = StringField("Name", [DataRequired()])
     description = TextAreaField("Description")
+    github_enabled = BooleanField("Enable GitHub Integration")
+    github_repository = SelectField(
+        "Repository",
+        choices=[],
+        validators=[Optional()],
+        validate_choice=False,
+    )
     submit = SubmitField("Save Scope")
 
 
