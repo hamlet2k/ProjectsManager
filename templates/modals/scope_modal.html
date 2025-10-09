@@ -22,7 +22,16 @@
                     </div>
                 </div>
                 <div class="form-floating mb-3">
-                    {{ scope_form.description(class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''), placeholder_=scope_form.description.name, **{'data-field': 'description'}) }}
+                    {{ scope_form.description(
+                        class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''),
+                        placeholder_=scope_form.description.name,
+                        rows=3,
+                        **{
+                            'data-field': 'description',
+                            'data-autoresize': 'scope-description',
+                            'data-collapsed-lines': '3'
+                        }
+                    ) }}
                     {{ scope_form.description.label(class="form-label") }}
                     <div class="invalid-feedback{% if scope_form.description.errors %} d-block{% endif %}" data-field-errors="description">
                         {% for error in scope_form.description.errors %}

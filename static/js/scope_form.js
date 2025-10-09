@@ -18,6 +18,13 @@
         activeTrigger: null,
         initialState: { data: {}, errors: {} },
         formValues: {},
+        description: {
+            field: null,
+            isExpanded: false,
+            collapsedHeight: 0,
+            resizeFrame: null,
+            pendingCollapse: false,
+        },
     };
 
     const DEFAULT_MESSAGES = {
@@ -27,6 +34,10 @@
         editTitle: 'Edit scope',
         editSubmit: 'Save changes',
     };
+
+    const DESCRIPTION_TRANSITION = 'height 200ms ease, max-height 200ms ease';
+    const DESCRIPTION_VIEWPORT_RATIO = 0.8;
+    const DESCRIPTION_PADDING_BUFFER = 24;
 
     document.addEventListener('DOMContentLoaded', initializeScopePage);
 
@@ -47,6 +58,7 @@
 
         state.modal = bootstrap.Modal.getOrCreateInstance(state.modalEl);
         state.github = resolveGithubElements();
+        initializeDescriptionField();
         state.initialState = parseInitialState(state.form.dataset.initialState);
         hydrateInitialState();
         bindCoreEvents();
@@ -124,6 +136,7 @@
         }
 
         state.modalEl.addEventListener('show.bs.modal', handleModalShow);
+        state.modalEl.addEventListener('shown.bs.modal', handleModalShown);
         state.modalEl.addEventListener('hidden.bs.modal', handleModalHidden);
 
         state.form.addEventListener('submit', handleFormSubmit);
@@ -140,14 +153,199 @@
                 } else {
                     hideGithubWarning();
                 }
+                scheduleDescriptionResize();
             });
         }
         if (github.select) {
             github.select.addEventListener('change', () => {
                 github.select.dataset.selectedRepo = github.select.value || '';
                 hideGithubWarning();
+                scheduleDescriptionResize();
             });
         }
+
+        window.addEventListener('resize', handleViewportResize);
+    }
+
+    function initializeDescriptionField() {
+        const field = state.form ? state.form.querySelector('[data-autoresize="scope-description"]') : null;
+        state.description.field = field;
+        state.description.isExpanded = false;
+        state.description.resizeFrame = null;
+        state.description.pendingCollapse = Boolean(field);
+        if (!field) {
+            return;
+        }
+        field.setAttribute('aria-expanded', 'false');
+        field.style.resize = 'none';
+        field.style.transition = DESCRIPTION_TRANSITION;
+        field.style.overflowY = 'hidden';
+        state.description.collapsedHeight = computeCollapsedHeight(field);
+        field.addEventListener('focus', handleDescriptionFocus);
+        field.addEventListener('blur', handleDescriptionBlur);
+        field.addEventListener('input', handleDescriptionInput);
+    }
+
+    function handleDescriptionFocus() {
+        expandDescriptionField({ immediate: false });
+    }
+
+    function handleDescriptionBlur() {
+        collapseDescriptionField({ immediate: false });
+    }
+
+    function handleDescriptionInput() {
+        if (state.description.isExpanded) {
+            expandDescriptionField({ immediate: false });
+        } else {
+            collapseDescriptionField({ immediate: false });
+        }
+    }
+
+    function handleViewportResize() {
+        if (state.description.isExpanded) {
+            scheduleDescriptionResize({ immediate: false });
+        }
+    }
+
+    function expandDescriptionField({ immediate }) {
+        const controller = state.description;
+        if (!controller || !controller.field) {
+            return;
+        }
+        const field = controller.field;
+        controller.isExpanded = true;
+        controller.pendingCollapse = false;
+        controller.collapsedHeight = computeCollapsedHeight(field);
+        const startHeight = field.getBoundingClientRect().height || controller.collapsedHeight;
+        const maxHeight = computeDescriptionMaxHeight();
+        const previousOverflow = field.style.overflowY;
+        field.style.height = 'auto';
+        const naturalHeight = field.scrollHeight;
+        const targetHeight = Math.min(naturalHeight, maxHeight);
+        field.style.overflowY = naturalHeight > maxHeight ? 'auto' : 'hidden';
+        applyDescriptionHeight(field, targetHeight, maxHeight, immediate, startHeight);
+        field.setAttribute('aria-expanded', 'true');
+        if (previousOverflow && previousOverflow !== field.style.overflowY && field.style.overflowY === 'hidden') {
+            field.scrollTop = 0;
+        }
+    }
+
+    function collapseDescriptionField({ immediate }) {
+        const controller = state.description;
+        if (!controller || !controller.field) {
+            return;
+        }
+        const field = controller.field;
+        controller.isExpanded = false;
+        controller.pendingCollapse = false;
+        controller.collapsedHeight = computeCollapsedHeight(field);
+        field.setAttribute('aria-expanded', 'false');
+        field.style.overflowY = 'hidden';
+        applyDescriptionHeight(field, controller.collapsedHeight, controller.collapsedHeight, immediate);
+        field.scrollTop = 0;
+    }
+
+    function applyDescriptionHeight(field, targetHeight, maxHeight, immediate, startHeight) {
+        if (!field) {
+            return;
+        }
+        const resolvedTarget = Math.max(targetHeight || 0, 0);
+        const resolvedMax = Math.max(maxHeight || 0, resolvedTarget);
+        const previousTransition = field.style.transition || '';
+        const defaultTransition = DESCRIPTION_TRANSITION;
+        if (immediate) {
+            field.style.transition = 'none';
+        }
+        const currentHeight = typeof startHeight === 'number' ? startHeight : field.getBoundingClientRect().height || resolvedTarget;
+        if (!immediate) {
+            field.style.height = `${currentHeight}px`;
+            // Force reflow so the transition starts from the current height.
+            void field.offsetHeight;
+        }
+        field.style.maxHeight = `${resolvedMax}px`;
+        field.style.height = `${resolvedTarget}px`;
+        if (immediate) {
+            // Force reflow before re-enabling the transition to prevent jumpy animations on subsequent updates.
+            void field.offsetHeight;
+            field.style.transition = defaultTransition;
+        } else if (!previousTransition) {
+            field.style.transition = defaultTransition;
+        }
+    }
+
+    function refreshDescriptionHeight({ immediate = false, preserveExpansion = true } = {}) {
+        if (!state.description.field) {
+            return;
+        }
+        if (!preserveExpansion) {
+            state.description.isExpanded = false;
+        }
+        if (state.description.isExpanded) {
+            expandDescriptionField({ immediate });
+        } else {
+            collapseDescriptionField({ immediate });
+        }
+    }
+
+    function scheduleDescriptionResize({ immediate = false } = {}) {
+        if (!state.description.field) {
+            return;
+        }
+        const raf = window.requestAnimationFrame || function (callback) {
+            return setTimeout(callback, 16);
+        };
+        const cancelRaf = window.cancelAnimationFrame || clearTimeout;
+        if (state.description.resizeFrame) {
+            cancelRaf(state.description.resizeFrame);
+        }
+        state.description.resizeFrame = raf(() => {
+            state.description.resizeFrame = null;
+            refreshDescriptionHeight({ immediate, preserveExpansion: true });
+        });
+    }
+
+    function computeCollapsedHeight(field) {
+        if (!field) {
+            return 0;
+        }
+        const collapsedLines = parseInt(field.dataset.collapsedLines || field.getAttribute('rows') || '3', 10);
+        const styles = window.getComputedStyle(field);
+        let lineHeight = parseFloat(styles.lineHeight);
+        if (Number.isNaN(lineHeight)) {
+            const fontSize = parseFloat(styles.fontSize);
+            lineHeight = Number.isNaN(fontSize) ? 16 : fontSize * 1.5;
+        }
+        const paddingTop = parseFloat(styles.paddingTop) || 0;
+        const paddingBottom = parseFloat(styles.paddingBottom) || 0;
+        const borderTop = parseFloat(styles.borderTopWidth) || 0;
+        const borderBottom = parseFloat(styles.borderBottomWidth) || 0;
+        const collapsed = Math.round(collapsedLines * lineHeight + paddingTop + paddingBottom + borderTop + borderBottom);
+        return Math.max(collapsed, 0);
+    }
+
+    function computeDescriptionMaxHeight() {
+        if (!state.description.field) {
+            return Math.floor(window.innerHeight * DESCRIPTION_VIEWPORT_RATIO);
+        }
+        const field = state.description.field;
+        const collapsed = computeCollapsedHeight(field) || state.description.collapsedHeight || 0;
+        const viewportLimit = Math.max(Math.floor(window.innerHeight * DESCRIPTION_VIEWPORT_RATIO), collapsed);
+        if (!state.modalEl) {
+            return viewportLimit;
+        }
+        const modalContent = state.modalEl.querySelector('.modal-content');
+        if (!modalContent) {
+            return viewportLimit;
+        }
+        const modalRect = modalContent.getBoundingClientRect();
+        const fieldRect = field.getBoundingClientRect();
+        if (!modalRect || modalRect.height === 0 || !fieldRect || fieldRect.height === 0) {
+            return viewportLimit;
+        }
+        const otherContentHeight = modalRect.height - fieldRect.height;
+        const available = viewportLimit - otherContentHeight - DESCRIPTION_PADDING_BUFFER;
+        return Math.max(Math.min(available, viewportLimit), collapsed);
     }
 
     function bindExistingCardControls() {
@@ -231,6 +429,11 @@
             state.activeTrigger = trigger;
         }
 
+        if (state.description) {
+            state.description.pendingCollapse = true;
+            state.description.isExpanded = false;
+        }
+
         if (state.formMode === 'edit') {
             applyFormValues(state.formValues || getDefaultFormValues());
             applyFormErrors(state.form, {});
@@ -257,12 +460,29 @@
         }
     }
 
+    function handleModalShown() {
+        if (!state.description || !state.description.field) {
+            return;
+        }
+        if (state.description.pendingCollapse) {
+            refreshDescriptionHeight({ immediate: true, preserveExpansion: false });
+            state.description.pendingCollapse = false;
+        } else {
+            scheduleDescriptionResize({ immediate: false });
+        }
+    }
+
     function handleModalHidden() {
         resetFormState();
         state.formMode = 'create';
         state.editingScopeId = null;
         state.activeTrigger = null;
         state.formValues = { ...getDefaultFormValues() };
+        if (state.description) {
+            state.description.isExpanded = false;
+            state.description.pendingCollapse = true;
+            refreshDescriptionHeight({ immediate: true, preserveExpansion: false });
+        }
     }
 
     function resetFormState() {
@@ -479,6 +699,9 @@
         if (githubToggle && githubToggle.checked) {
             ensureGithubRepositoriesLoaded({ silent: true });
         }
+        if (state.description && state.description.field) {
+            refreshDescriptionHeight({ immediate: true, preserveExpansion: true });
+        }
     }
 
     function applyFormErrors(form, errors) {
@@ -538,6 +761,7 @@
         if (shouldShow) {
             ensureGithubRepositoriesLoaded({ silent: true });
         }
+        scheduleDescriptionResize({ immediate: false });
     }
 
     function ensureGithubRepositoriesLoaded({ silent } = { silent: false }) {
@@ -615,6 +839,7 @@
         select.disabled = false;
         select.dataset.reposLoaded = 'true';
         applySelectedRepository();
+        scheduleDescriptionResize({ immediate: false });
     }
 
     function setGithubSelectLoading(isLoading) {
@@ -634,6 +859,7 @@
         } else {
             select.disabled = true;
         }
+        scheduleDescriptionResize({ immediate: false });
     }
 
     function applySelectedRepository() {
@@ -671,12 +897,14 @@
     function showGithubWarning() {
         if (state.github.warning) {
             state.github.warning.classList.remove('d-none');
+            scheduleDescriptionResize({ immediate: false });
         }
     }
 
     function hideGithubWarning() {
         if (state.github.warning) {
             state.github.warning.classList.add('d-none');
+            scheduleDescriptionResize({ immediate: false });
         }
     }
 
