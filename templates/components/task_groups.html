@@ -60,7 +60,18 @@
                                                 {% endif %}
                                             </span>
                                         </a>
-                                        <i class="bi bi-chevron-right task-chevron mt-1 ms-2" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
+                                        {% if task.github_issue_number and task.github_issue_url %}
+                                            <a href="{{ task.github_issue_url }}" 
+                                               target="_blank" 
+                                               rel="noopener" 
+                                               class="github-issue-badge ms-2"
+                                               onclick="event.stopPropagation()"
+                                               title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                <i class="bi bi-github"></i>
+                                                #{{ task.github_issue_number }}
+                                            </a>
+                                        {% endif %}
+                                        <i class="bi bi-chevron-right task-chevron mt-1 ms-auto" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
                                     {% else %}
                                         <div class="task-name ms-2">
                                             {% if task.completed %}
@@ -69,17 +80,16 @@
                                                 {{ task.name }}
                                             {% endif %}
                                         </div>
-                                    {% endif %}
-                                    {% if task.github_issue_number and task.github_issue_url %}
-                                        <a href="{{ task.github_issue_url }}" 
-                                           target="_blank" 
-                                           rel="noopener" 
-                                           class="github-issue-badge ms-auto"
-                                           {% if has_details %}onclick="event.stopPropagation()"{% endif %}
-                                           title="Open GitHub issue #{{ task.github_issue_number }}">
-                                            <i class="bi bi-github"></i>
-                                            #{{ task.github_issue_number }}
-                                        </a>
+                                        {% if task.github_issue_number and task.github_issue_url %}
+                                            <a href="{{ task.github_issue_url }}" 
+                                               target="_blank" 
+                                               rel="noopener" 
+                                               class="github-issue-badge ms-auto"
+                                               title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                <i class="bi bi-github"></i>
+                                                #{{ task.github_issue_number }}
+                                            </a>
+                                        {% endif %}
                                     {% endif %}
                                 </div>
                                 <div class="task-action-group">
