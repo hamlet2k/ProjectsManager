@@ -126,7 +126,7 @@
     const addScopeBtn = document.getElementById('add-scope-btn');
     if (addScopeBtn && scopeForm) {
         addScopeBtn.addEventListener('click', () => {
-            scopeForm.action = '{{ url_for("add_scope") }}';
+            scopeForm.action = '{{ url_for("scopes.add_scope") }}';
             scopeForm.reset();
             const repoSelect = document.getElementById('scope-github-repo-select');
             if (repoSelect) {
@@ -159,7 +159,7 @@
             {% endfor %}
 
             if (scopeForm) {
-                const baseUrl = '{{ url_for("edit_scope", id=0) }}';
+                const baseUrl = '{{ url_for("scopes.edit_scope", scope_id=0) }}';
                 const actionUrl = baseUrl.replace('/0', `/${item.getAttribute('data-scope-id')}`);
                 scopeForm.action = actionUrl;
             }

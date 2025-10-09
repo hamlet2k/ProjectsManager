@@ -31,6 +31,7 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 
 ## 🧩 Improvements
 
+- [x] Refactor scopes page into a modular blueprint with supporting services. _(2025-10-02)_
 - [ ] Add a menu always visible on top, when the screen has longer content than it can render, that dynamically displays all the sections on top; clicking on the sections scrolls down to the section.
 - [ ] When scrolling down the page, collapse the filters into a pill that remains always on top beside the add new task floating component; when clicked, expand the filters floating on the top of the screen.
 - [ ] Make the add tag floating on top of the screen always visible despite scrolling.

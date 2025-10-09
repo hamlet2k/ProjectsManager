@@ -1,5 +1,5 @@
 # ProjectsManager — Flows
-_Last updated: 2025-09-26 08:02:32_
+_Last updated: 2025-10-02 11:45:00_
 
 This document describes the current and target **flows**. Keep it terse and implementation-friendly for AI agents.
 
@@ -19,6 +19,12 @@ This document describes the current and target **flows**. Keep it terse and impl
    - POST `/projects/<id>` → update and redirect
 4. **Delete Project**
    - POST `/projects/<id>/delete` → delete and redirect
+5. **Manage Scopes**
+   - GET `/scope/` → list available scopes and management actions.
+   - GET `/scope/<id>` → select scope and redirect to tasks.
+   - POST `/scope/add` → create new scope (modal submission).
+   - POST `/scope/edit/<id>` → update existing scope (modal submission).
+   - GET `/scope/<id>/tasks/export` → export owned tasks to clipboard payload.
 
 > Adjust URLs to match `app.py`; if they differ, update this doc and `project-context.md` in the same PR.
 
