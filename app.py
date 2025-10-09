@@ -468,9 +468,30 @@ def _clear_github_issue_link(task: Task) -> None:
     task.github_repo_id = None
     task.github_repo_name = None
     task.github_repo_owner = None
+    task.github_project_id = None
+    task.github_project_name = None
     task.github_milestone_number = None
     task.github_milestone_title = None
     _remove_local_github_tag(task)
+
+
+def _serialize_task_payload(task: Task) -> dict[str, object]:
+    return {
+        "id": task.id,
+        "name": task.name,
+        "description": task.description or "",
+        "completed": task.completed,
+        "end_date": task.end_date.isoformat() if task.end_date else None,
+        "tag_ids": [tag.id for tag in task.tags],
+        "has_github_issue": task.has_github_issue,
+        "github_issue_state": task.github_issue_state,
+        "github_milestone_number": task.github_milestone_number,
+        "github_milestone_title": task.github_milestone_title,
+        "github_repo_owner": task.github_repo_owner,
+        "github_repo_name": task.github_repo_name,
+        "github_project_id": task.github_project_id,
+        "github_project_name": task.github_project_name,
+    }
 
 
 def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
@@ -529,6 +550,51 @@ def _task_github_context(task: Task | None, user: User | None):
     }
 
 
+def _apply_scope_project_to_task(
+    task: Task,
+    scope: Scope | None,
+    context: dict[str, object] | None,
+    issue_id: Optional[int],
+    warnings: list[str],
+    *,
+    failure_message: str | None = None,
+) -> None:
+    project_id = getattr(scope, "github_project_id", None)
+    project_name = getattr(scope, "github_project_name", None)
+    if not project_id:
+        if task.github_project_id or task.github_project_name:
+            task.github_project_id = None
+            task.github_project_name = None
+        return
+    if task.github_project_id == project_id:
+        task.github_project_name = project_name
+        return
+    if context is None or not issue_id:
+        return
+    try:
+        normalized_project_id = int(project_id)
+    except (TypeError, ValueError):
+        logging.warning("Unable to normalize GitHub project id %s", project_id)
+        return
+    try:
+        add_issue_to_project(context["token"], normalized_project_id, issue_id)
+    except GitHubError as error:
+        logging.warning(
+            "Unable to add issue %s to project %s: %s", issue_id, project_id, error
+        )
+        message, _ = _github_error_response(error)
+        if error.status_code in (401, 403):
+            warnings.append(message)
+        else:
+            warnings.append(
+                failure_message
+                or "Issue synced but could not be added to the configured project."
+            )
+    else:
+        task.github_project_id = normalized_project_id
+        task.github_project_name = project_name
+
+
 def _record_sync(task: Task, action: str, status: str, message: str | None = None):
     log_entry = SyncLog(task=task, action=action, status=status, message=message)
     db.session.add(log_entry)
@@ -576,6 +642,9 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
     task.github_issue_state = issue.state
     task.github_milestone_number = getattr(issue, "milestone_number", None)
     task.github_milestone_title = getattr(issue, "milestone_title", None) or None
+    if not getattr(scope, "github_project_id", None):
+        task.github_project_id = None
+        task.github_project_name = None
     if issue.state == "closed":
         if not task.completed:
             task.complete_task()
@@ -1131,24 +1200,14 @@ def github_issue_create():
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
 
-    project_id = context.get("project_id")
-    if project_id:
-        try:
-            add_issue_to_project(context["token"], project_id, issue.id)
-        except GitHubError as error:
-            logging.warning(
-                "Unable to add issue %s to project %s: %s",
-                issue.number,
-                project_id,
-                error,
-            )
-            message, _ = _github_error_response(error)
-            if error.status_code in (401, 403):
-                warnings.append(message)
-            else:
-                warnings.append(
-                    "Issue created but could not be added to the configured project."
-                )
+    _apply_scope_project_to_task(
+        task,
+        task.scope,
+        context,
+        issue.id,
+        warnings,
+        failure_message="Issue created but could not be added to the configured project.",
+    )
 
     task.github_issue_id = issue.id
     task.github_issue_number = issue.number
@@ -1189,15 +1248,7 @@ def github_issue_create():
             if issue.milestone_number
             else None,
         },
-        "task": {
-            "id": task.id,
-            "has_github_issue": task.has_github_issue,
-            "github_issue_state": task.github_issue_state,
-            "github_milestone_number": task.github_milestone_number,
-            "github_milestone_title": task.github_milestone_title,
-            "github_repo_owner": task.github_repo_owner,
-            "github_repo_name": task.github_repo_name,
-        },
+        "task": _serialize_task_payload(task),
     }
     if warnings:
         response_payload["warnings"] = warnings
@@ -1226,6 +1277,7 @@ def github_issue_sync():
     if not context:
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
+    warnings: list[str] = []
     try:
         issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
     except GitHubError as error:
@@ -1251,20 +1303,7 @@ def github_issue_sync():
                     500,
                 )
 
-            task_payload = {
-                "id": task.id,
-                "name": task.name,
-                "description": task.description or "",
-                "completed": task.completed,
-                "end_date": task.end_date.isoformat() if task.end_date else None,
-                "tag_ids": [tag.id for tag in task.tags],
-                "has_github_issue": task.has_github_issue,
-                "github_issue_state": task.github_issue_state,
-                "github_milestone_number": task.github_milestone_number,
-                "github_milestone_title": task.github_milestone_title,
-                "github_repo_owner": task.github_repo_owner,
-                "github_repo_name": task.github_repo_name,
-            }
+            task_payload = _serialize_task_payload(task)
 
             return (
                 jsonify(
@@ -1290,6 +1329,7 @@ def github_issue_sync():
 
     try:
         _sync_task_from_issue(task, issue, g.scope)
+        _apply_scope_project_to_task(task, g.scope, context, issue.id, warnings)
         _record_sync(task, "sync_issue", "success", f"Issue #{issue.number} synced")
         db.session.commit()
     except SQLAlchemyError as exc:
@@ -1297,41 +1337,30 @@ def github_issue_sync():
         logging.error("Unable to sync issue data: %s", exc, exc_info=True)
         return jsonify({"success": False, "message": "Unable to sync task with GitHub."}), 500
 
-    task_payload = {
-        "id": task.id,
-        "name": task.name,
-        "description": task.description or "",
-        "completed": task.completed,
-        "end_date": task.end_date.isoformat() if task.end_date else None,
-        "tag_ids": [tag.id for tag in task.tags],
-        "has_github_issue": task.has_github_issue,
-        "github_issue_state": task.github_issue_state,
-        "github_milestone_number": task.github_milestone_number,
-        "github_milestone_title": task.github_milestone_title,
-        "github_repo_owner": task.github_repo_owner,
-        "github_repo_name": task.github_repo_name,
-    }
+    task_payload = _serialize_task_payload(task)
 
-    return jsonify(
-        {
-            "success": True,
-            "issue": {
-                "id": issue.id,
-                "number": issue.number,
-                "url": issue.url,
-                "state": issue.state,
-                "labels": issue.labels,
-                "milestone": {
-                    "number": issue.milestone_number,
-                    "title": issue.milestone_title,
-                    "state": issue.milestone_state,
-                }
-                if issue.milestone_number
-                else None,
-            },
-            "task": task_payload,
-        }
-    )
+    response_payload = {
+        "success": True,
+        "issue": {
+            "id": issue.id,
+            "number": issue.number,
+            "url": issue.url,
+            "state": issue.state,
+            "labels": issue.labels,
+            "milestone": {
+                "number": issue.milestone_number,
+                "title": issue.milestone_title,
+                "state": issue.milestone_state,
+            }
+            if issue.milestone_number
+            else None,
+        },
+        "task": task_payload,
+    }
+    if warnings:
+        response_payload["warnings"] = warnings
+
+    return jsonify(response_payload)
 
 
 @app.route("/api/github/issue/close", methods=["POST"])
@@ -1402,7 +1431,7 @@ def github_issue_close():
         logging.error("Unable to update task after closing GitHub issue: %s", exc, exc_info=True)
         return jsonify({"success": False, "message": "Issue closed but could not update task."}), 500
 
-    response = {"success": True, "task": {"id": task.id, "completed": task.completed}}
+    response = {"success": True, "task": _serialize_task_payload(task)}
     if issue is not None:
         response["issue"] = {
             "number": issue.number,
@@ -1966,7 +1995,10 @@ def edit_task(id):
                     "github_milestone_title": item.github_milestone_title,
                     "github_repo_owner": item.github_repo_owner,
                     "github_repo_name": item.github_repo_name,
+                    "task": _serialize_task_payload(item),
                 }
+                response["github_project_id"] = item.github_project_id
+                response["github_project_name"] = item.github_project_name
                 if issue_unlinked:
                     response["github_issue_unlinked"] = True
                 return jsonify(response)
