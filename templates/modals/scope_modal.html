@@ -55,7 +55,7 @@
                             Add a GitHub token in your user settings to enable integration.
                         </div>
                     {% endif %}
-                    <div class="github-scope-settings" data-github-settings-section style="display: {{ 'block' if scope_form.github_enabled.data else 'none' }};">
+                    <div class="github-scope-settings" data-github-settings-section>
                         <div class="mb-3">
                             <label class="form-label" for="scope-github-repo-select">Repository</label>
                             {{ scope_form.github_repository(class="form-select" + (' is-invalid' if scope_form.github_repository.errors else ''), id="scope-github-repo-select", **{'data-selected-repo': scope_form.github_repository.data or '', 'data-field': 'github_repository'}) }}

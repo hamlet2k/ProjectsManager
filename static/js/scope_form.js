@@ -125,6 +125,7 @@
     function hydrateInitialState() {
         applyFormValues(state.initialState.data || getDefaultFormValues());
         applyFormErrors(state.form, state.initialState.errors || {});
+        updateGithubSectionVisibility();
         if (state.initialState.data.github_enabled) {
             ensureGithubRepositoriesLoaded({ silent: true });
         }
@@ -442,6 +443,7 @@
                 description: buildEditScopeDescription(state.formValues?.name || ''),
                 submitLabel: DEFAULT_MESSAGES.editSubmit,
             });
+            updateGithubSectionVisibility();
             ensureGithubRepositoriesLoaded({ silent: true });
         } else {
             const defaults = state.initialState?.data || getDefaultFormValues();
@@ -452,6 +454,7 @@
                 description: DEFAULT_MESSAGES.createDescription,
                 submitLabel: DEFAULT_MESSAGES.createSubmit,
             });
+            updateGithubSectionVisibility();
             if (defaults.github_enabled) {
                 ensureGithubRepositoriesLoaded({ silent: true });
             } else {
@@ -1276,6 +1279,45 @@
         } catch (error) {
             console.warn('Unable to evaluate referrer for auto scope selection.', error);
             return false;
+        }
+    }
+
+    function updateGithubSectionVisibility() {
+        const github = state.github;
+        if (!github.section) {
+            return;
+        }
+        
+        if (github.toggle && github.toggle.checked) {
+            // Show the section with animation
+            github.section.style.display = 'block';
+            // Use a small timeout to ensure the display change takes effect before removing collapsed class
+            setTimeout(() => {
+                github.section.classList.remove('collapsed');
+            }, 10);
+        } else {
+            // Hide the section with animation
+            github.section.classList.add('collapsed');
+            // After animation completes, set display: none
+            setTimeout(() => {
+                if (github.section.classList.contains('collapsed')) {
+                    github.section.style.display = 'none';
+                }
+            }, 300); // Match the CSS transition duration
+        }
+    }
+
+    function showGithubWarning() {
+        const github = state.github;
+        if (github.warning) {
+            github.warning.classList.remove('d-none');
+        }
+    }
+
+    function hideGithubWarning() {
+        const github = state.github;
+        if (github.warning) {
+            github.warning.classList.add('d-none');
         }
     }
 
