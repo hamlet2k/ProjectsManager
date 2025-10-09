@@ -1845,6 +1845,8 @@ def delete_item(item_type, id):
 
             db.session.delete(item)
             db.session.commit()
+            if item_type == "scope" and session.get("selected_scope") == id:
+                session.pop("selected_scope", None)
             item_label = getattr(item, "name", None)
             message = f"{item_class.__name__} deleted!"
             if item_label:

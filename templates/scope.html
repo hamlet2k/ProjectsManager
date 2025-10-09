@@ -325,6 +325,7 @@
                     return;
                 }
                 const scopeName = button.dataset.scopeName || 'this scope';
+                const scopeId = button.dataset.scopeId || '';
                 showConfirmationModal({
                     title: 'Delete scope',
                     message: `Delete scope "${scopeName}"?`,
@@ -357,7 +358,12 @@
                             }
                             const message = (data && data.message) || `Scope "${scopeName}" deleted.`;
                             displayFlashMessage(message, 'success');
-                            window.location.reload();
+                            if (scopeId && getLastScopePreference() === String(scopeId)) {
+                                setLastScopePreference(null);
+                            }
+                            window.setTimeout(() => {
+                                window.location.href = '{{ url_for("scopes.list_scopes", stay=1) }}';
+                            }, 200);
                         })
                         .catch((error) => {
                             console.error('Unable to delete scope', error);
