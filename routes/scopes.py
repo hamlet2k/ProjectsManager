@@ -19,6 +19,16 @@ from flask import (
 from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
+from urllib.parse import urlparse
+def safe_redirect(referrer, fallback_endpoint):
+    """Redirect to referrer if it's a safe internal URL, otherwise to fallback endpoint."""
+    if not referrer:
+        return redirect(url_for(fallback_endpoint))
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(referrer)
+    if test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc:
+        return redirect(referrer)
+    return redirect(url_for(fallback_endpoint))
 
 from database import db
 from forms import ScopeForm
@@ -267,13 +277,13 @@ def add_scope():
                 if wants_json:
                     return jsonify({"success": False, "message": error_message}), 500
                 flash(error_message, "error")
-                return redirect(request.referrer or url_for("scopes.list_scopes"))
+                return safe_redirect(request.referrer, "scopes.list_scopes")
 
             success_message = "Scope added!"
             if wants_json:
                 return _json_scope_success(scope, success_message, status=201)
             flash(success_message, "success")
-            return redirect(request.referrer or url_for("scopes.list_scopes"))
+            return safe_redirect(request.referrer, "scopes.list_scopes")
 
         if wants_json:
             return _json_form_error(form)
@@ -348,13 +358,13 @@ def edit_scope(scope_id: int):
                 if wants_json:
                     return jsonify({"success": False, "message": error_message}), 500
                 flash(error_message, "error")
-                return redirect(request.referrer or url_for("scopes.list_scopes"))
+                return safe_redirect(request.referrer, "scopes.list_scopes")
 
             success_message = "Scope edited!"
             if wants_json:
                 return _json_scope_success(scope, success_message)
             flash(success_message, "success")
-            return redirect(request.referrer or url_for("scopes.list_scopes"))
+            return safe_redirect(request.referrer, "scopes.list_scopes")
 
         if wants_json:
             return _json_form_error(form)

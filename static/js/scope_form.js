@@ -962,9 +962,21 @@
                 }
                 const clipboardSections = data.tasks
                     .map((task, index) => {
-                        const formatted = typeof window.formatTaskClipboardText === 'function'
-                            ? window.formatTaskClipboardText(task)
-                            : '';
+                        let formatted;
+                        if (typeof window.formatTaskClipboardText === 'function') {
+                            formatted = window.formatTaskClipboardText(task);
+                        } else {
+                            // Basic fallback formatting
+                            if (!window._formatTaskClipboardTextWarned) {
+                                console.warn('window.formatTaskClipboardText is not defined. Using basic fallback formatting for tasks.');
+                                window._formatTaskClipboardTextWarned = true;
+                            }
+                            formatted = [
+                                task.title ? `Title: ${task.title}` : '',
+                                task.description ? `Description: ${task.description}` : '',
+                                task.id ? `ID: ${task.id}` : ''
+                            ].filter(Boolean).join('\n');
+                        }
                         return formatted ? `${index + 1}. ${formatted}` : null;
                     })
                     .filter(Boolean);
