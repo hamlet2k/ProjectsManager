@@ -15,73 +15,92 @@
         </button>
     </div>
 
-    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3{% if not scopes %} d-none{% endif %}" id="scopes-list" data-scope-list>
+    <div
+        class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4{% if not scopes %} d-none{% endif %}"
+        id="scopes-list"
+        data-scope-list
+    >
         {% for scope in scopes %}
-            <div class="col" data-scope-id="{{ scope.id }}">
-                <div class="card h-100 border-secondary shadow-sm scope-card" data-scope-id="{{ scope.id }}" data-scope-url="{{ url_for('scopes.set_scope', scope_id=scope.id) }}" data-scope-is-owner="{{ 'true' if scope.owner_id == g.user.id else 'false' }}">
-                        <div class="card-header bg-transparent border-0 pb-0">
-                            <div class="d-flex justify-content-between align-items-start gap-2">
-                                <div class="d-flex align-items-center gap-2">
-                                    {% if scope.owner_id == g.user.id %}
-                                        <span id="grip" data-item-id="{{ scope.id }}" class="text-muted" title="Drag to reorder scopes">
-                                            <i class="bi bi-grip-vertical"></i>
-                                        </span>
-                                    {% else %}
-                                        <span class="text-muted opacity-50">
-                                            <i class="bi bi-grip-vertical"></i>
-                                        </span>
-                                    {% endif %}
-                                    {% if scope.github_integration_enabled %}
-                                        <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
-                                            <i class="bi bi-github" aria-hidden="true"></i>
-                                            GitHub
-                                        </span>
-                                    {% endif %}
-                                    {% if scope.owner_id != g.user.id %}
-                                        <span class="badge text-bg-light text-muted">Shared</span>
-                                    {% endif %}
-                                </div>
-                                <div class="btn-group btn-group-sm" role="group" aria-label="Scope actions">
-                                    <button type="button"
-                                        class="btn btn-outline-secondary scope-copy-btn"
+            <div class="col d-flex" data-scope-id="{{ scope.id }}">
+                <div
+                    class="card h-100 w-100 border-secondary shadow-sm scope-card"
+                    data-scope-id="{{ scope.id }}"
+                    data-scope-url="{{ url_for('scopes.set_scope', scope_id=scope.id) }}"
+                    data-scope-is-owner="{{ 'true' if scope.owner_id == g.user.id else 'false' }}"
+                >
+                    <div class="card-header bg-transparent border-0 pb-0">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="d-flex align-items-center flex-wrap gap-2">
+                                {% if scope.owner_id == g.user.id %}
+                                    <span id="grip" data-item-id="{{ scope.id }}" class="text-muted" title="Drag to reorder scopes">
+                                        <i class="bi bi-grip-vertical"></i>
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted opacity-50">
+                                        <i class="bi bi-grip-vertical"></i>
+                                    </span>
+                                {% endif %}
+                                {% if scope.github_integration_enabled %}
+                                    <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
+                                        <i class="bi bi-github" aria-hidden="true"></i>
+                                        GitHub
+                                    </span>
+                                {% endif %}
+                                {% if scope.owner_id != g.user.id %}
+                                    <span class="badge text-bg-light text-muted">Shared</span>
+                                {% endif %}
+                            </div>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Scope actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-secondary scope-copy-btn"
+                                    data-scope-id="{{ scope.id }}"
+                                    data-scope-name="{{ scope.name | e }}"
+                                    data-export-url="{{ url_for('scopes.export_scope_tasks', scope_id=scope.id) }}"
+                                    aria-label="Copy tasks for scope {{ scope.name }}"
+                                >
+                                    <i class="bi bi-clipboard" aria-hidden="true"></i>
+                                </button>
+                                {% if scope.owner_id == g.user.id %}
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary edit-scope-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#scope-modal"
                                         data-scope-id="{{ scope.id }}"
-                                        data-scope-name="{{ scope.name | e }}"
-                                        data-export-url="{{ url_for('scopes.export_scope_tasks', scope_id=scope.id) }}"
-                                        aria-label="Copy tasks for scope {{ scope.name }}">
-                                        <i class="bi bi-clipboard" aria-hidden="true"></i>
+                                        data-scope-name="{{ scope.name }}"
+                                        data-scope-description="{{ scope.description }}"
+                                        data-scope-github_enabled="{{ 'true' if scope.github_integration_enabled else 'false' }}"
+                                        data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
+                                        aria-label="Edit scope {{ scope.name }}"
+                                    >
+                                        <i class="bi bi-pencil" aria-hidden="true"></i>
                                     </button>
-                                    {% if scope.owner_id == g.user.id %}
-                                        <button type="button"
-                                            class="btn btn-outline-secondary edit-scope-btn"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#scope-modal"
-                                            data-scope-id="{{ scope.id }}"
-                                            data-scope-name="{{ scope.name }}"
-                                            data-scope-description="{{ scope.description }}"
-                                            data-scope-github_enabled="{{ 'true' if scope.github_integration_enabled else 'false' }}"
-                                            data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
-                                            aria-label="Edit scope {{ scope.name }}">
-                                            <i class="bi bi-pencil" aria-hidden="true"></i>
-                                        </button>
-                                        <button type="button"
-                                            class="btn btn-dark scope-delete-btn"
-                                            data-confirm-url="{{ url_for('delete_item', item_type='scope', id=scope.id) }}"
-                                            data-scope-name="{{ scope.name | e }}"
-                                            data-scope-id="{{ scope.id }}"
-                                            aria-label="Delete scope {{ scope.name }}">
-                                            <i class="bi bi-trash3" aria-hidden="true"></i>
-                                        </button>
-                                    {% endif %}
-                                </div>
+                                    <button
+                                        type="button"
+                                        class="btn btn-dark scope-delete-btn"
+                                        data-confirm-url="{{ url_for('delete_item', item_type='scope', id=scope.id) }}"
+                                        data-scope-name="{{ scope.name | e }}"
+                                        data-scope-id="{{ scope.id }}"
+                                        aria-label="Delete scope {{ scope.name }}"
+                                    >
+                                        <i class="bi bi-trash3" aria-hidden="true"></i>
+                                    </button>
+                                {% endif %}
                             </div>
                         </div>
-                        <div class="card-body position-relative">
-                            <h2 class="h5 text-dark mb-2">{{ scope.name }}</h2>
-                            {% if scope.description %}
-                                <p class="text-muted small mb-0">{{ scope.description }}</p>
-                            {% endif %}
-                            <a class="stretched-link text-decoration-none" href="{{ url_for('scopes.set_scope', scope_id=scope.id) }}" data-scope-id="{{ scope.id }}" aria-label="Open scope {{ scope.name }}"></a>
-                        </div>
+                    </div>
+                    <div class="card-body position-relative d-flex flex-column">
+                        <h2 class="h5 text-dark mb-2">{{ scope.name }}</h2>
+                        {% if scope.description %}
+                            <p class="text-muted small mb-0">{{ scope.description }}</p>
+                        {% endif %}
+                        <a
+                            class="stretched-link text-decoration-none"
+                            href="{{ url_for('scopes.set_scope', scope_id=scope.id) }}"
+                            data-scope-id="{{ scope.id }}"
+                            aria-label="Open scope {{ scope.name }}"
+                        ></a>
                     </div>
                 </div>
             </div>

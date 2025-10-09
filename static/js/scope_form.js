@@ -835,11 +835,11 @@
 
     function buildScopeCard(scope) {
         const col = document.createElement('div');
-        col.className = 'col';
+        col.className = 'col d-flex';
         col.dataset.scopeId = String(scope.id);
 
         const card = document.createElement('div');
-        card.className = 'card h-100 border-secondary shadow-sm scope-card';
+        card.className = 'card h-100 w-100 border-secondary shadow-sm scope-card';
         card.dataset.scopeId = String(scope.id);
         card.dataset.scopeUrl = scope.urls && scope.urls.set ? scope.urls.set : '';
         card.dataset.scopeIsOwner = scope.is_owner ? 'true' : 'false';
@@ -854,7 +854,7 @@
         header.appendChild(headerRow);
 
         const badgesContainer = document.createElement('div');
-        badgesContainer.className = 'd-flex align-items-center gap-2';
+        badgesContainer.className = 'd-flex align-items-center flex-wrap gap-2';
         headerRow.appendChild(badgesContainer);
 
         const grip = document.createElement('span');
@@ -933,7 +933,7 @@
         }
 
         const body = document.createElement('div');
-        body.className = 'card-body position-relative';
+        body.className = 'card-body position-relative d-flex flex-column';
         card.appendChild(body);
 
         const title = document.createElement('h2');

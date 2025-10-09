@@ -16,7 +16,7 @@ from flask import (
     session,
     url_for,
 )
-from flask_wtf.csrf import validate_csrf
+from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
 
@@ -64,24 +64,24 @@ def _populate_form_from_payload(form: ScopeForm, payload: Dict[str, Any]) -> Non
     normalized = {
         "name": (payload.get("name") or "").strip(),
         "description": payload.get("description") or "",
-        "github_enabled": "y" if _is_truthy(payload.get("github_enabled")) else "n",
+        "github_enabled": _is_truthy(payload.get("github_enabled")),
         "github_repository": payload.get("github_repository") or "",
     }
     form.process(data=normalized)
-    form.csrf_token.data = payload.get("csrf_token", "")
 
 
 def _collect_form_values(form: ScopeForm) -> Dict[str, Any]:
     """Return the current values from the scope form."""
+    github_field = getattr(form, "github_enabled", None)
     return {
         "name": form.name.data or "",
         "description": form.description.data or "",
-        "github_enabled": bool(form.github_enabled.data),
+        "github_enabled": bool(github_field.data) if github_field is not None else False,
         "github_repository": form.github_repository.data or "",
     }
 
 
-def _validate_csrf_token(form: ScopeForm, token: str | None) -> None:
+def _validate_csrf_token(form: ScopeForm, token: str | None) -> bool:
     """Validate a CSRF token for JSON submissions."""
     message: str | None = None
     if not token:
@@ -94,14 +94,17 @@ def _validate_csrf_token(form: ScopeForm, token: str | None) -> None:
         except Exception:
             message = "The CSRF token is invalid."
     if message:
-        form.csrf_token.errors.append(message)
+        field = getattr(form, "csrf_token", None)
+        if field is not None:
+            field.errors.append(message)
         form.errors.setdefault("csrf_token", []).append(message)
+        return False
+    return True
 
 
 def _csrf_token_value() -> str:
     """Return a fresh CSRF token for subsequent submissions."""
-    fresh_form = ScopeForm()
-    return fresh_form.csrf_token.current_token
+    return generate_csrf()
 
 
 def _scope_payload(scope: Scope) -> Dict[str, Any]:
@@ -121,13 +124,17 @@ def _scope_payload(scope: Scope) -> Dict[str, Any]:
     return payload
 
 
-def _json_form_error(form: ScopeForm, message: str = "Please correct the highlighted fields.", status: int = 400):
+def _json_form_error(form: ScopeForm, message: str | None = None, status: int = 400):
     """Return a JSON response detailing form errors."""
+    effective_message = message or "Please correct the highlighted fields."
+    csrf_errors = form.errors.get("csrf_token") if hasattr(form, "errors") else None
+    if csrf_errors:
+        effective_message = csrf_errors[0]
     return (
         jsonify(
             {
                 "success": False,
-                "message": message,
+                "message": effective_message,
                 "errors": form.errors,
                 "values": _collect_form_values(form),
                 "csrf_token": _csrf_token_value(),
@@ -217,7 +224,8 @@ def add_scope():
         form = ScopeForm(meta={"csrf": False})
         _populate_form_from_payload(form, payload)
         is_valid = form.validate()
-        _validate_csrf_token(form, payload.get("csrf_token"))
+        csrf_valid = _validate_csrf_token(form, payload.get("csrf_token"))
+        is_valid = is_valid and csrf_valid
     else:
         form = ScopeForm()
         is_valid = form.validate_on_submit()
@@ -291,7 +299,8 @@ def edit_scope(scope_id: int):
         form = ScopeForm(meta={"csrf": False})
         _populate_form_from_payload(form, payload)
         is_valid = form.validate()
-        _validate_csrf_token(form, payload.get("csrf_token"))
+        csrf_valid = _validate_csrf_token(form, payload.get("csrf_token"))
+        is_valid = is_valid and csrf_valid
     else:
         form = ScopeForm(obj=scope)
         if not form.is_submitted():
