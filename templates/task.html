@@ -84,24 +84,6 @@
         color: var(--bs-body-color);
     }
 
-    .task-title {
-        color: var(--bs-secondary-color, var(--bs-body-color));
-        min-width: 0;
-        font-weight: 500;
-        text-align: left;
-        flex-grow: 1;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.5rem;
-        justify-content: flex-start;
-    }
-
-    .task-name {
-        flex-shrink: 1;
-        word-break: break-word;
-    }
-
     .task-title del {
         color: inherit;
     }
@@ -121,6 +103,7 @@
         transition: all 0.15s ease-in-out;
         white-space: nowrap;
         flex-shrink: 0;
+        margin-left: auto;
     }
 
     .github-issue-badge:hover {
@@ -147,6 +130,24 @@
         align-items: flex-start;
         flex-grow: 1;
         min-width: 0;
+        gap: 0.5rem;
+    }
+
+    .task-name {
+        flex-shrink: 1;
+        word-break: break-word;
+        color: var(--bs-secondary-color, var(--bs-body-color));
+        font-weight: 500;
+        text-align: left;
+    }
+
+    .task-toggle {
+        min-width: 0;
+        color: var(--bs-secondary-color, var(--bs-body-color));
+        transition: color 0.15s ease-in-out;
+        text-align: left;
+        flex-shrink: 1;
+        text-decoration: none;
     }
 
     /* On smaller screens, move actions to new line */
