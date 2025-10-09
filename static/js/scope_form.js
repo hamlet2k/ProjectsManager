@@ -78,15 +78,29 @@
     function resolveGithubElements() {
         const toggle = document.getElementById('scope-github-toggle');
         const select = document.getElementById('scope-github-repo-select');
+        const projectSelect = document.getElementById('scope-github-project-select');
+        const milestoneSelect = document.getElementById('scope-github-milestone-select');
         const warning = document.querySelector('[data-github-warning]');
+        const projectWarning = document.querySelector('[data-github-project-warning]');
+        const milestoneWarning = document.querySelector('[data-github-milestone-warning]');
         const section = document.querySelector('[data-github-settings-section]');
         if (select && !select.dataset.reposLoaded) {
             select.dataset.reposLoaded = 'false';
         }
+        if (projectSelect && !projectSelect.dataset.projectsLoaded) {
+            projectSelect.dataset.projectsLoaded = 'false';
+        }
+        if (milestoneSelect && !milestoneSelect.dataset.milestonesLoaded) {
+            milestoneSelect.dataset.milestonesLoaded = 'false';
+        }
         return {
             toggle,
             select,
+            projectSelect,
+            milestoneSelect,
             warning,
+            projectWarning,
+            milestoneWarning,
             section,
             tokenPresent: state.form && state.form.dataset.githubTokenPresent === 'true',
         };
@@ -119,6 +133,8 @@
             description: '',
             github_enabled: false,
             github_repository: '',
+            github_project: '',
+            github_milestone: '',
         };
     }
 
@@ -128,6 +144,7 @@
         updateGithubSectionVisibility();
         if (state.initialState.data.github_enabled) {
             ensureGithubRepositoriesLoaded({ silent: true });
+            ensureGithubMetadataLoaded({ silent: true });
         }
     }
 
@@ -161,6 +178,20 @@
             github.select.addEventListener('change', () => {
                 github.select.dataset.selectedRepo = github.select.value || '';
                 hideGithubWarning();
+                hideGithubProjectWarning();
+                hideGithubMilestoneWarning();
+                if (github.projectSelect) {
+                    github.projectSelect.dataset.selectedProject = '';
+                }
+                if (github.milestoneSelect) {
+                    github.milestoneSelect.dataset.selectedMilestone = '';
+                }
+                if (github.select.value) {
+                    loadMetadataForSelectedRepository({ silent: false });
+                } else {
+                    clearProjectSelect();
+                    clearMilestoneSelect();
+                }
                 scheduleDescriptionResize();
             });
         }
@@ -409,11 +440,15 @@
             return { ...getDefaultFormValues() };
         }
         const repoAttribute = trigger.getAttribute('data-scope-github_repository') || '';
+        const projectAttribute = trigger.getAttribute('data-scope-github_project') || '';
+        const milestoneAttribute = trigger.getAttribute('data-scope-github_milestone') || '';
         return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
             github_enabled: (trigger.getAttribute('data-scope-github_enabled') || '').toLowerCase() === 'true',
             github_repository: repoAttribute,
+            github_project: projectAttribute,
+            github_milestone: milestoneAttribute,
         };
     }
 
@@ -445,6 +480,7 @@
             });
             updateGithubSectionVisibility();
             ensureGithubRepositoriesLoaded({ silent: true });
+            ensureGithubMetadataLoaded({ silent: true });
         } else {
             const defaults = state.initialState?.data || getDefaultFormValues();
             applyFormValues(defaults);
@@ -457,6 +493,7 @@
             updateGithubSectionVisibility();
             if (defaults.github_enabled) {
                 ensureGithubRepositoriesLoaded({ silent: true });
+                ensureGithubMetadataLoaded({ silent: true });
             } else {
                 hideGithubWarning();
             }
@@ -551,6 +588,8 @@
                             description: data.values.description || '',
                             github_enabled: Boolean(data.values.github_enabled),
                             github_repository: data.values.github_repository || '',
+                            github_project: data.values.github_project || '',
+                            github_milestone: data.values.github_milestone || '',
                         });
                     }
                     if (data.errors && data.errors.github_repository) {
@@ -612,7 +651,14 @@
             description: values.description,
             github_enabled: values.github_enabled ? 'y' : 'n',
             github_repository: values.github_repository || '',
+            github_project: values.github_project || '',
+            github_milestone: values.github_milestone || '',
         };
+        if (!values.github_enabled) {
+            payload.github_repository = '';
+            payload.github_project = '';
+            payload.github_milestone = '';
+        }
         return payload;
     }
 
@@ -622,6 +668,8 @@
         const descriptionField = state.form.querySelector('[data-field="description"]');
         const githubToggle = state.github.toggle;
         const githubSelect = state.github.select;
+        const projectSelect = state.github.projectSelect;
+        const milestoneSelect = state.github.milestoneSelect;
 
         if (nameField) {
             values.name = nameField.value.trim();
@@ -635,6 +683,15 @@
         if (githubSelect) {
             const explicitValue = githubSelect.value || githubSelect.dataset.selectedRepo || '';
             values.github_repository = explicitValue;
+        }
+        if (projectSelect) {
+            const explicitProject = projectSelect.value || projectSelect.dataset.selectedProject || '';
+            values.github_project = explicitProject;
+        }
+        if (milestoneSelect) {
+            const explicitMilestone =
+                milestoneSelect.value || milestoneSelect.dataset.selectedMilestone || '';
+            values.github_milestone = explicitMilestone;
         }
         return values;
     }
@@ -678,6 +735,8 @@
         const descriptionField = state.form.querySelector('[data-field="description"]');
         const githubToggle = state.github.toggle;
         const githubSelect = state.github.select;
+        const projectSelect = state.github.projectSelect;
+        const milestoneSelect = state.github.milestoneSelect;
 
         if (nameField) {
             nameField.value = data.name || '';
@@ -698,9 +757,26 @@
                 githubSelect.value = '';
             }
         }
+        if (projectSelect) {
+            projectSelect.dataset.selectedProject = data.github_project || '';
+            if (projectSelect.dataset.projectsLoaded === 'true' && data.github_project) {
+                applySelectedProject();
+            } else {
+                projectSelect.value = '';
+            }
+        }
+        if (milestoneSelect) {
+            milestoneSelect.dataset.selectedMilestone = data.github_milestone || '';
+            if (milestoneSelect.dataset.milestonesLoaded === 'true' && data.github_milestone) {
+                applySelectedMilestone();
+            } else {
+                milestoneSelect.value = '';
+            }
+        }
         updateGithubSectionVisibility();
         if (githubToggle && githubToggle.checked) {
             ensureGithubRepositoriesLoaded({ silent: true });
+            ensureGithubMetadataLoaded({ silent: true });
         }
         if (state.description && state.description.field) {
             refreshDescriptionHeight({ immediate: true, preserveExpansion: true });
@@ -760,9 +836,14 @@
         github.section.style.display = shouldShow ? '' : 'none';
         if (!shouldShow) {
             hideGithubWarning();
+            hideGithubProjectWarning();
+            hideGithubMilestoneWarning();
+            clearProjectSelect({ resetSelection: false });
+            clearMilestoneSelect({ resetSelection: false });
         }
         if (shouldShow) {
             ensureGithubRepositoriesLoaded({ silent: true });
+            ensureGithubMetadataLoaded({ silent: true });
         }
         scheduleDescriptionResize({ immediate: false });
     }
@@ -802,6 +883,8 @@
                 console.error('Unable to load GitHub repositories.', error);
                 github.select.dataset.reposLoaded = 'false';
                 github.select.disabled = true;
+                clearProjectSelect();
+                clearMilestoneSelect();
                 if (!silent) {
                     displayFlashMessage('Unable to load GitHub repositories.', 'danger');
                 }
@@ -830,6 +913,8 @@
                 const message = (payload && payload.message) || 'Unable to load GitHub repositories.';
                 displayFlashMessage(message, 'danger');
             }
+            clearProjectSelect();
+            clearMilestoneSelect();
             return;
         }
 
@@ -842,6 +927,12 @@
         select.disabled = false;
         select.dataset.reposLoaded = 'true';
         applySelectedRepository();
+        if (select.dataset.selectedRepo) {
+            ensureGithubMetadataLoaded({ silent: true });
+        } else {
+            clearProjectSelect();
+            clearMilestoneSelect();
+        }
         scheduleDescriptionResize({ immediate: false });
     }
 
@@ -862,6 +953,405 @@
         } else {
             select.disabled = true;
         }
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function getSelectedRepository() {
+        const select = state.github.select;
+        if (!select) {
+            return null;
+        }
+        const value = select.dataset.selectedRepo || '';
+        if (!value) {
+            return null;
+        }
+        try {
+            return JSON.parse(value);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function ensureGithubMetadataLoaded({ silent } = { silent: false }) {
+        const github = state.github;
+        if (!github.toggle || !github.select || github.toggle.disabled || !github.toggle.checked) {
+            return;
+        }
+        const repo = getSelectedRepository();
+        if (!repo) {
+            return;
+        }
+        const needsProjects =
+            github.projectSelect && github.projectSelect.dataset.projectsLoaded !== 'true';
+        const needsMilestones =
+            github.milestoneSelect && github.milestoneSelect.dataset.milestonesLoaded !== 'true';
+        if (!needsProjects && !needsMilestones) {
+            return;
+        }
+        loadMetadataForSelectedRepository({ silent: Boolean(silent) });
+    }
+
+    function loadMetadataForSelectedRepository({ silent }) {
+        const repo = getSelectedRepository();
+        if (!repo) {
+            return;
+        }
+        loadGithubProjects(repo, { silent: Boolean(silent) });
+        loadGithubMilestones(repo, { silent: Boolean(silent) });
+    }
+
+    function clearProjectSelect({ resetSelection = true } = {}) {
+        const select = state.github.projectSelect;
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a project';
+        select.appendChild(placeholder);
+        select.disabled = true;
+        select.dataset.projectsLoaded = 'false';
+        if (resetSelection) {
+            select.dataset.selectedProject = '';
+        }
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function clearMilestoneSelect({ resetSelection = true } = {}) {
+        const select = state.github.milestoneSelect;
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a milestone';
+        select.appendChild(placeholder);
+        select.disabled = true;
+        select.dataset.milestonesLoaded = 'false';
+        if (resetSelection) {
+            select.dataset.selectedMilestone = '';
+        }
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function setProjectSelectLoading(isLoading) {
+        const select = state.github.projectSelect;
+        if (!select) {
+            return;
+        }
+        if (isLoading) {
+            select.disabled = true;
+            select.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Loading projects...';
+            select.appendChild(option);
+        } else if (select.dataset.projectsLoaded === 'true') {
+            select.disabled = false;
+        } else {
+            clearProjectSelect({ resetSelection: false });
+        }
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function setMilestoneSelectLoading(isLoading) {
+        const select = state.github.milestoneSelect;
+        if (!select) {
+            return;
+        }
+        if (isLoading) {
+            select.disabled = true;
+            select.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Loading milestones...';
+            select.appendChild(option);
+        } else if (select.dataset.milestonesLoaded === 'true') {
+            select.disabled = false;
+        } else {
+            clearMilestoneSelect({ resetSelection: false });
+        }
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function applySelectedProject() {
+        const select = state.github.projectSelect;
+        if (!select) {
+            return;
+        }
+        const selectedValue = select.dataset.selectedProject || '';
+        if (!selectedValue) {
+            select.value = '';
+            return;
+        }
+        try {
+            const parsed = JSON.parse(selectedValue);
+            for (const option of Array.from(select.options)) {
+                if (!option.value) {
+                    continue;
+                }
+                try {
+                    const value = JSON.parse(option.value);
+                    if (value && value.id === parsed.id) {
+                        option.selected = true;
+                        return;
+                    }
+                } catch (error) {
+                    // ignore invalid option value
+                }
+            }
+            select.value = '';
+        } catch (error) {
+            select.value = '';
+        }
+    }
+
+    function applySelectedMilestone() {
+        const select = state.github.milestoneSelect;
+        if (!select) {
+            return;
+        }
+        const selectedValue = select.dataset.selectedMilestone || '';
+        if (!selectedValue) {
+            select.value = '';
+            return;
+        }
+        try {
+            const parsed = JSON.parse(selectedValue);
+            for (const option of Array.from(select.options)) {
+                if (!option.value) {
+                    continue;
+                }
+                try {
+                    const value = JSON.parse(option.value);
+                    if (value && value.number === parsed.number) {
+                        option.selected = true;
+                        return;
+                    }
+                } catch (error) {
+                    // ignore invalid option value
+                }
+            }
+            select.value = '';
+        } catch (error) {
+            select.value = '';
+        }
+    }
+
+    function showGithubProjectWarning(message) {
+        const alert = state.github.projectWarning;
+        if (!alert) {
+            return;
+        }
+        if (typeof message === 'string' && message.trim()) {
+            alert.textContent = message.trim();
+        }
+        alert.classList.remove('d-none');
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function hideGithubProjectWarning() {
+        const alert = state.github.projectWarning;
+        if (!alert) {
+            return;
+        }
+        alert.classList.add('d-none');
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function showGithubMilestoneWarning(message) {
+        const alert = state.github.milestoneWarning;
+        if (!alert) {
+            return;
+        }
+        if (typeof message === 'string' && message.trim()) {
+            alert.textContent = message.trim();
+        }
+        alert.classList.remove('d-none');
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function hideGithubMilestoneWarning() {
+        const alert = state.github.milestoneWarning;
+        if (!alert) {
+            return;
+        }
+        alert.classList.add('d-none');
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function loadGithubProjects(repo, { silent }) {
+        const select = state.github.projectSelect;
+        if (!select) {
+            return;
+        }
+        setProjectSelectLoading(true);
+        hideGithubProjectWarning();
+        fetch('/api/github/projects', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ repository: repo }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                populateProjectSelect(data, ok, silent);
+            })
+            .catch((error) => {
+                console.error('Unable to load GitHub projects.', error);
+                select.dataset.projectsLoaded = 'false';
+                select.disabled = true;
+                if (!silent) {
+                    displayFlashMessage('Unable to load GitHub projects.', 'danger');
+                }
+            })
+            .finally(() => {
+                setProjectSelectLoading(false);
+            });
+    }
+
+    function populateProjectSelect(payload, ok, silent) {
+        const select = state.github.projectSelect;
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a project';
+        select.appendChild(placeholder);
+
+        if (!ok || !payload || payload.success !== true || !Array.isArray(payload.projects)) {
+            select.disabled = true;
+            select.dataset.projectsLoaded = 'false';
+            if (payload && payload.permission_error) {
+                const message = payload.message || 'Unable to load projects for this repository.';
+                showGithubProjectWarning(message);
+            } else if (!silent) {
+                const message = (payload && payload.message) || 'Unable to load GitHub projects.';
+                displayFlashMessage(message, 'danger');
+            }
+            return;
+        }
+
+        hideGithubProjectWarning();
+        if (payload.projects.length === 0) {
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'No projects available';
+            select.appendChild(emptyOption);
+            select.disabled = false;
+            select.dataset.projectsLoaded = 'true';
+            applySelectedProject();
+            scheduleDescriptionResize({ immediate: false });
+            return;
+        }
+
+        payload.projects.forEach((project) => {
+            const option = document.createElement('option');
+            option.value = JSON.stringify(project);
+            option.textContent = project.name || `Project #${project.id}`;
+            select.appendChild(option);
+        });
+        select.disabled = false;
+        select.dataset.projectsLoaded = 'true';
+        applySelectedProject();
+        scheduleDescriptionResize({ immediate: false });
+    }
+
+    function loadGithubMilestones(repo, { silent }) {
+        const select = state.github.milestoneSelect;
+        if (!select) {
+            return;
+        }
+        setMilestoneSelectLoading(true);
+        hideGithubMilestoneWarning();
+        fetch('/api/github/milestones', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ repository: repo }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                populateMilestoneSelect(data, ok, silent);
+            })
+            .catch((error) => {
+                console.error('Unable to load GitHub milestones.', error);
+                select.dataset.milestonesLoaded = 'false';
+                select.disabled = true;
+                if (!silent) {
+                    displayFlashMessage('Unable to load GitHub milestones.', 'danger');
+                }
+            })
+            .finally(() => {
+                setMilestoneSelectLoading(false);
+            });
+    }
+
+    function populateMilestoneSelect(payload, ok, silent) {
+        const select = state.github.milestoneSelect;
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a milestone';
+        select.appendChild(placeholder);
+
+        if (!ok || !payload || payload.success !== true || !Array.isArray(payload.milestones)) {
+            select.disabled = true;
+            select.dataset.milestonesLoaded = 'false';
+            if (payload && payload.permission_error) {
+                const message = payload.message || 'Unable to load milestones for this repository.';
+                showGithubMilestoneWarning(message);
+            } else if (!silent) {
+                const message = (payload && payload.message) || 'Unable to load GitHub milestones.';
+                displayFlashMessage(message, 'danger');
+            }
+            return;
+        }
+
+        hideGithubMilestoneWarning();
+        if (payload.milestones.length === 0) {
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'No milestones available';
+            select.appendChild(emptyOption);
+            select.disabled = false;
+            select.dataset.milestonesLoaded = 'true';
+            applySelectedMilestone();
+            scheduleDescriptionResize({ immediate: false });
+            return;
+        }
+
+        payload.milestones.forEach((milestone) => {
+            const option = document.createElement('option');
+            option.value = JSON.stringify(milestone);
+            const stateLabel = milestone.state && milestone.state.toLowerCase() === 'closed' ? ' (closed)' : '';
+            option.textContent = `${milestone.title}${stateLabel}`;
+            select.appendChild(option);
+        });
+        select.disabled = false;
+        select.dataset.milestonesLoaded = 'true';
+        applySelectedMilestone();
         scheduleDescriptionResize({ immediate: false });
     }
 
@@ -1090,9 +1580,47 @@
             state.scopeList.appendChild(col);
         }
         bindCardControls(col);
+        updateScopeEditTriggers(scope);
         state.scopeList.classList.remove('d-none');
         if (state.emptyState) {
             state.emptyState.classList.add('d-none');
+        }
+    }
+
+    function updateScopeEditTriggers(scope) {
+        if (!scope || !scope.id) {
+            return;
+        }
+        const triggers = document.querySelectorAll(
+            `.edit-scope-btn[data-scope-id="${scope.id}"]`
+        );
+        if (!triggers.length) {
+            return;
+        }
+        const repoAttribute = serializeScopeAttribute(scope.github_repository);
+        const projectAttribute = serializeScopeAttribute(scope.github_project);
+        const milestoneAttribute = serializeScopeAttribute(scope.github_milestone);
+        triggers.forEach((button) => {
+            button.setAttribute('data-scope-name', scope.name || '');
+            button.setAttribute('data-scope-description', scope.description || '');
+            button.setAttribute(
+                'data-scope-github_enabled',
+                scope.github_integration_enabled ? 'true' : 'false'
+            );
+            button.setAttribute('data-scope-github_repository', repoAttribute);
+            button.setAttribute('data-scope-github_project', projectAttribute);
+            button.setAttribute('data-scope-github_milestone', milestoneAttribute);
+        });
+    }
+
+    function serializeScopeAttribute(value) {
+        if (!value) {
+            return '';
+        }
+        try {
+            return JSON.stringify(value);
+        } catch (error) {
+            return '';
         }
     }
 
@@ -1179,6 +1707,14 @@
             editButton.setAttribute(
                 'data-scope-github_repository',
                 scope.github_repository ? JSON.stringify(scope.github_repository) : ''
+            );
+            editButton.setAttribute(
+                'data-scope-github_project',
+                scope.github_project ? JSON.stringify(scope.github_project) : ''
+            );
+            editButton.setAttribute(
+                'data-scope-github_milestone',
+                scope.github_milestone ? JSON.stringify(scope.github_milestone) : ''
             );
             editButton.setAttribute('aria-label', `Edit scope ${scope.name || ''}`.trim());
             editButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';

@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 from functools import wraps
 import logging
+from typing import Optional
 
 from flask import (
     Flask,
@@ -53,10 +54,13 @@ from services.github_service import (
     GITHUB_APP_LABEL,
     MISSING_ISSUE_STATUS_CODES,
     GitHubError,
+    add_issue_to_project,
     comment_on_issue,
     create_issue,
     fetch_issue,
     list_repositories,
+    list_repository_milestones,
+    list_repository_projects,
     test_connection,
     update_issue,
     close_issue,
@@ -464,6 +468,8 @@ def _clear_github_issue_link(task: Task) -> None:
     task.github_repo_id = None
     task.github_repo_name = None
     task.github_repo_owner = None
+    task.github_milestone_number = None
+    task.github_milestone_title = None
     _remove_local_github_tag(task)
 
 
@@ -493,6 +499,10 @@ def _scope_github_context(scope: Scope | None, user: User | None):
         "owner": scope.github_repo_owner,
         "name": scope.github_repo_name,
         "id": scope.github_repo_id,
+        "project_id": scope.github_project_id,
+        "project_name": scope.github_project_name,
+        "milestone_number": scope.github_milestone_number,
+        "milestone_title": scope.github_milestone_title,
     }
 
 
@@ -512,6 +522,10 @@ def _task_github_context(task: Task | None, user: User | None):
         "owner": owner,
         "name": name,
         "id": repo_id,
+        "project_id": scope_context.get("project_id"),
+        "project_name": scope_context.get("project_name"),
+        "milestone_number": scope_context.get("milestone_number"),
+        "milestone_title": scope_context.get("milestone_title"),
     }
 
 
@@ -560,6 +574,8 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
     task.name = issue.title or task.name
     task.description = issue.body or task.description
     task.github_issue_state = issue.state
+    task.github_milestone_number = getattr(issue, "milestone_number", None)
+    task.github_milestone_title = getattr(issue, "milestone_title", None) or None
     if issue.state == "closed":
         if not task.completed:
             task.complete_task()
@@ -956,6 +972,113 @@ def github_repositories():
     return jsonify({"success": True, "repositories": payload})
 
 
+def _extract_repo_payload(raw_payload):
+    if raw_payload is None:
+        return "", ""
+    payload: dict[str, object]
+    if isinstance(raw_payload, str):
+        try:
+            payload = json.loads(raw_payload)
+        except ValueError:
+            return "", ""
+    elif isinstance(raw_payload, dict):
+        payload = raw_payload
+    else:
+        return "", ""
+    owner = str(payload.get("owner") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    return owner, name
+
+
+def _resolve_github_token(payload: dict[str, object]) -> str:
+    auth_header = request.headers.get("Authorization", "").strip()
+    token = ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = str(payload.get("token") or "").strip()
+    if not token:
+        token = g.user.get_github_token()
+    return token or ""
+
+
+@app.route("/api/github/projects", methods=["POST"])
+def github_projects():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    token = _resolve_github_token(payload)
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    owner, name = _extract_repo_payload(payload.get("repository"))
+    if not owner or not name:
+        return jsonify({"success": False, "message": "Repository selection is required."}), 400
+
+    try:
+        projects = list_repository_projects(token, owner, name)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            message = "Unable to load GitHub projects. Ensure your token includes project access."
+        response = {"success": False, "message": message}
+        if error.status_code in (401, 403):
+            response["permission_error"] = True
+        return jsonify(response), status
+
+    payload = [{"id": project["id"], "name": project["name"]} for project in projects]
+    return jsonify({"success": True, "projects": payload})
+
+
+@app.route("/api/github/milestones", methods=["POST"])
+def github_milestones():
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    payload = request.get_json(silent=True) or {}
+    token = _resolve_github_token(payload)
+    if not token:
+        return jsonify({"success": False, "message": "Token is required."}), 400
+
+    owner, name = _extract_repo_payload(payload.get("repository"))
+    if not owner or not name:
+        return jsonify({"success": False, "message": "Repository selection is required."}), 400
+
+    try:
+        milestones = list_repository_milestones(token, owner, name)
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        if error.status_code in (401, 403):
+            message = "Unable to load GitHub milestones. Ensure your token includes milestone access."
+        response = {"success": False, "message": message}
+        if error.status_code in (401, 403):
+            response["permission_error"] = True
+        return jsonify(response), status
+
+    payload = [
+        {
+            "number": milestone["number"],
+            "title": milestone["title"],
+            "state": milestone["state"],
+        }
+        for milestone in milestones
+    ]
+    return jsonify({"success": True, "milestones": payload})
+
+
 def _task_owner_guard(task: Task):
     if task.owner_id != g.user.id or task.scope_id != g.scope.id:
         abort(403)
@@ -980,8 +1103,18 @@ def github_issue_create():
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
     labels = _labels_for_github(task)
+    milestone_number = context.get("milestone_number")
+    warnings: list[str] = []
     try:
-        issue = create_issue(context["token"], context["owner"], context["name"], task.name, task.description or "", labels)
+        issue = create_issue(
+            context["token"],
+            context["owner"],
+            context["name"],
+            task.name,
+            task.description or "",
+            labels,
+            milestone=milestone_number,
+        )
     except GitHubError as error:
         if error.status_code in (401, 403):
             _invalidate_github(g.user)
@@ -992,6 +1125,25 @@ def github_issue_create():
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
 
+    project_id = context.get("project_id")
+    if project_id:
+        try:
+            add_issue_to_project(context["token"], project_id, issue.id)
+        except GitHubError as error:
+            logging.warning(
+                "Unable to add issue %s to project %s: %s",
+                issue.number,
+                project_id,
+                error,
+            )
+            message, _ = _github_error_response(error)
+            if error.status_code in (401, 403):
+                warnings.append(message)
+            else:
+                warnings.append(
+                    "Issue created but could not be added to the configured project."
+                )
+
     task.github_issue_id = issue.id
     task.github_issue_number = issue.number
     task.github_issue_url = issue.url
@@ -999,6 +1151,8 @@ def github_issue_create():
     task.github_repo_id = context.get("id")
     task.github_repo_name = context["name"]
     task.github_repo_owner = context["owner"]
+    task.github_milestone_number = issue.milestone_number
+    task.github_milestone_title = issue.milestone_title or None
     try:
         _ensure_local_github_tag(task)
     except SQLAlchemyError as exc:
@@ -1013,18 +1167,36 @@ def github_issue_create():
         logging.error("Unable to persist GitHub issue link: %s", exc, exc_info=True)
         return jsonify({"success": False, "message": "Issue created but could not be saved locally."}), 500
 
-    return jsonify(
-        {
-            "success": True,
-            "issue": {
-                "id": issue.id,
-                "number": issue.number,
-                "url": issue.url,
-                "state": issue.state,
-                "labels": issue.labels,
-            },
-        }
-    )
+    response_payload = {
+        "success": True,
+        "issue": {
+            "id": issue.id,
+            "number": issue.number,
+            "url": issue.url,
+            "state": issue.state,
+            "labels": issue.labels,
+            "milestone": {
+                "number": issue.milestone_number,
+                "title": issue.milestone_title,
+                "state": issue.milestone_state,
+            }
+            if issue.milestone_number
+            else None,
+        },
+        "task": {
+            "id": task.id,
+            "has_github_issue": task.has_github_issue,
+            "github_issue_state": task.github_issue_state,
+            "github_milestone_number": task.github_milestone_number,
+            "github_milestone_title": task.github_milestone_title,
+            "github_repo_owner": task.github_repo_owner,
+            "github_repo_name": task.github_repo_name,
+        },
+    }
+    if warnings:
+        response_payload["warnings"] = warnings
+
+    return jsonify(response_payload)
 
 
 @app.route("/api/github/issue/sync", methods=["POST"])
@@ -1082,6 +1254,10 @@ def github_issue_sync():
                 "tag_ids": [tag.id for tag in task.tags],
                 "has_github_issue": task.has_github_issue,
                 "github_issue_state": task.github_issue_state,
+                "github_milestone_number": task.github_milestone_number,
+                "github_milestone_title": task.github_milestone_title,
+                "github_repo_owner": task.github_repo_owner,
+                "github_repo_name": task.github_repo_name,
             }
 
             return (
@@ -1124,6 +1300,10 @@ def github_issue_sync():
         "tag_ids": [tag.id for tag in task.tags],
         "has_github_issue": task.has_github_issue,
         "github_issue_state": task.github_issue_state,
+        "github_milestone_number": task.github_milestone_number,
+        "github_milestone_title": task.github_milestone_title,
+        "github_repo_owner": task.github_repo_owner,
+        "github_repo_name": task.github_repo_name,
     }
 
     return jsonify(
@@ -1135,6 +1315,13 @@ def github_issue_sync():
                 "url": issue.url,
                 "state": issue.state,
                 "labels": issue.labels,
+                "milestone": {
+                    "number": issue.milestone_number,
+                    "title": issue.milestone_title,
+                    "state": issue.milestone_state,
+                }
+                if issue.milestone_number
+                else None,
             },
             "task": task_payload,
         }
@@ -1709,17 +1896,37 @@ def edit_task(id):
         context = _task_github_context(item, g.user)
         if item.github_issue_number and context:
             labels = _labels_for_github(item)
+            milestone_raw = form.github_milestone.data or ""
+            milestone_number: Optional[int] = None
+            if milestone_raw:
+                try:
+                    milestone_payload = json.loads(milestone_raw)
+                    milestone_value = milestone_payload.get("number")
+                    if isinstance(milestone_value, str) and milestone_value.isdigit():
+                        milestone_number = int(milestone_value)
+                    elif isinstance(milestone_value, int):
+                        milestone_number = milestone_value
+                except ValueError:
+                    logging.warning("Ignoring invalid milestone selection payload: %s", milestone_raw)
+            milestone_changed = milestone_number != item.github_milestone_number
             try:
+                update_kwargs = {
+                    "title": item.name,
+                    "body": item.description or "",
+                    "labels": labels,
+                }
+                if milestone_changed:
+                    update_kwargs["milestone"] = milestone_number
                 issue = update_issue(
                     context["token"],
                     context["owner"],
                     context["name"],
                     item.github_issue_number,
-                    title=item.name,
-                    body=item.description or "",
-                    labels=labels,
+                    **update_kwargs,
                 )
                 item.github_issue_state = issue.state
+                item.github_milestone_number = issue.milestone_number
+                item.github_milestone_title = issue.milestone_title or None
                 _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
             except GitHubError as error:
                 if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
@@ -1749,6 +1956,10 @@ def edit_task(id):
                     "success": True,
                     "message": success_message,
                     "task_id": item.id,
+                    "github_milestone_number": item.github_milestone_number,
+                    "github_milestone_title": item.github_milestone_title,
+                    "github_repo_owner": item.github_repo_owner,
+                    "github_repo_name": item.github_repo_name,
                 }
                 if issue_unlinked:
                     response["github_issue_unlinked"] = True

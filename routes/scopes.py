@@ -76,6 +76,8 @@ def _populate_form_from_payload(form: ScopeForm, payload: Dict[str, Any]) -> Non
         "description": payload.get("description") or "",
         "github_enabled": _is_truthy(payload.get("github_enabled")),
         "github_repository": payload.get("github_repository") or "",
+        "github_project": payload.get("github_project") or "",
+        "github_milestone": payload.get("github_milestone") or "",
     }
     form.process(data=normalized)
 
@@ -88,6 +90,8 @@ def _collect_form_values(form: ScopeForm) -> Dict[str, Any]:
         "description": form.description.data or "",
         "github_enabled": bool(github_field.data) if github_field is not None else False,
         "github_repository": form.github_repository.data or "",
+        "github_project": form.github_project.data or "",
+        "github_milestone": form.github_milestone.data or "",
     }
 
 
@@ -243,7 +247,12 @@ def add_scope():
 
     if request.method == "POST":
         if is_valid:
-            enable_integration, repo_payload = validate_github_settings(
+            (
+                enable_integration,
+                repo_payload,
+                project_payload,
+                milestone_payload,
+            ) = validate_github_settings(
                 form, token_available=bool(get_user_github_token(g.user))
             )
 
@@ -264,10 +273,26 @@ def add_scope():
                 scope.github_repo_id = repo_payload.get("id")
                 scope.github_repo_name = repo_payload.get("name")
                 scope.github_repo_owner = repo_payload.get("owner")
+                if project_payload:
+                    scope.github_project_id = project_payload.get("id")
+                    scope.github_project_name = project_payload.get("name")
+                else:
+                    scope.github_project_id = None
+                    scope.github_project_name = None
+                if milestone_payload:
+                    scope.github_milestone_number = milestone_payload.get("number")
+                    scope.github_milestone_title = milestone_payload.get("title")
+                else:
+                    scope.github_milestone_number = None
+                    scope.github_milestone_title = None
             else:
                 scope.github_repo_id = None
                 scope.github_repo_name = None
                 scope.github_repo_owner = None
+                scope.github_project_id = None
+                scope.github_project_name = None
+                scope.github_milestone_number = None
+                scope.github_milestone_title = None
 
             try:
                 db.session.add(scope)
@@ -324,11 +349,30 @@ def edit_scope(scope_id: int):
                         "owner": scope.github_repo_owner,
                     }
                 )
+            if scope.github_project_id and scope.github_project_name:
+                form.github_project.data = json.dumps(
+                    {
+                        "id": scope.github_project_id,
+                        "name": scope.github_project_name,
+                    }
+                )
+            if scope.github_milestone_number and scope.github_milestone_title:
+                form.github_milestone.data = json.dumps(
+                    {
+                        "number": scope.github_milestone_number,
+                        "title": scope.github_milestone_title,
+                    }
+                )
         is_valid = form.validate_on_submit()
 
     if request.method == "POST":
         if is_valid:
-            enable_integration, repo_payload = validate_github_settings(
+            (
+                enable_integration,
+                repo_payload,
+                project_payload,
+                milestone_payload,
+            ) = validate_github_settings(
                 form, token_available=bool(get_user_github_token(g.user))
             )
 
@@ -346,10 +390,26 @@ def edit_scope(scope_id: int):
                 scope.github_repo_id = repo_payload.get("id")
                 scope.github_repo_name = repo_payload.get("name")
                 scope.github_repo_owner = repo_payload.get("owner")
+                if project_payload:
+                    scope.github_project_id = project_payload.get("id")
+                    scope.github_project_name = project_payload.get("name")
+                else:
+                    scope.github_project_id = None
+                    scope.github_project_name = None
+                if milestone_payload:
+                    scope.github_milestone_number = milestone_payload.get("number")
+                    scope.github_milestone_title = milestone_payload.get("title")
+                else:
+                    scope.github_milestone_number = None
+                    scope.github_milestone_title = None
             else:
                 scope.github_repo_id = None
                 scope.github_repo_name = None
                 scope.github_repo_owner = None
+                scope.github_project_id = None
+                scope.github_project_name = None
+                scope.github_milestone_number = None
+                scope.github_milestone_title = None
 
             try:
                 db.session.commit()

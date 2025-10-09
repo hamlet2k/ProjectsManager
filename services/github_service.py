@@ -17,6 +17,8 @@ from flask import current_app
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_APP_LABEL = "ProjectsManager"
 MISSING_ISSUE_STATUS_CODES = {404, 410}
+PROJECTS_ACCEPT_HEADER = "application/vnd.github+json, application/vnd.github.inertia-preview+json"
+UNSET = object()
 
 
 class GitHubError(RuntimeError):
@@ -47,6 +49,9 @@ class GitHubIssue:
     url: str
     state: str
     labels: List[str]
+    milestone_number: Optional[int]
+    milestone_title: str
+    milestone_state: Optional[str]
 
 
 def _get_fernet() -> Fernet:
@@ -80,22 +85,34 @@ def decrypt_token(token_encrypted: Optional[bytes]) -> Optional[str]:
         return None
 
 
-def _headers(token: str) -> Dict[str, str]:
+def _headers(token: str, *, accept: Optional[str] = None) -> Dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
+        "Accept": accept or "application/vnd.github+json",
         "User-Agent": "ProjectsManager-Integration",
         "Content-Type": "application/json",
     }
 
 
-def _request(method: str, endpoint: str, token: str, payload: Optional[dict] = None) -> Tuple[int, Any]:
+def _request(
+    method: str,
+    endpoint: str,
+    token: str,
+    payload: Optional[dict] = None,
+    *,
+    accept: Optional[str] = None,
+) -> Tuple[int, Any]:
     url = endpoint if endpoint.startswith("http") else f"{GITHUB_API_BASE}{endpoint}"
     data = None
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
 
-    request = urllib_request.Request(url, data=data, headers=_headers(token), method=method)
+    request = urllib_request.Request(
+        url,
+        data=data,
+        headers=_headers(token, accept=accept),
+        method=method,
+    )
     try:
         with urllib_request.urlopen(request, timeout=20) as response:
             status = response.getcode()
@@ -143,6 +160,66 @@ def list_repositories(token: str) -> List[GitHubRepository]:
     return repos
 
 
+def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+    projects: List[Dict[str, Any]] = []
+    page = 1
+    while True:
+        status, payload = _request(
+            "GET",
+            f"/repos/{owner}/{repo}/projects?per_page=100&page={page}",
+            token,
+            accept=PROJECTS_ACCEPT_HEADER,
+        )
+        if status in (401, 403):
+            raise GitHubError("Unauthorized", status)
+        if status == 404:
+            raise GitHubError("Repository not found", status)
+        if status >= 400:
+            raise GitHubError("Unable to list projects", status)
+        if not isinstance(payload, list) or not payload:
+            break
+        for project in payload:
+            identifier = project.get("id")
+            if identifier is None:
+                continue
+            name = project.get("name") or project.get("body") or f"Project #{identifier}"
+            projects.append({"id": identifier, "name": name})
+        if len(payload) < 100:
+            break
+        page += 1
+    return projects
+
+
+def list_repository_milestones(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+    milestones: List[Dict[str, Any]] = []
+    page = 1
+    while True:
+        status, payload = _request(
+            "GET",
+            f"/repos/{owner}/{repo}/milestones?state=all&per_page=100&page={page}",
+            token,
+        )
+        if status in (401, 403):
+            raise GitHubError("Unauthorized", status)
+        if status == 404:
+            raise GitHubError("Repository not found", status)
+        if status >= 400:
+            raise GitHubError("Unable to list milestones", status)
+        if not isinstance(payload, list) or not payload:
+            break
+        for milestone in payload:
+            number = milestone.get("number")
+            if number is None:
+                continue
+            title = milestone.get("title") or f"Milestone #{number}"
+            state = milestone.get("state") or "open"
+            milestones.append({"number": number, "title": title, "state": state})
+        if len(payload) < 100:
+            break
+        page += 1
+    return milestones
+
+
 def _ensure_label(token: str, owner: str, repo: str, label: str) -> None:
     endpoint = f"/repos/{owner}/{repo}/labels/{quote(label)}"
     status, _ = _request("GET", endpoint, token)
@@ -163,16 +240,32 @@ def ensure_labels(token: str, owner: str, repo: str, labels: Iterable[str]) -> N
         _ensure_label(token, owner, repo, label)
 
 
-def create_issue(token: str, owner: str, repo: str, title: str, body: str, labels: Iterable[str]) -> GitHubIssue:
+def create_issue(
+    token: str,
+    owner: str,
+    repo: str,
+    title: str,
+    body: str,
+    labels: Iterable[str],
+    milestone: Optional[int] = None,
+) -> GitHubIssue:
     all_labels = set(labels)
     all_labels.add(GITHUB_APP_LABEL)
     ensure_labels(token, owner, repo, all_labels)
+
+    payload: Dict[str, Any] = {
+        "title": title,
+        "body": body,
+        "labels": sorted(all_labels),
+    }
+    if milestone is not None:
+        payload["milestone"] = milestone
 
     status, payload = _request(
         "POST",
         f"/repos/{owner}/{repo}/issues",
         token,
-        payload={"title": title, "body": body, "labels": sorted(all_labels)},
+        payload=payload,
     )
     if status in (401, 403):
         raise GitHubError("Unauthorized", status)
@@ -180,6 +273,7 @@ def create_issue(token: str, owner: str, repo: str, title: str, body: str, label
         raise GitHubError("Repository not found", status)
     if status >= 400:
         raise GitHubError("Unable to create issue", status)
+    milestone_payload = payload.get("milestone") or {}
     return GitHubIssue(
         id=payload["id"],
         number=payload["number"],
@@ -188,6 +282,9 @@ def create_issue(token: str, owner: str, repo: str, title: str, body: str, label
         url=payload.get("html_url", ""),
         state=payload.get("state", "open"),
         labels=[label.get("name") for label in payload.get("labels", [])],
+        milestone_number=milestone_payload.get("number"),
+        milestone_title=milestone_payload.get("title") or "",
+        milestone_state=milestone_payload.get("state"),
     )
 
 
@@ -199,6 +296,7 @@ def fetch_issue(token: str, owner: str, repo: str, issue_number: int) -> GitHubI
         raise GitHubError("Unauthorized", status)
     if status >= 400:
         raise GitHubError("Unable to fetch issue", status)
+    milestone_payload = payload.get("milestone") or {}
     return GitHubIssue(
         id=payload["id"],
         number=payload["number"],
@@ -207,10 +305,24 @@ def fetch_issue(token: str, owner: str, repo: str, issue_number: int) -> GitHubI
         url=payload.get("html_url", ""),
         state=payload.get("state", "open"),
         labels=[label.get("name") for label in payload.get("labels", [])],
+        milestone_number=milestone_payload.get("number"),
+        milestone_title=milestone_payload.get("title") or "",
+        milestone_state=milestone_payload.get("state"),
     )
 
 
-def update_issue(token: str, owner: str, repo: str, issue_number: int, *, title: Optional[str] = None, body: Optional[str] = None, labels: Optional[Iterable[str]] = None, state: Optional[str] = None) -> GitHubIssue:
+def update_issue(
+    token: str,
+    owner: str,
+    repo: str,
+    issue_number: int,
+    *,
+    title: Optional[str] = None,
+    body: Optional[str] = None,
+    labels: Optional[Iterable[str]] = None,
+    state: Optional[str] = None,
+    milestone: object = UNSET,
+) -> GitHubIssue:
     payload: Dict[str, object] = {}
     if title is not None:
         payload["title"] = title
@@ -223,6 +335,8 @@ def update_issue(token: str, owner: str, repo: str, issue_number: int, *, title:
         payload["labels"] = sorted(combined_labels)
     if state is not None:
         payload["state"] = state
+    if milestone is not UNSET:
+        payload["milestone"] = milestone
 
     status, data = _request("PATCH", f"/repos/{owner}/{repo}/issues/{issue_number}", token, payload=payload)
     if status in MISSING_ISSUE_STATUS_CODES:
@@ -231,6 +345,7 @@ def update_issue(token: str, owner: str, repo: str, issue_number: int, *, title:
         raise GitHubError("Unauthorized", status)
     if status >= 400:
         raise GitHubError("Unable to update issue", status)
+    milestone_payload = data.get("milestone") or {}
     return GitHubIssue(
         id=data["id"],
         number=data["number"],
@@ -239,6 +354,9 @@ def update_issue(token: str, owner: str, repo: str, issue_number: int, *, title:
         url=data.get("html_url", ""),
         state=data.get("state", "open"),
         labels=[label.get("name") for label in data.get("labels", [])],
+        milestone_number=milestone_payload.get("number"),
+        milestone_title=milestone_payload.get("title") or "",
+        milestone_state=milestone_payload.get("state"),
     )
 
 
@@ -278,3 +396,37 @@ def remove_label_from_issue(token: str, owner: str, repo: str, issue_number: int
     if isinstance(payload, list):
         return [entry.get("name") for entry in payload if isinstance(entry, dict) and entry.get("name")]
     return []
+
+
+def add_issue_to_project(token: str, project_id: int, issue_id: int) -> None:
+    status, columns = _request(
+        "GET",
+        f"/projects/{project_id}/columns",
+        token,
+        accept=PROJECTS_ACCEPT_HEADER,
+    )
+    if status in (401, 403):
+        raise GitHubError("Unauthorized", status)
+    if status == 404:
+        raise GitHubError("Project not found", status)
+    if status >= 400:
+        raise GitHubError("Unable to list project columns", status)
+    if not isinstance(columns, list) or not columns:
+        raise GitHubError("Project has no columns", status)
+    column_id = columns[0].get("id")
+    if not column_id:
+        raise GitHubError("Project column identifier is missing", status)
+
+    create_status, _ = _request(
+        "POST",
+        f"/projects/columns/{column_id}/cards",
+        token,
+        payload={"content_id": issue_id, "content_type": "Issue"},
+        accept=PROJECTS_ACCEPT_HEADER,
+    )
+    if create_status in (401, 403):
+        raise GitHubError("Unauthorized", create_status)
+    if create_status == 404:
+        raise GitHubError("Project column not found", create_status)
+    if create_status not in (200, 201, 202, 204, 422):
+        raise GitHubError("Unable to add issue to project", create_status)

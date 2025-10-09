@@ -500,6 +500,14 @@
                     {% set end_date_error = task_form.end_date.errors[0] if task_form.end_date.errors else '' %}
                     <div class="invalid-feedback {% if not end_date_error %}d-none{% endif %}" data-feedback-for="end_date">{{ end_date_error }}</div>
                 </div>
+                <div class="mb-3 d-none" id="task-github-milestone-container" data-github-milestone-container>
+                    <label class="form-label" for="task-github-milestone-select">GitHub Milestone</label>
+                    {{ task_form.github_milestone(class_='form-select', id='task-github-milestone-select', **{'data-field': 'github_milestone'}) }}
+                    <div class="form-text">Update the milestone assigned to the linked GitHub issue.</div>
+                </div>
+                <div class="alert alert-warning py-2 px-3 d-none" data-task-github-milestone-warning role="alert">
+                    Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
+                </div>
                 <div class="mb-3">
                     <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
                     <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
@@ -625,6 +633,9 @@
     const nameField = document.getElementById('name');
     const descriptionField = document.getElementById('description');
     const endDateField = document.getElementById('end_date');
+    const githubMilestoneContainer = document.querySelector('[data-github-milestone-container]');
+    const githubMilestoneSelect = document.getElementById('task-github-milestone-select');
+    const githubMilestoneWarning = document.querySelector('[data-task-github-milestone-warning]');
     const tagsField = document.getElementById('tags');
     const inlineTagOptions = document.getElementById('task-inline-tag-options');
     const inlineTagEmpty = document.getElementById('task-inline-tag-empty');
@@ -676,6 +687,22 @@
         }
         return null;
     }
+
+    const TASK_SCOPE_GITHUB = (function () {
+        const container = getTaskGroupsContainer();
+        if (!container) {
+            return { owner: '', name: '', milestoneNumber: '', milestoneTitle: '' };
+        }
+        return {
+            owner: container.dataset.scopeGithubOwner || '',
+            name: container.dataset.scopeGithubName || '',
+            milestoneNumber: container.dataset.scopeGithubMilestoneNumber || '',
+            milestoneTitle: container.dataset.scopeGithubMilestoneTitle || '',
+        };
+    })();
+
+    const milestoneCache = new Map();
+    let activeMilestoneRequestKey = null;
 
     function persistTaskPreferences() {
         const scopeId = getCurrentScopeId();
@@ -2236,6 +2263,10 @@
             .filter((value) => value.length > 0);
     }
 
+    const defaultMilestoneWarningMessage = githubMilestoneWarning
+        ? githubMilestoneWarning.textContent.trim()
+        : '';
+
     function getTaskDataFromButton(button) {
         if (!button) {
             return {};
@@ -2250,8 +2281,218 @@
             tag_ids: parseTaskTagString(tagString),
             has_github_issue: button.getAttribute('data-task-has-github') === 'true',
             github_issue_state: button.getAttribute('data-task-github-state') || '',
+            github_repo_owner: button.getAttribute('data-task-github-owner') || '',
+            github_repo_name: button.getAttribute('data-task-github-name') || '',
+            github_milestone_number:
+                button.getAttribute('data-task-github-milestone-number') || '',
+            github_milestone_title:
+                button.getAttribute('data-task-github-milestone-title') || '',
         };
     }
+
+    function hideMilestoneWarning() {
+        if (!githubMilestoneWarning) {
+            return;
+        }
+        githubMilestoneWarning.classList.add('d-none');
+        if (defaultMilestoneWarningMessage) {
+            githubMilestoneWarning.textContent = defaultMilestoneWarningMessage;
+        }
+    }
+
+    function showMilestoneWarning(message) {
+        if (!githubMilestoneWarning) {
+            return;
+        }
+        githubMilestoneWarning.textContent = message || defaultMilestoneWarningMessage || '';
+        githubMilestoneWarning.classList.remove('d-none');
+    }
+
+    function resetMilestoneSelect() {
+        if (!githubMilestoneSelect) {
+            return;
+        }
+        githubMilestoneSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a milestone';
+        githubMilestoneSelect.appendChild(placeholder);
+        githubMilestoneSelect.value = '';
+    }
+
+    function hideMilestoneField() {
+        if (githubMilestoneContainer) {
+            githubMilestoneContainer.classList.add('d-none');
+        }
+        hideMilestoneWarning();
+        resetMilestoneSelect();
+        if (githubMilestoneSelect) {
+            githubMilestoneSelect.disabled = true;
+        }
+    }
+
+    function showMilestoneField() {
+        if (githubMilestoneContainer) {
+            githubMilestoneContainer.classList.remove('d-none');
+        }
+    }
+
+    function setMilestoneSelectLoading(isLoading) {
+        if (!githubMilestoneSelect) {
+            return;
+        }
+        if (isLoading) {
+            githubMilestoneSelect.disabled = true;
+            githubMilestoneSelect.innerHTML = '';
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Loading milestones...';
+            githubMilestoneSelect.appendChild(option);
+        }
+    }
+
+    function applyMilestoneOptions(milestones, currentNumber, currentTitle) {
+        if (!githubMilestoneSelect) {
+            return;
+        }
+        githubMilestoneSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a milestone';
+        githubMilestoneSelect.appendChild(placeholder);
+
+        const targetNumber = currentNumber ? String(currentNumber) : '';
+        let hasSelected = false;
+
+        milestones.forEach((milestone) => {
+            if (!milestone || typeof milestone !== 'object') {
+                return;
+            }
+            const { number, title, state } = milestone;
+            if (typeof number !== 'number') {
+                return;
+            }
+            const option = document.createElement('option');
+            option.value = JSON.stringify(milestone);
+            const stateLabel = state && String(state).toLowerCase() === 'closed' ? ' (closed)' : '';
+            option.textContent = `${title || `Milestone #${number}`}${stateLabel}`;
+            if (String(number) === targetNumber) {
+                option.selected = true;
+                hasSelected = true;
+            }
+            githubMilestoneSelect.appendChild(option);
+        });
+
+        if (!hasSelected && targetNumber) {
+            const fallback = document.createElement('option');
+            const parsedNumber = Number(targetNumber);
+            fallback.value = JSON.stringify({
+                number: parsedNumber,
+                title: currentTitle || `Milestone #${targetNumber}`,
+                state: 'open',
+            });
+            fallback.textContent = currentTitle || `Milestone #${targetNumber}`;
+            fallback.selected = true;
+            githubMilestoneSelect.appendChild(fallback);
+        }
+
+        githubMilestoneSelect.disabled = false;
+    }
+
+    function populateMilestoneSelectForRepo(owner, name, currentNumber, currentTitle) {
+        if (!githubMilestoneSelect) {
+            return;
+        }
+        const normalizedOwner = (owner || '').trim();
+        const normalizedName = (name || '').trim();
+        if (!normalizedOwner || !normalizedName) {
+            hideMilestoneField();
+            return;
+        }
+
+        showMilestoneField();
+        hideMilestoneWarning();
+        const cacheKey = `${normalizedOwner}/${normalizedName}`.toLowerCase();
+        activeMilestoneRequestKey = cacheKey;
+
+        const cached = milestoneCache.get(cacheKey);
+        if (cached) {
+            applyMilestoneOptions(cached, currentNumber, currentTitle);
+            return;
+        }
+
+        setMilestoneSelectLoading(true);
+        fetch('/api/github/milestones', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ repository: { owner: normalizedOwner, name: normalizedName } }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                if (activeMilestoneRequestKey !== cacheKey) {
+                    return;
+                }
+                if (!ok || !data || data.success !== true || !Array.isArray(data.milestones)) {
+                    const message = (data && data.message) || 'Unable to load GitHub milestones.';
+                    if (data && data.permission_error) {
+                        showMilestoneWarning(message);
+                    } else if (typeof displayFlashMessage === 'function') {
+                        displayFlashMessage(message, 'danger');
+                    }
+                    resetMilestoneSelect();
+                    if (currentNumber) {
+                        applyMilestoneOptions([], currentNumber, currentTitle);
+                    }
+                    githubMilestoneSelect.disabled = true;
+                    return;
+                }
+                milestoneCache.set(cacheKey, data.milestones);
+                applyMilestoneOptions(data.milestones, currentNumber, currentTitle);
+            })
+            .catch((error) => {
+                if (activeMilestoneRequestKey !== cacheKey) {
+                    return;
+                }
+                console.error('Unable to load GitHub milestones.', error);
+                if (typeof displayFlashMessage === 'function') {
+                    displayFlashMessage('Unable to load GitHub milestones.', 'danger');
+                }
+                resetMilestoneSelect();
+                if (currentNumber) {
+                    applyMilestoneOptions([], currentNumber, currentTitle);
+                }
+                githubMilestoneSelect.disabled = true;
+            })
+            .finally(() => {
+                if (activeMilestoneRequestKey === cacheKey && githubMilestoneSelect.options.length <= 1) {
+                    githubMilestoneSelect.disabled = true;
+                }
+            });
+    }
+
+    function prepareGitHubMilestoneField(taskData) {
+        if (!githubMilestoneSelect || !githubMilestoneContainer) {
+            return;
+        }
+        if (!taskData || !taskData.has_github_issue) {
+            hideMilestoneField();
+            return;
+        }
+        const owner = taskData.github_repo_owner || TASK_SCOPE_GITHUB.owner;
+        const name = taskData.github_repo_name || TASK_SCOPE_GITHUB.name;
+        const currentNumber = taskData.github_milestone_number || '';
+        const currentTitle = taskData.github_milestone_title || '';
+        populateMilestoneSelectForRepo(owner, name, currentNumber, currentTitle);
+    }
+
 
     function applyTaskDataToButton(button, taskData) {
         if (!button || !taskData) {
@@ -2285,6 +2526,31 @@
         if (Object.prototype.hasOwnProperty.call(taskData, 'github_issue_state')) {
             button.dataset.taskGithubState = taskData.github_issue_state || '';
         }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'github_repo_owner')) {
+            button.dataset.taskGithubOwner = taskData.github_repo_owner || '';
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'github_repo_name')) {
+            button.dataset.taskGithubName = taskData.github_repo_name || '';
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'github_milestone_number')) {
+            const milestoneNumber =
+                taskData.github_milestone_number === null || taskData.github_milestone_number === undefined
+                    ? ''
+                    : String(taskData.github_milestone_number);
+            if (milestoneNumber) {
+                button.dataset.taskGithubMilestoneNumber = milestoneNumber;
+            } else {
+                button.removeAttribute('data-task-github-milestone-number');
+            }
+        }
+        if (Object.prototype.hasOwnProperty.call(taskData, 'github_milestone_title')) {
+            const milestoneTitle = taskData.github_milestone_title || '';
+            if (milestoneTitle) {
+                button.dataset.taskGithubMilestoneTitle = milestoneTitle;
+            } else {
+                button.removeAttribute('data-task-github-milestone-title');
+            }
+        }
     }
 
     function openTaskEditForm(button) {
@@ -2297,6 +2563,7 @@
         }
 
         editingTaskHasGithub = taskData.has_github_issue;
+        prepareGitHubMilestoneField(taskData);
 
         if (descriptionField) {
             descriptionField.value = taskData.description || '';
@@ -2598,6 +2865,43 @@
                                 ? `GitHub issue ${issueNumber} synced.`
                                 : `GitHub issue ${issueNumber} created.`;
                             displayFlashMessage(message.trim(), 'success');
+                            const milestoneInfo = issue.milestone || null;
+                            if (milestoneInfo && typeof milestoneInfo === 'object') {
+                                const { number: milestoneNumber, title: milestoneTitle } = milestoneInfo;
+                                if (milestoneNumber !== null && milestoneNumber !== undefined) {
+                                    button.dataset.taskGithubMilestoneNumber = String(milestoneNumber);
+                                    button.dataset.taskGithubMilestoneTitle = milestoneTitle || '';
+                                } else {
+                                    button.removeAttribute('data-task-github-milestone-number');
+                                    button.removeAttribute('data-task-github-milestone-title');
+                                }
+                            }
+                        }
+                        if (Array.isArray(data.warnings)) {
+                            data.warnings
+                                .filter((warning) => typeof warning === 'string' && warning.trim())
+                                .forEach((warning) => {
+                                    displayFlashMessage(warning.trim(), 'warning');
+                                });
+                        }
+                        if (data.task && typeof data.task === 'object') {
+                            applyTaskDataToButton(button, {
+                                github_issue_state: data.task.github_issue_state || '',
+                                has_github_issue:
+                                    typeof data.task.has_github_issue === 'boolean'
+                                        ? data.task.has_github_issue
+                                        : button.dataset.taskHasGithub === 'true',
+                                github_milestone_number:
+                                    data.task.github_milestone_number !== undefined
+                                        ? data.task.github_milestone_number
+                                        : button.getAttribute('data-task-github-milestone-number') || '',
+                                github_milestone_title:
+                                    data.task.github_milestone_title !== undefined
+                                        ? data.task.github_milestone_title
+                                        : button.getAttribute('data-task-github-milestone-title') || '',
+                                github_repo_owner: data.task.github_repo_owner || button.dataset.taskGithubOwner || '',
+                                github_repo_name: data.task.github_repo_name || button.dataset.taskGithubName || '',
+                            });
                         }
                         refreshTaskList().catch((error) => {
                             console.error('Unable to refresh tasks after GitHub action', error);
@@ -2868,6 +3172,7 @@
                 attachTaskCopyListeners();
                 attachGroupCopyListeners();
                 attachGroupAddListeners();
+                hideMilestoneField();
                 syncChevronStates();
                 updateDateDisplays();
                 applyTagFilters();
@@ -2881,6 +3186,7 @@
     initializeSortableGroups();
     hydrateAvailableTagsFromFilter();
     setInlineTagsFromString(tagsField ? tagsField.value : '');
+    hideMilestoneField();
     attachTaskCompleteListeners();
     attachEditTaskListeners();
     attachTagManagerListeners();

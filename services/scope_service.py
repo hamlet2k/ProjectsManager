@@ -56,14 +56,23 @@ def has_user_github_token(user: User | None) -> bool:
     return bool(get_user_github_token(user))
 
 
-def validate_github_settings(form: Any, *, token_available: bool) -> tuple[bool, Optional[dict[str, Any]]]:
+def validate_github_settings(
+    form: Any, *, token_available: bool
+) -> tuple[
+    bool,
+    Optional[dict[str, Any]],
+    Optional[dict[str, Any]],
+    Optional[dict[str, Any]],
+]:
     """Validate GitHub integration fields on the given form.
 
-    Returns a tuple of the desired integration state and parsed repository payload.
+    Returns a tuple of the desired integration state and parsed repository payloads.
     Validation errors are appended directly to the provided form fields.
     """
     enable_integration = bool(getattr(form, "github_enabled").data)
     repo_payload: Optional[dict[str, Any]] = None
+    project_payload: Optional[dict[str, Any]] = None
+    milestone_payload: Optional[dict[str, Any]] = None
 
     if enable_integration:
         if not token_available:
@@ -80,7 +89,22 @@ def validate_github_settings(form: Any, *, token_available: bool) -> tuple[bool,
                 repo_payload = json.loads(repo_value)
             except ValueError:
                 form.github_repository.errors.append("Invalid repository selection.")
-    return enable_integration, repo_payload
+
+        project_value = (getattr(form, "github_project").data or "").strip()
+        if project_value:
+            try:
+                project_payload = json.loads(project_value)
+            except ValueError:
+                form.github_project.errors.append("Invalid project selection.")
+
+        milestone_value = (getattr(form, "github_milestone").data or "").strip()
+        if milestone_value:
+            try:
+                milestone_payload = json.loads(milestone_value)
+            except ValueError:
+                form.github_milestone.errors.append("Invalid milestone selection.")
+
+    return enable_integration, repo_payload, project_payload, milestone_payload
 
 
 def build_scope_page_context(
@@ -140,6 +164,8 @@ def build_scope_form_initial_state(form: Any) -> dict[str, Any]:
         "description": getattr(form, "description", None).data or "",
         "github_enabled": bool(getattr(form, "github_enabled", None).data),
         "github_repository": getattr(form, "github_repository", None).data or "",
+        "github_project": getattr(form, "github_project", None).data or "",
+        "github_milestone": getattr(form, "github_milestone", None).data or "",
     }
     return {"data": data, "errors": errors}
 
@@ -158,6 +184,18 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
             "owner": scope.github_repo_owner,
             "label": f"{scope.github_repo_owner}/{scope.github_repo_name}",
         }
+    project = None
+    if scope.github_project_id and scope.github_project_name:
+        project = {
+            "id": scope.github_project_id,
+            "name": scope.github_project_name,
+        }
+    milestone = None
+    if scope.github_milestone_number and scope.github_milestone_title:
+        milestone = {
+            "number": scope.github_milestone_number,
+            "title": scope.github_milestone_title,
+        }
 
     return {
         "id": scope.id,
@@ -168,4 +206,6 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "is_shared": not is_owner,
         "github_integration_enabled": bool(scope.github_integration_enabled),
         "github_repository": repo,
+        "github_project": project,
+        "github_milestone": milestone,
     }

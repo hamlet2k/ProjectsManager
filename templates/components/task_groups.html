@@ -1,4 +1,4 @@
-<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}" data-scope-id="{{ g.scope.id if g.scope else '' }}">
+<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}" data-scope-id="{{ g.scope.id if g.scope else '' }}" data-scope-github-owner="{{ g.scope.github_repo_owner if g.scope else '' }}" data-scope-github-name="{{ g.scope.github_repo_name if g.scope else '' }}" data-scope-github-milestone-number="{{ g.scope.github_milestone_number if g.scope else '' }}" data-scope-github-milestone-title="{{ g.scope.github_milestone_title if g.scope else '' }}">
     {% set ns = namespace(has_tasks=false) %}
     {% for group in task_groups %}
         {% if group.tasks %}
@@ -130,6 +130,10 @@
                                         data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
                                         data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
                                         data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                                        data-task-github-owner="{{ task.github_repo_owner or '' }}"
+                                        data-task-github-name="{{ task.github_repo_name or '' }}"
+                                        data-task-github-milestone-number="{{ task.github_milestone_number or '' }}"
+                                        data-task-github-milestone-title="{{ task.github_milestone_title or '' }}"
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>

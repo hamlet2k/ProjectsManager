@@ -38,6 +38,8 @@ class Task(db.Model):
     github_repo_id = db.Column(db.BigInteger, nullable=True)
     github_repo_name = db.Column(db.String(200), nullable=True)
     github_repo_owner = db.Column(db.String(200), nullable=True)
+    github_milestone_number = db.Column(db.Integer, nullable=True)
+    github_milestone_title = db.Column(db.String(200), nullable=True)
 
     scope_id = db.Column(db.Integer, db.ForeignKey('scope.id'), nullable=True)
     subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True, cascade="all, delete-orphan")
