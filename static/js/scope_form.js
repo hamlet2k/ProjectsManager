@@ -202,15 +202,35 @@
         state.formMode = 'edit';
         state.editingScopeId = trigger.dataset.scopeId || null;
         state.activeTrigger = trigger;
-        state.formValues = {
+        state.formValues = readScopeValuesFromTrigger(trigger);
+    }
+
+    function readScopeValuesFromTrigger(trigger) {
+        if (!trigger) {
+            return { ...getDefaultFormValues() };
+        }
+        const repoAttribute = trigger.getAttribute('data-scope-github_repository') || '';
+        return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
             github_enabled: (trigger.getAttribute('data-scope-github_enabled') || '').toLowerCase() === 'true',
-            github_repository: trigger.getAttribute('data-scope-github_repository') || '',
+            github_repository: repoAttribute,
         };
     }
 
-    function handleModalShow() {
+    function handleModalShow(event) {
+        const trigger = (event && event.relatedTarget) || state.activeTrigger || null;
+        if (trigger && trigger.classList.contains('edit-scope-btn')) {
+            state.formMode = 'edit';
+            state.editingScopeId = trigger.getAttribute('data-scope-id') || state.editingScopeId;
+            state.activeTrigger = trigger;
+            state.formValues = readScopeValuesFromTrigger(trigger);
+        } else if (!state.formMode || state.formMode === 'edit') {
+            state.formMode = 'create';
+            state.editingScopeId = null;
+            state.activeTrigger = trigger;
+        }
+
         if (state.formMode === 'edit') {
             applyFormValues(state.formValues || getDefaultFormValues());
             applyFormErrors(state.form, {});
