@@ -21,13 +21,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
 from urllib.parse import urlparse
 def safe_redirect(referrer, fallback_endpoint):
-    """Redirect to referrer if it's a safe internal (relative) URL, otherwise to fallback endpoint."""
+    """Redirect to referrer if it's a safe internal URL, otherwise to fallback endpoint."""
     if not referrer:
         return redirect(url_for(fallback_endpoint))
-    sanitized_referrer = referrer.replace('\\', '')
-    test_url = urlparse(sanitized_referrer)
-    if not test_url.scheme and not test_url.netloc:
-        return redirect(sanitized_referrer)
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(referrer)
+    if test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc:
+        return redirect(referrer)
     return redirect(url_for(fallback_endpoint))
 
 from database import db
