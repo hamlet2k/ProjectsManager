@@ -164,6 +164,41 @@
                                             <span class="due-date" data-utc-date="{{ task.end_date.isoformat() }}"></span>
                                         </div>
                                     {% endif %}
+                                    {% if task.has_github_issue %}
+                                        <div class="task-meta d-flex flex-wrap align-items-center gap-2"
+                                             data-task-github-milestone-display
+                                             data-task-id="{{ task.id }}">
+                                            <i class="bi bi-signpost-2"></i>
+                                            <div class="d-flex flex-column">
+                                                <span class="text-muted small">GitHub milestone</span>
+                                                {% if task.github_milestone_title %}
+                                                    <span class="fw-semibold" data-task-github-milestone-label>
+                                                        {{ task.github_milestone_title }}
+                                                    </span>
+                                                {% else %}
+                                                    <span class="fst-italic text-muted" data-task-github-milestone-label>
+                                                        No milestone assigned
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+                                            <button type="button"
+                                                    class="btn btn-link btn-sm ms-auto text-decoration-none edit-task-btn"
+                                                    data-task-id="{{ task.id }}"
+                                                    data-task-name="{{ task.name | e }}"
+                                                    data-task-description="{{ task.description | default('') | e }}"
+                                                    data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
+                                                    data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
+                                                    data-task-has-github="true"
+                                                    data-task-github-owner="{{ task.github_repo_owner or '' }}"
+                                                    data-task-github-name="{{ task.github_repo_name or '' }}"
+                                                    data-task-github-state="{{ task.github_issue_state or '' }}"
+                                                    data-task-github-milestone-number="{{ task.github_milestone_number or '' }}"
+                                                    data-task-github-milestone-title="{{ task.github_milestone_title or '' }}"
+                                                    aria-label="Edit milestone for {{ task.name | e }}">
+                                                Edit milestone
+                                            </button>
+                                        </div>
+                                    {% endif %}
                                     {% if task.completed_date %}
                                         <div class="task-meta d-inline-flex align-items-center gap-2">
                                             <i class="bi bi-flag"></i>
