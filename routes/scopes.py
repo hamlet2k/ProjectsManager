@@ -100,7 +100,8 @@ def _validate_csrf_token(form: ScopeForm, token: str | None) -> bool:
         try:
             validate_csrf(token)
         except ValidationError as exc:
-            message = str(exc)
+            # Optionally log exc, but do not expose details to the user
+            message = "The CSRF token is invalid or has expired. Please refresh and try again."
         except Exception:
             message = "The CSRF token is invalid."
     if message:
