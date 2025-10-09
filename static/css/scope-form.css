@@ -1,0 +1,61 @@
+/* Scope Form Animations */
+
+.github-scope-settings {
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding 0.3s ease-in-out, margin 0.3s ease-in-out;
+    opacity: 1;
+    max-height: 1000px; /* Large enough to accommodate content */
+    padding-top: inherit;
+    padding-bottom: inherit;
+    margin-top: inherit;
+    margin-bottom: inherit;
+}
+
+.github-scope-settings.collapsed {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Ensure smooth transitions for child elements */
+.github-scope-settings > * {
+    transition: opacity 0.25s ease-in-out;
+}
+
+.github-scope-settings.collapsed > * {
+    opacity: 0;
+}
+
+/* Enhanced form transitions */
+.form-check-input {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Initial hidden state - start collapsed if toggle is not checked */
+.github-scope-settings:not(.collapsed) {
+    display: block !important;
+}
+
+/* Smooth transitions for alerts and warnings */
+.alert {
+    transition: all 0.3s ease-in-out;
+}
+
+/* Animation for repository select dropdown */
+.form-select {
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+/* Media query for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    .github-scope-settings,
+    .github-scope-settings > *,
+    .form-check-input,
+    .alert,
+    .form-select {
+        transition: none;
+    }
+}

@@ -1,5 +1,5 @@
 # ProjectsManager — TODO
-_Last updated: 2025-09-26 18:57:24_
+_Last updated: 2025-10-09 14:30:00_
 
 A single, living backlog for this project. Keep it terse and implementation-friendly. Check items off and move them between sections as we go.
 
@@ -31,6 +31,8 @@ A single, living backlog for this project. Keep it terse and implementation-frie
 
 ## 🧩 Improvements
 
+- [x] Refactor scopes page into a modular blueprint with supporting services. _(2025-10-02)_
+- [x] Extract scope modal logic into `static/js/scope_form.js` with AJAX lifecycle and dynamic list updates. _(2025-10-09)_
 - [ ] Add a menu always visible on top, when the screen has longer content than it can render, that dynamically displays all the sections on top; clicking on the sections scrolls down to the section.
 - [ ] When scrolling down the page, collapse the filters into a pill that remains always on top beside the add new task floating component; when clicked, expand the filters floating on the top of the screen.
 - [ ] Make the add tag floating on top of the screen always visible despite scrolling.

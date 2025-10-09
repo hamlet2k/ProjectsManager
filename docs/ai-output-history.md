@@ -76,3 +76,9 @@ The application has a solid foundation but requires attention to security and bu
 --------------------------------------------------------
 --------------------------------------------------------
 2025-10-01 – UI polish: unified modal styling, confirmation modals, task AJAX + filter retention, and copy updates.
+--------------------------------------------------------
+2025-10-02 – Refactored scope management into a blueprint with supporting services, refreshed UI, and updated docs/todo entries.
+--------------------------------------------------------
+2025-10-09 – Fixed scope deletion flow to clear stale selections and keep users on the scopes page without 404s.
+--------------------------------------------------------
+2025-10-09 – Modularized scope form lifecycle into dedicated JS with AJAX submissions, updated scope blueprint responses, and refreshed template state handling.

@@ -42,7 +42,6 @@ from models.user import User
 from models.sync_log import SyncLog
 
 from forms import (
-    ScopeForm,
     TaskForm,
     SignupForm,
     LoginForm,
@@ -63,6 +62,8 @@ from services.github_service import (
     close_issue,
     remove_label_from_issue,
 )
+from services.scope_service import get_user_github_token, user_can_access_scope, user_owns_scope
+from routes.scopes import scopes_bp
 
 LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
@@ -77,6 +78,7 @@ GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
 # Run the update
 # > flask db upgrade
 migrate = Migrate(app, db)
+app.register_blueprint(scopes_bp)
 
 # User Authentication
 # ------------------------------
@@ -291,7 +293,7 @@ app.jinja_env.filters["dateformat"] = dateformat
 # ------------------------------
 @app.route("/")
 def home():
-    return redirect(url_for("scope"))
+    return redirect(url_for("scopes.list_scopes"))
 
 
 # Themes
@@ -350,7 +352,7 @@ def load_scope():
     scope_selected = session.get("selected_scope")
     if scope_selected and g.user:
         scope = Scope.query.get(scope_selected)
-        if scope and _user_can_access_scope(scope):
+        if scope and user_can_access_scope(g.user, scope):
             g.scope = scope
             return
         session.pop("selected_scope", None)
@@ -359,53 +361,11 @@ def load_scope():
 def scope_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not g.scope or not _user_can_access_scope(g.scope):
+        if not g.scope or not user_can_access_scope(g.user, g.scope):
             flash("Please select a valid scope", "warning")
             return redirect(request.referrer or url_for("home"))
         return f(*args, **kwargs)
     return decorated_function
-
-
-def _user_can_access_scope(scope: Scope) -> bool:
-    if g.user is None or scope is None:
-        return False
-    if scope.owner_id == g.user.id:
-        return True
-    return any(shared_scope.id == scope.id for shared_scope in g.user.scopes)
-
-
-def _user_owns_scope(scope: Scope) -> bool:
-    return g.user is not None and scope is not None and scope.owner_id == g.user.id
-
-
-def _serialize_task_for_clipboard(task: Task) -> dict:
-    if task is None:
-        return {}
-
-    def _serialize_subtask(subtask: Task) -> dict:
-        if subtask is None:
-            return {}
-        return {
-            "id": subtask.id,
-            "name": subtask.name or "",
-            "description": subtask.description or "",
-        }
-
-    subtasks = sorted(
-        (subtask for subtask in task.subtasks or []),
-        key=lambda item: ((item.rank or 0), item.id),
-    )
-
-    return {
-        "id": task.id,
-        "name": task.name or "",
-        "description": task.description or "",
-        "due_date": task.end_date.isoformat() if task.end_date else None,
-        "completed": bool(task.completed),
-        "completed_date": task.completed_date.isoformat() if task.completed_date else None,
-        "tags": [tag.name for tag in task.tags],
-        "subtasks": [_serialize_subtask(subtask) for subtask in subtasks],
-    }
 
 
 def _ensure_tags_assigned_to_current_scope(tags):
@@ -518,23 +478,12 @@ def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
     )
     task.github_issue_state = issue.state
     _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
-
-
-def _user_github_token(user: User | None) -> str | None:
-    if not user or not user.github_integration_enabled:
-        return None
-    token = user.get_github_token()
-    if not token:
-        return None
-    return token
-
-
 def _scope_github_context(scope: Scope | None, user: User | None):
     if scope is None or user is None:
         return None
     if not scope.github_integration_enabled:
         return None
-    token = _user_github_token(user)
+    token = get_user_github_token(user)
     if not token:
         return None
     if not scope.github_repo_owner or not scope.github_repo_name:
@@ -644,59 +593,6 @@ def _github_error_response(error: GitHubError):
     return message, status
 
 
-@app.route("/scope/<int:id>")
-def set_scope(id):
-    scope = Scope.query.get_or_404(id)
-    if not _user_can_access_scope(scope):
-        flash("You do not have access to that scope.", "danger")
-        return redirect(url_for("scope"))
-    session["selected_scope"] = id
-    return redirect(url_for("task"))
-
-
-@app.route("/scope")
-def scope():
-    items = g.user.owned_scopes + g.user.scopes
-    items.sort(key=lambda item: item.rank)
-    form = ScopeForm()
-    session.pop("selected_scope", None)
-    g.scope = None
-    token_present = bool(g.user.github_token_encrypted) if g.user else False
-    return render_template("scope.html", scopes=items, scope_form=form, github_token_present=token_present)
-
-
-@app.route("/scope/<int:id>/tasks/export", methods=["GET"])
-def export_scope_tasks(id):
-    scope = Scope.query.get_or_404(id)
-    if not _user_can_access_scope(scope):
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "You do not have permission to export tasks for this scope.",
-                }
-            ),
-            403,
-        )
-
-    if g.user is None:
-        return (
-            jsonify({"success": False, "message": "You must be logged in to export tasks."}),
-            401,
-        )
-
-    user_tasks = [task for task in scope.tasks if task.owner_id == g.user.id]
-    user_tasks.sort(key=lambda item: ((item.rank or 0), item.id))
-
-    payload = [_serialize_task_for_clipboard(task) for task in user_tasks]
-
-    return jsonify(
-        {
-            "success": True,
-            "scope": {"id": scope.id, "name": scope.name or ""},
-            "tasks": payload,
-        }
-    )
 
 
 @app.route("/task")
@@ -1506,7 +1402,7 @@ def _get_task_in_scope_or_404(task_id):
         g.scope is None
         or task.scope_id != g.scope.id
         or task.owner_id != g.user.id
-        or not _user_can_access_scope(task.scope)
+        or not user_can_access_scope(g.user, task.scope)
     ):
         abort(404)
     return task
@@ -1717,83 +1613,6 @@ def get_max_rank(item_type):
     return max_rank.rank
     
 
-@app.route("/scope/add", methods=["GET", "POST"])
-def add_scope():
-    item = Scope()
-    form = ScopeForm()
-    items = g.user.owned_scopes + g.user.scopes
-    show_modal = False
-    token_present = bool(g.user.github_token_encrypted)
-
-    if form.validate_on_submit():
-        # Set the data for the new scope
-        item.owner_id = g.user.id
-        item.rank = get_max_rank('scope') + 1
-
-        item.name = form.name.data
-        item.description = form.description.data
-
-        enable_integration = bool(form.github_enabled.data)
-        repo_payload = None
-        if enable_integration:
-            if not _user_github_token(g.user):
-                form.github_enabled.errors.append(
-                    "A GitHub token must be configured in your user settings before enabling integration."
-                )
-            repo_value = (form.github_repository.data or "").strip()
-            if not repo_value:
-                form.github_repository.errors.append(
-                    "A repository must be selected to enable GitHub integration for this scope."
-                )
-            else:
-                try:
-                    repo_payload = json.loads(repo_value)
-                except ValueError:
-                    form.github_repository.errors.append("Invalid repository selection.")
-
-        if form.errors:
-            show_modal = "scope-modal"
-            return render_template(
-                'scope.html',
-                scope_form=form,
-                show_modal=show_modal,
-                scopes=items,
-                github_token_present=token_present,
-            )
-
-        item.github_integration_enabled = enable_integration
-        if enable_integration and repo_payload:
-            item.github_repo_id = repo_payload.get("id")
-            item.github_repo_name = repo_payload.get("name")
-            item.github_repo_owner = repo_payload.get("owner")
-        else:
-            item.github_repo_id = None
-            item.github_repo_name = None
-            item.github_repo_owner = None
-
-        # will use the following line when a user shares a scope with another user
-        # g.user.scopes.append(item)
-
-        try:
-            db.session.add(item)
-            db.session.commit()
-            flash("Scope added!", "success")
-            form = ScopeForm()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("scope"))
-    else:
-        show_modal = "scope-modal"
-    # TODO: This needs to be tested
-    return render_template(
-        'scope.html',
-        scope_form=form,
-        show_modal=show_modal,
-        scopes=items,
-        github_token_present=token_present,
-    )
-
 @app.route("/task/add", methods=["GET", "POST"])
 @scope_required
 def add_task():
@@ -1849,84 +1668,6 @@ def add_task():
     # TODO: This needs to be tested
     return render_template('task.html', task_form=form, show_modal=show_modal, tasks=items, scope=g.scope)
 
-
-@app.route("/scope/edit/<int:id>", methods=["GET", "POST"])
-def edit_scope(id):
-    items = g.user.owned_scopes + g.user.scopes
-    item = Scope.query.get_or_404(id)
-    if not _user_owns_scope(item):
-        abort(404)
-    form = ScopeForm(obj=item)
-    token_present = bool(g.user.github_token_encrypted)
-    if not form.is_submitted():
-        form.github_enabled.data = item.github_integration_enabled
-        if item.github_repo_owner and item.github_repo_name:
-            form.github_repository.data = json.dumps(
-                {
-                    "id": item.github_repo_id,
-                    "name": item.github_repo_name,
-                    "owner": item.github_repo_owner,
-                }
-            )
-    show_modal = False
-
-    if form.validate_on_submit():
-        item.name = form.name.data
-        item.description = form.description.data
-        enable_integration = bool(form.github_enabled.data)
-        repo_payload = None
-        if enable_integration:
-            if not _user_github_token(g.user):
-                form.github_enabled.errors.append(
-                    "A GitHub token must be configured in your user settings before enabling integration."
-                )
-            repo_value = (form.github_repository.data or "").strip()
-            if not repo_value:
-                form.github_repository.errors.append(
-                    "A repository must be selected to enable GitHub integration for this scope."
-                )
-            else:
-                try:
-                    repo_payload = json.loads(repo_value)
-                except ValueError:
-                    form.github_repository.errors.append("Invalid repository selection.")
-
-        if form.errors:
-            show_modal = "scope-modal"
-            return render_template(
-                'scope.html',
-                scope_form=form,
-                show_modal=show_modal,
-                scopes=items,
-                github_token_present=token_present,
-            )
-
-        item.github_integration_enabled = enable_integration
-        if enable_integration and repo_payload:
-            item.github_repo_id = repo_payload.get("id")
-            item.github_repo_name = repo_payload.get("name")
-            item.github_repo_owner = repo_payload.get("owner")
-        else:
-            item.github_repo_id = None
-            item.github_repo_name = None
-            item.github_repo_owner = None
-        try:
-            db.session.commit()
-            flash("Scope edited!", "success")
-            form = ScopeForm()
-        except SQLAlchemyError as e:
-            db.session.rollback()
-            flash(f"An error occurred: {str(e)}", "error")
-        return redirect(request.referrer or url_for("scope"))
-    else:
-        show_modal = "scope-modal"
-    return render_template(
-        'scope.html',
-        scope_form=form,
-        show_modal=show_modal,
-        scopes=items,
-        github_token_present=token_present,
-    )
 
 
 @app.route("/task/edit/<int:id>", methods=["GET", "POST"])
@@ -2042,7 +1783,7 @@ def delete_item(item_type, id):
             item = item_class.query.get_or_404(id)
 
             if item_type == "scope":
-                if not _user_owns_scope(item):
+                if not user_owns_scope(g.user, item):
                     return (
                         jsonify(
                             {
@@ -2055,7 +1796,7 @@ def delete_item(item_type, id):
             elif item_type == "task":
                 if (
                     item.scope is None
-                    or not _user_can_access_scope(item.scope)
+                    or not user_can_access_scope(g.user, item.scope)
                     or item.owner_id != g.user.id
                 ):
                     return (
@@ -2104,6 +1845,8 @@ def delete_item(item_type, id):
 
             db.session.delete(item)
             db.session.commit()
+            if item_type == "scope" and session.get("selected_scope") == id:
+                session.pop("selected_scope", None)
             item_label = getattr(item, "name", None)
             message = f"{item_class.__name__} deleted!"
             if item_label:
@@ -2300,12 +2043,12 @@ def update_item_rank(item_type):
         item = item_class.query.get_or_404(data["id"])
 
         if item_type == "task":
-            if g.scope is None or not _user_can_access_scope(g.scope):
+            if g.scope is None or not user_can_access_scope(g.user, g.scope):
                 return jsonify({"error": "No scope selected."}), 400
             if item.scope_id != g.scope.id or item.owner_id != g.user.id:
                 return jsonify({"error": "You do not have permission to reorder this task."}), 403
         elif item_type == "scope":
-            if not _user_owns_scope(item):
+            if not user_owns_scope(g.user, item):
                 return jsonify({"error": "You do not have permission to reorder this scope."}), 403
 
         item.rank = data["newRank"]
