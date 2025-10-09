@@ -3,7 +3,7 @@
 {% block title %}Scopes{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="container py-4" id="scope-page" data-stay-url="{{ url_for('scopes.list_scopes', stay=1) }}">
     <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
         <div>
             <h1 class="h4 mb-1">Scopes</h1>
@@ -15,11 +15,10 @@
         </button>
     </div>
 
-    {% if scopes %}
-        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3" id="scopes-list">
-            {% for scope in scopes %}
-                <div class="col">
-                    <div class="card h-100 border-secondary shadow-sm scope-card" data-scope-id="{{ scope.id }}" data-scope-url="{{ url_for('scopes.set_scope', scope_id=scope.id) }}">
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-3{% if not scopes %} d-none{% endif %}" id="scopes-list" data-scope-list>
+        {% for scope in scopes %}
+            <div class="col" data-scope-id="{{ scope.id }}">
+                <div class="card h-100 border-secondary shadow-sm scope-card" data-scope-id="{{ scope.id }}" data-scope-url="{{ url_for('scopes.set_scope', scope_id=scope.id) }}" data-scope-is-owner="{{ 'true' if scope.owner_id == g.user.id else 'false' }}">
                         <div class="card-header bg-transparent border-0 pb-0">
                             <div class="d-flex justify-content-between align-items-start gap-2">
                                 <div class="d-flex align-items-center gap-2">
@@ -68,6 +67,7 @@
                                             class="btn btn-dark scope-delete-btn"
                                             data-confirm-url="{{ url_for('delete_item', item_type='scope', id=scope.id) }}"
                                             data-scope-name="{{ scope.name | e }}"
+                                            data-scope-id="{{ scope.id }}"
                                             aria-label="Delete scope {{ scope.name }}">
                                             <i class="bi bi-trash3" aria-hidden="true"></i>
                                         </button>
@@ -84,20 +84,20 @@
                         </div>
                     </div>
                 </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="card border-secondary shadow-sm">
-            <div class="card-body text-center py-5">
-                <p class="lead mb-2">No scopes yet</p>
-                <p class="text-muted mb-4">Create a scope to start organizing your tasks into focused groups.</p>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#scope-modal">
-                    <i class="bi bi-plus-lg me-2" aria-hidden="true"></i>
-                    Create your first scope
-                </button>
             </div>
+        {% endfor %}
+    </div>
+
+    <div class="card border-secondary shadow-sm{% if scopes %} d-none{% endif %}" data-scope-empty>
+        <div class="card-body text-center py-5">
+            <p class="lead mb-2">No scopes yet</p>
+            <p class="text-muted mb-4">Create a scope to start organizing your tasks into focused groups.</p>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#scope-modal">
+                <i class="bi bi-plus-lg me-2" aria-hidden="true"></i>
+                Create your first scope
+            </button>
         </div>
-    {% endif %}
+    </div>
 </div>
 {% endblock %}
 
@@ -108,269 +108,5 @@
 
 {% block scripts %}
     {{ super() }}
-    <script>
-        initializeSortable('scopes-list', 'scope');
-
-        function setLastScopePreference(scopeId) {
-            updatePreferenceData((data) => {
-                data.lastScopeId = scopeId != null ? String(scopeId) : null;
-                return data;
-            });
-        }
-
-        function getLastScopePreference() {
-            const data = readPreferenceData();
-            return data.lastScopeId != null ? String(data.lastScopeId) : null;
-        }
-
-        function shouldAutoNavigateToScope() {
-            if (typeof window === 'undefined') {
-                return false;
-            }
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('stay') === '1' || params.get('stay') === 'true') {
-                return false;
-            }
-            const referrer = document.referrer || '';
-            if (!referrer) {
-                return true;
-            }
-            try {
-                const refUrl = new URL(referrer, window.location.origin);
-                if (refUrl.origin !== window.location.origin) {
-                    return false;
-                }
-                const allowedPaths = new Set(['', '/', '/login', '/signup']);
-                return allowedPaths.has(refUrl.pathname);
-            } catch (error) {
-                console.warn('Unable to evaluate referrer for auto scope selection.', error);
-                return false;
-            }
-        }
-
-        function attemptStoredScopeRedirect() {
-            const scopeCards = Array.from(document.querySelectorAll('.scope-card[data-scope-id][data-scope-url]'));
-            if (scopeCards.length === 0) {
-                setLastScopePreference(null);
-                return;
-            }
-            const storedScopeId = getLastScopePreference();
-            let targetCard = null;
-            if (storedScopeId) {
-                targetCard = scopeCards.find((card) => card.dataset.scopeId === storedScopeId) || null;
-            }
-            if (!targetCard) {
-                targetCard = scopeCards[0];
-            }
-            if (!targetCard) {
-                setLastScopePreference(null);
-                return;
-            }
-            const targetScopeId = targetCard.dataset.scopeId || null;
-            const targetScopeUrl = targetCard.dataset.scopeUrl || '';
-            setLastScopePreference(targetScopeId);
-            if (!targetScopeUrl || !shouldAutoNavigateToScope()) {
-                return;
-            }
-            const NAVIGATE_DELAY_MS = 150;
-            window.setTimeout(() => {
-                window.location.href = targetScopeUrl;
-            }, NAVIGATE_DELAY_MS);
-        }
-
-        attemptStoredScopeRedirect();
-
-        document.querySelectorAll('a[data-scope-id]').forEach((link) => {
-            link.addEventListener('click', () => {
-                setLastScopePreference(link.dataset.scopeId);
-            });
-        });
-
-        function formatDateTimeDisplay(utcDateString) {
-            if (!utcDateString) {
-                return '';
-            }
-            const normalized = utcDateString.endsWith('Z') ? utcDateString : `${utcDateString}Z`;
-            const date = new Date(normalized);
-            if (Number.isNaN(date.getTime())) {
-                return '';
-            }
-            return date.toLocaleString(undefined, {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: 'numeric',
-            });
-        }
-
-        function decodeHtmlEntities(text) {
-            if (typeof text !== 'string' || !text) {
-                return '';
-            }
-            const textarea = document.createElement('textarea');
-            textarea.innerHTML = text;
-            return textarea.value;
-        }
-
-        function copyTextToClipboard(text) {
-            if (typeof text !== 'string' || !text.trim()) {
-                return Promise.reject(new Error('Nothing to copy'));
-            }
-            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-                return navigator.clipboard.writeText(text.trim());
-            }
-
-            return new Promise((resolve, reject) => {
-                try {
-                    const textarea = document.createElement('textarea');
-                    textarea.value = text.trim();
-                    textarea.setAttribute('readonly', '');
-                    textarea.style.position = 'absolute';
-                    textarea.style.left = '-9999px';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    const successful = document.execCommand('copy');
-                    document.body.removeChild(textarea);
-                    if (successful) {
-                        resolve();
-                    } else {
-                        reject(new Error('Copy command was unsuccessful'));
-                    }
-                } catch (error) {
-                    reject(error);
-                }
-            });
-        }
-
-        function copyScopeTasks(scopeId, scopeName, exportUrl) {
-            if (!scopeId) {
-                return Promise.reject(new Error('Missing scope identifier'));
-            }
-            const targetUrl = exportUrl || `/scope/${scopeId}/tasks/export`;
-            return fetch(targetUrl, {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    Accept: 'application/json',
-                },
-            })
-                .then((response) => {
-                    if (!response.ok) {
-                        return response
-                            .json()
-                            .catch(() => ({}))
-                            .then((data) => Promise.reject(data));
-                    }
-                    return response.json();
-                })
-                .then((data) => {
-                    if (!data || data.success !== true || !Array.isArray(data.tasks)) {
-                        return Promise.reject(data || new Error('Invalid response'));
-                    }
-                    if (data.tasks.length === 0) {
-                        displayFlashMessage(`There are no tasks to copy for "${scopeName || 'this scope'}".`, 'info');
-                        return null;
-                    }
-                    const clipboardSections = data.tasks
-                        .map((task, index) => {
-                            const formatted = formatTaskClipboardText(task);
-                            return formatted ? `${index + 1}. ${formatted}` : null;
-                        })
-                        .filter(Boolean);
-
-                    if (clipboardSections.length === 0) {
-                        return Promise.reject(new Error('No tasks could be formatted'));
-                    }
-
-                    const header = scopeName ? `${scopeName}\n` : '';
-                    const clipboardText = `${header}${clipboardSections.join('\n\n')}`;
-                    return copyTextToClipboard(clipboardText).then(() => clipboardSections.length);
-                });
-        }
-
-        document.querySelectorAll('.scope-copy-btn').forEach((button) => {
-            button.addEventListener('click', (event) => {
-                event.preventDefault();
-                const scopeId = button.dataset.scopeId;
-                const scopeName = decodeHtmlEntities(button.dataset.scopeName || '');
-                const exportUrl = button.dataset.exportUrl || '';
-                copyScopeTasks(scopeId, scopeName, exportUrl)
-                    .then((count) => {
-                        if (typeof count !== 'number') {
-                            return;
-                        }
-                        displayFlashMessage(
-                            `Copied ${count} task${count === 1 ? '' : 's'} from "${scopeName || 'this scope'}" to the clipboard.`,
-                            'success'
-                        );
-                    })
-                    .catch((error) => {
-                        if (error && error.message) {
-                            console.error('Unable to copy scope tasks', error);
-                        }
-                        const message = (error && error.message) || 'Unable to copy tasks for this scope.';
-                        displayFlashMessage(message, 'danger');
-                    });
-            });
-        });
-
-        document.querySelectorAll('.scope-delete-btn').forEach((button) => {
-            button.addEventListener('click', (event) => {
-                event.preventDefault();
-                if (typeof showConfirmationModal !== 'function') {
-                    return;
-                }
-                const actionUrl = button.dataset.confirmUrl;
-                if (!actionUrl) {
-                    return;
-                }
-                const scopeName = button.dataset.scopeName || 'this scope';
-                const scopeId = button.dataset.scopeId || '';
-                showConfirmationModal({
-                    title: 'Delete scope',
-                    message: `Delete scope "${scopeName}"?`,
-                    description: `Deleting this scope will permanently remove "${scopeName}" and its ordering.`,
-                    details: [`Scope: ${scopeName}`, 'This action cannot be undone.'],
-                    confirmLabel: 'Delete scope',
-                    confirmVariant: 'danger',
-                }).then((confirmed) => {
-                    if (!confirmed) {
-                        return;
-                    }
-                    fetch(actionUrl, {
-                        method: 'POST',
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            Accept: 'application/json',
-                        },
-                    })
-                        .then((response) =>
-                            response
-                                .json()
-                                .catch(() => ({}))
-                                .then((data) => ({ ok: response.ok, data }))
-                        )
-                        .then(({ ok, data }) => {
-                            if (!ok || !data || data.success !== true) {
-                                const message = (data && data.message) || `Unable to delete "${scopeName}".`;
-                                displayFlashMessage(message, 'danger');
-                                return;
-                            }
-                            const message = (data && data.message) || `Scope "${scopeName}" deleted.`;
-                            displayFlashMessage(message, 'success');
-                            if (scopeId && getLastScopePreference() === String(scopeId)) {
-                                setLastScopePreference(null);
-                            }
-                            window.setTimeout(() => {
-                                window.location.href = '{{ url_for("scopes.list_scopes", stay=1) }}';
-                            }, 200);
-                        })
-                        .catch((error) => {
-                            console.error('Unable to delete scope', error);
-                            displayFlashMessage(`Unable to delete "${scopeName}".`, 'danger');
-                        });
-                });
-            });
-        });
-    </script>
+    <script src="{{ url_for('static', filename='js/scope_form.js') }}"></script>
 {% endblock scripts %}

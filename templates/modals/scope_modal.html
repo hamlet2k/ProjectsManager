@@ -1,4 +1,4 @@
-<div class="modal fade" id="scope-modal" tabindex="-1" aria-labelledby="scope-modal-title" aria-hidden="true">
+<div class="modal fade" id="scope-modal" tabindex="-1" aria-labelledby="scope-modal-title" aria-hidden="true" data-open-on-load="{{ 'true' if show_modal else 'false' }}">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
 
@@ -7,28 +7,28 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
 
-            <form id="scope-form" method="post">
+            <form id="scope-form" method="post" data-create-url="{{ url_for('scopes.add_scope') }}" data-edit-url-template="{{ url_for('scopes.edit_scope', scope_id=0) }}" data-github-token-present="{{ 'true' if github_token_present else 'false' }}" data-initial-state='{{ scope_form_state | tojson | safe }}'>
             {{ scope_form.hidden_tag() }}
 
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="scope-modal-description">Group related tasks by creating a new scope.</p>
                 <div class="form-floating mb-3">
-                    {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name) }}
+                    {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name, **{'data-field': 'name'}) }}
                     {{ scope_form.name.label(class="form-label") }}
-                    {% if scope_form.name.errors %}
+                    <div class="invalid-feedback{% if scope_form.name.errors %} d-block{% endif %}" data-field-errors="name">
                         {% for error in scope_form.name.errors %}
-                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                            <div>{{ error }}</div>
                         {% endfor %}
-                    {% endif %}
+                    </div>
                 </div>
                 <div class="form-floating mb-3">
-                    {{ scope_form.description(class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''), placeholder_=scope_form.description.name) }}
+                    {{ scope_form.description(class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''), placeholder_=scope_form.description.name, **{'data-field': 'description'}) }}
                     {{ scope_form.description.label(class="form-label") }}
-                    {% if scope_form.description.errors %}
+                    <div class="invalid-feedback{% if scope_form.description.errors %} d-block{% endif %}" data-field-errors="description">
                         {% for error in scope_form.description.errors %}
-                            <div class="invalid-feedback" style="display:block;">{{ error }}</div>
+                            <div>{{ error }}</div>
                         {% endfor %}
-                    {% endif %}
+                    </div>
                 </div>
                 <div class="mb-3 pt-3 border-top">
                     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -37,7 +37,7 @@
                             <p class="text-muted small mb-0">Connect tasks in this scope to a specific repository.</p>
                         </div>
                         <div class="form-check form-switch">
-                            {{ scope_form.github_enabled(class="form-check-input", id="scope-github-toggle", disabled=not github_token_present) }}
+                            {{ scope_form.github_enabled(class="form-check-input", id="scope-github-toggle", disabled=not github_token_present, **{'data-field': 'github_enabled'}) }}
                             <label class="form-check-label" for="scope-github-toggle">Enable</label>
                         </div>
                     </div>
@@ -49,19 +49,23 @@
                     <div class="github-scope-settings" data-github-settings-section style="display: {{ 'block' if scope_form.github_enabled.data else 'none' }};">
                         <div class="mb-3">
                             <label class="form-label" for="scope-github-repo-select">Repository</label>
-                            {{ scope_form.github_repository(class="form-select" + (' is-invalid' if scope_form.github_repository.errors else ''), id="scope-github-repo-select", **{'data-selected-repo': scope_form.github_repository.data or ''}) }}
-                            {% for error in scope_form.github_repository.errors %}
-                                <div class="invalid-feedback d-block">{{ error }}</div>
-                            {% endfor %}
+                            {{ scope_form.github_repository(class="form-select" + (' is-invalid' if scope_form.github_repository.errors else ''), id="scope-github-repo-select", **{'data-selected-repo': scope_form.github_repository.data or '', 'data-field': 'github_repository'}) }}
+                            <div class="invalid-feedback{% if scope_form.github_repository.errors %} d-block{% endif %}" data-field-errors="github_repository">
+                                {% for error in scope_form.github_repository.errors %}
+                                    <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
                             <div class="form-text">Choose the repository to use for GitHub actions in this scope.</div>
                         </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-warning role="alert">
                             A repository must be selected to enable GitHub integration for this scope.
                         </div>
                     </div>
-                    {% for error in scope_form.github_enabled.errors %}
-                        <div class="invalid-feedback d-block">{{ error }}</div>
-                    {% endfor %}
+                    <div class="invalid-feedback{% if scope_form.github_enabled.errors %} d-block{% endif %}" data-field-errors="github_enabled">
+                        {% for error in scope_form.github_enabled.errors %}
+                            <div>{{ error }}</div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
@@ -69,299 +73,11 @@
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                 Cancel
                 </button>
-                {{ scope_form.submit(class="btn btn-primary") }}
+                {{ scope_form.submit(class="btn btn-primary", **{'data-field': 'submit'}) }}
             </div>
 
             </form>
         </div>
     </div>
 </div>
-
-<script>
-    const scopeForm = document.getElementById('scope-form');
-    const scopeModalTitle = document.getElementById('scope-modal-title');
-    const scopeModalDescription = document.getElementById('scope-modal-description');
-    const scopeSubmitButton = scopeForm ? scopeForm.querySelector('[type="submit"]') : null;
-
-    function setScopeModalContent({ title, description, submitLabel }) {
-        if (scopeModalTitle) {
-            scopeModalTitle.textContent = title;
-        }
-        if (scopeModalDescription) {
-            scopeModalDescription.textContent = description;
-        }
-        if (scopeSubmitButton) {
-            scopeSubmitButton.value = submitLabel;
-            scopeSubmitButton.textContent = submitLabel;
-        }
-    }
-
-    function buildCreateScopeDescription() {
-        return 'Provide a name and optional description to group related tasks.';
-    }
-
-    function buildEditScopeDescription(name = '') {
-        if (name && name.trim().length > 0) {
-            return `Update the details for "${name.trim()}" before saving your changes.`;
-        }
-        return 'Update the scope details before saving your changes.';
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        // Initialize with create scope content by default
-        if (scopeForm) {
-            setScopeModalContent({
-                title: 'Create scope',
-                description: buildCreateScopeDescription(),
-                submitLabel: 'Create scope',
-            });
-        }
-
-        {% if show_modal %}
-            const modal = new bootstrap.Modal(document.getElementById('{{ show_modal }}'));
-            modal.show();
-        {% endif %}
-    });
-
-    const addScopeBtn = document.getElementById('add-scope-btn');
-    if (addScopeBtn && scopeForm) {
-        addScopeBtn.addEventListener('click', () => {
-            scopeForm.action = '{{ url_for("scopes.add_scope") }}';
-            scopeForm.reset();
-            const repoSelect = document.getElementById('scope-github-repo-select');
-            if (repoSelect) {
-                repoSelect.innerHTML = '';
-                repoSelect.dataset.selectedRepo = '';
-                repoSelect.dataset.reposLoaded = 'false';
-            }
-            setScopeModalContent({
-                title: 'Create scope',
-                description: buildCreateScopeDescription(),
-                submitLabel: 'Create scope',
-            });
-            const githubToggle = document.getElementById('scope-github-toggle');
-            if (githubToggle) {
-                githubToggle.checked = false;
-                githubToggle.dispatchEvent(new Event('change'));
-            }
-        });
-    }
-
-    document.querySelectorAll('.edit-scope-btn').forEach((item) => {
-        item.addEventListener('click', () => {
-            {% for field in scope_form %}
-                {% if field.type not in ['HiddenField', 'BooleanField', 'SelectField', 'SubmitField'] %}
-                    const fieldElement_{{ field.name }} = document.getElementById('{{ field.name }}');
-                    if (fieldElement_{{ field.name }}) {
-                        fieldElement_{{ field.name }}.value = item.getAttribute('data-scope-{{ field.name }}') || '';
-                    }
-                {% endif %}
-            {% endfor %}
-
-            if (scopeForm) {
-                const baseUrl = '{{ url_for("scopes.edit_scope", scope_id=0) }}';
-                const actionUrl = baseUrl.replace('/0', `/${item.getAttribute('data-scope-id')}`);
-                scopeForm.action = actionUrl;
-            }
-
-            const githubToggle = document.getElementById('scope-github-toggle');
-            const repoSelect = document.getElementById('scope-github-repo-select');
-            if (repoSelect) {
-                const repoData = item.getAttribute('data-scope-github_repository') || '';
-                repoSelect.dataset.selectedRepo = repoData;
-                repoSelect.dataset.reposLoaded = repoSelect.dataset.reposLoaded || 'false';
-                if (!repoData) {
-                    repoSelect.value = '';
-                }
-            }
-            if (githubToggle) {
-                const enabledValue = (item.getAttribute('data-scope-github_enabled') || '').toLowerCase();
-                githubToggle.checked = enabledValue === 'true' && !githubToggle.disabled;
-                githubToggle.dispatchEvent(new Event('change'));
-            }
-            document.dispatchEvent(new Event('scopeGithubRefresh'));
-
-            setScopeModalContent({
-                title: 'Edit scope',
-                description: buildEditScopeDescription(item.getAttribute('data-scope-name') || ''),
-                submitLabel: 'Save changes',
-            });
-        });
-    });
-
-    (function initScopeGithubSettings() {
-        const toggle = document.getElementById('scope-github-toggle');
-        const section = document.querySelector('[data-github-settings-section]');
-        const warning = document.querySelector('[data-github-warning]');
-        const select = document.getElementById('scope-github-repo-select');
-
-        if (select && !select.dataset.reposLoaded) {
-            select.dataset.reposLoaded = 'false';
-        }
-
-        function markReposLoaded(isLoaded) {
-            if (select) {
-                select.dataset.reposLoaded = isLoaded ? 'true' : 'false';
-            }
-        }
-
-        function reposLoaded() {
-            return select ? select.dataset.reposLoaded === 'true' : false;
-        }
-
-        function setLoading(isLoading) {
-            if (!select) {
-                return;
-            }
-            if (isLoading) {
-                select.disabled = true;
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'Loading repositories...';
-                select.innerHTML = '';
-                select.appendChild(option);
-            } else if (toggle && !toggle.disabled) {
-                select.disabled = false;
-            }
-        }
-
-        function applySelectedRepo() {
-            if (!select) {
-                return;
-            }
-            const selectedValue = select.dataset.selectedRepo || '';
-            if (!selectedValue) {
-                return;
-            }
-            try {
-                const parsed = JSON.parse(selectedValue);
-                Array.from(select.options).forEach((option) => {
-                    if (!option.value) {
-                        return;
-                    }
-                    try {
-                        const value = JSON.parse(option.value);
-                        if (value && value.id === parsed.id) {
-                            option.selected = true;
-                        }
-                    } catch (error) {
-                        // ignore invalid option values
-                    }
-                });
-            } catch (error) {
-                // ignore invalid stored value
-            }
-        }
-
-        function loadRepositories({ silent = false } = {}) {
-            if (!select || !toggle || toggle.disabled) {
-                return;
-            }
-            setLoading(true);
-            fetch('/api/github/repos', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({}),
-            })
-                .then((response) =>
-                    response
-                        .json()
-                        .catch(() => ({}))
-                        .then((data) => ({ ok: response.ok, data }))
-                )
-                .then(({ ok, data }) => {
-                    if (!select) {
-                        return;
-                    }
-                    select.innerHTML = '';
-                    const placeholder = document.createElement('option');
-                    placeholder.value = '';
-                    placeholder.textContent = 'Select a repository';
-                    select.appendChild(placeholder);
-
-                    if (!ok || !data || !data.success) {
-                        if (!silent && typeof displayFlashMessage === 'function') {
-                            const message = (data && data.message) || 'Unable to load GitHub repositories.';
-                            displayFlashMessage(message, 'danger');
-                        }
-                        select.disabled = true;
-                        return;
-                    }
-
-                    data.repositories.forEach((repo) => {
-                        const option = document.createElement('option');
-                        option.value = JSON.stringify(repo);
-                        option.textContent = `${repo.owner}/${repo.name}`;
-                        select.appendChild(option);
-                    });
-                    markReposLoaded(true);
-                    applySelectedRepo();
-                    select.disabled = false;
-                })
-                .catch((error) => {
-                    console.error('Unable to load repositories', error);
-                    select.disabled = true;
-                    markReposLoaded(false);
-                    if (!silent && typeof displayFlashMessage === 'function') {
-                        displayFlashMessage('Unable to load GitHub repositories.', 'danger');
-                    }
-                });
-        }
-
-        function updateSectionVisibility() {
-            if (!section) {
-                return;
-            }
-            const shouldShow = toggle && toggle.checked && !toggle.disabled;
-            section.style.display = shouldShow ? '' : 'none';
-            if (!shouldShow && warning) {
-                warning.classList.add('d-none');
-            }
-            if (shouldShow && !reposLoaded()) {
-                loadRepositories({ silent: true });
-            }
-        }
-
-        if (toggle) {
-            toggle.addEventListener('change', () => {
-                updateSectionVisibility();
-                if (toggle.checked && select && !select.value) {
-                    if (warning) {
-                        warning.classList.remove('d-none');
-                    }
-                }
-            });
-        }
-
-        if (scopeForm) {
-            scopeForm.addEventListener('submit', () => {
-                if (!toggle || !select || toggle.disabled || !toggle.checked) {
-                    return;
-                }
-                if (!select.value && warning) {
-                    warning.classList.remove('d-none');
-                }
-            });
-        }
-
-        if (select) {
-            select.addEventListener('change', () => {
-                if (warning) {
-                    warning.classList.add('d-none');
-                }
-            });
-        }
-
-        updateSectionVisibility();
-        applySelectedRepo();
-
-        document.addEventListener('scopeGithubRefresh', () => {
-            applySelectedRepo();
-            updateSectionVisibility();
-        });
-    }());
-</script>
 

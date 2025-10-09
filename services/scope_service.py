@@ -94,6 +94,7 @@ def build_scope_page_context(
         "scopes": get_user_scopes(user),
         "scope_form": form,
         "github_token_present": bool(user.github_token_encrypted) if user else False,
+        "scope_form_state": build_scope_form_initial_state(form),
     }
     if show_modal:
         context["show_modal"] = show_modal
@@ -128,4 +129,43 @@ def serialize_task_for_clipboard(task: Task | None) -> dict[str, Any]:
         "completed_date": task.completed_date.isoformat() if task.completed_date else None,
         "tags": [tag.name for tag in task.tags],
         "subtasks": [_serialize_subtask(subtask) for subtask in subtasks],
+    }
+
+
+def build_scope_form_initial_state(form: Any) -> dict[str, Any]:
+    """Return serializable initial values and errors for the scope form."""
+    errors = {key: list(value) for key, value in (form.errors or {}).items()}
+    data = {
+        "name": getattr(form, "name", None).data or "",
+        "description": getattr(form, "description", None).data or "",
+        "github_enabled": bool(getattr(form, "github_enabled", None).data),
+        "github_repository": getattr(form, "github_repository", None).data or "",
+    }
+    return {"data": data, "errors": errors}
+
+
+def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
+    """Return a JSON-serializable representation of a scope for client updates."""
+    if scope is None:
+        return {}
+
+    is_owner = bool(current_user and scope.owner_id == current_user.id)
+    repo = None
+    if scope.github_repo_owner and scope.github_repo_name:
+        repo = {
+            "id": scope.github_repo_id,
+            "name": scope.github_repo_name,
+            "owner": scope.github_repo_owner,
+            "label": f"{scope.github_repo_owner}/{scope.github_repo_name}",
+        }
+
+    return {
+        "id": scope.id,
+        "name": scope.name or "",
+        "description": scope.description or "",
+        "owner_id": scope.owner_id,
+        "is_owner": is_owner,
+        "is_shared": not is_owner,
+        "github_integration_enabled": bool(scope.github_integration_enabled),
+        "github_repository": repo,
     }
