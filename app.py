@@ -693,7 +693,14 @@ def scope():
     session.pop("selected_scope", None)
     g.scope = None
     token_present = bool(g.user.github_token_encrypted) if g.user else False
-    return render_template("scope.html", scopes=items, scope_form=form, github_token_present=token_present)
+    return render_template(
+        "scope.html",
+        scopes=items,
+        scope_form=form,
+        github_token_present=token_present,
+        scope_form_mode='create',
+        scope_form_scope=None,
+    )
 
 
 @app.route("/scope/<int:id>/tasks/export", methods=["GET"])
@@ -1944,6 +1951,8 @@ def add_scope():
                 show_modal=show_modal,
                 scopes=items,
                 github_token_present=token_present,
+                scope_form_mode='create',
+                scope_form_scope=None,
             )
 
         item.github_integration_enabled = enable_integration
@@ -2000,6 +2009,8 @@ def add_scope():
         show_modal=show_modal,
         scopes=items,
         github_token_present=token_present,
+        scope_form_mode='create',
+        scope_form_scope=None,
     )
 
 @app.route("/task/add", methods=["GET", "POST"])
@@ -2139,6 +2150,8 @@ def edit_scope(id):
                 show_modal=show_modal,
                 scopes=items,
                 github_token_present=token_present,
+                scope_form_mode='edit',
+                scope_form_scope=item,
             )
 
         item.github_integration_enabled = enable_integration
@@ -2189,6 +2202,8 @@ def edit_scope(id):
         show_modal=show_modal,
         scopes=items,
         github_token_present=token_present,
+        scope_form_mode='edit',
+        scope_form_scope=item,
     )
 
 

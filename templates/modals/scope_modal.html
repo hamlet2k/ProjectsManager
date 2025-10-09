@@ -7,7 +7,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
 
-            <form id="scope-form" method="post">
+            <form
+                id="scope-form"
+                method="post"
+                data-mode="{{ scope_form_mode or 'create' }}"
+                data-scope-name="{{ (scope_form_scope.name if scope_form_scope else '') | e }}"
+            >
             {{ scope_form.hidden_tag() }}
 
             <div class="modal-body">
@@ -101,7 +106,7 @@
     const scopeModalDescription = document.getElementById('scope-modal-description');
     const scopeSubmitButton = scopeForm ? scopeForm.querySelector('[type="submit"]') : null;
 
-    function setScopeModalContent({ title, description, submitLabel }) {
+    function setScopeModalContent({ title, description, submitLabel, mode, scopeName }) {
         if (scopeModalTitle) {
             scopeModalTitle.textContent = title;
         }
@@ -111,6 +116,14 @@
         if (scopeSubmitButton) {
             scopeSubmitButton.value = submitLabel;
             scopeSubmitButton.textContent = submitLabel;
+        }
+        if (scopeForm) {
+            if (mode) {
+                scopeForm.dataset.mode = mode;
+            }
+            if (typeof scopeName === 'string') {
+                scopeForm.dataset.scopeName = scopeName;
+            }
         }
     }
 
@@ -126,13 +139,26 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        // Initialize with create scope content by default
         if (scopeForm) {
-            setScopeModalContent({
-                title: 'Create scope',
-                description: buildCreateScopeDescription(),
-                submitLabel: 'Create scope',
-            });
+            const mode = scopeForm.dataset.mode === 'edit' ? 'edit' : 'create';
+            const scopeName = scopeForm.dataset.scopeName || '';
+            if (mode === 'edit') {
+                setScopeModalContent({
+                    title: 'Edit scope',
+                    description: buildEditScopeDescription(scopeName),
+                    submitLabel: 'Save changes',
+                    mode: 'edit',
+                    scopeName,
+                });
+            } else {
+                setScopeModalContent({
+                    title: 'Create scope',
+                    description: buildCreateScopeDescription(),
+                    submitLabel: 'Create scope',
+                    mode: 'create',
+                    scopeName: '',
+                });
+            }
         }
 
         {% if show_modal %}
@@ -166,6 +192,8 @@
                 title: 'Create scope',
                 description: buildCreateScopeDescription(),
                 submitLabel: 'Create scope',
+                mode: 'create',
+                scopeName: '',
             });
             const githubToggle = document.getElementById('scope-github-toggle');
             if (githubToggle) {
@@ -221,10 +249,13 @@
             }
             document.dispatchEvent(new Event('scopeGithubRefresh'));
 
+            const scopeName = item.getAttribute('data-scope-name') || '';
             setScopeModalContent({
                 title: 'Edit scope',
-                description: buildEditScopeDescription(item.getAttribute('data-scope-name') || ''),
+                description: buildEditScopeDescription(scopeName),
                 submitLabel: 'Save changes',
+                mode: 'edit',
+                scopeName,
             });
         });
     });
@@ -421,6 +452,90 @@
             });
         }
 
+        function ensureProjectFallback() {
+            if (!projectSelect) {
+                return false;
+            }
+            const storedValue = projectSelect.dataset.selectedProject || '';
+            if (!storedValue) {
+                return false;
+            }
+            let storedPayload;
+            try {
+                storedPayload = JSON.parse(storedValue);
+            } catch (error) {
+                return false;
+            }
+            const hasMatch = Array.from(projectSelect.options).some((option) => {
+                if (!option.value) {
+                    return false;
+                }
+                try {
+                    const optionPayload = JSON.parse(option.value);
+                    return (
+                        optionPayload
+                        && optionPayload.id === storedPayload.id
+                        && optionPayload.column
+                        && storedPayload.column
+                        && optionPayload.column.id === storedPayload.column.id
+                    );
+                } catch (error) {
+                    return false;
+                }
+            });
+            if (hasMatch) {
+                return true;
+            }
+            const option = document.createElement('option');
+            option.value = storedValue;
+            const columnName = (
+                storedPayload.column
+                && typeof storedPayload.column.name === 'string'
+            ) ? storedPayload.column.name : '';
+            const labelSuffix = columnName ? ` — ${columnName}` : '';
+            option.textContent = `${storedPayload.name || 'Stored project'}${labelSuffix} (stored)`;
+            projectSelect.appendChild(option);
+            option.selected = true;
+            return true;
+        }
+
+        function ensureMilestoneFallback() {
+            if (!milestoneSelect) {
+                return false;
+            }
+            const storedValue = milestoneSelect.dataset.selectedMilestone || '';
+            if (!storedValue) {
+                return false;
+            }
+            let storedPayload;
+            try {
+                storedPayload = JSON.parse(storedValue);
+            } catch (error) {
+                return false;
+            }
+            const hasMatch = Array.from(milestoneSelect.options).some((option) => {
+                if (!option.value) {
+                    return false;
+                }
+                try {
+                    const optionPayload = JSON.parse(option.value);
+                    return optionPayload && optionPayload.number === storedPayload.number;
+                } catch (error) {
+                    return false;
+                }
+            });
+            if (hasMatch) {
+                return true;
+            }
+            const option = document.createElement('option');
+            option.value = storedValue;
+            const label = storedPayload.title || `Milestone #${storedPayload.number}`;
+            option.textContent = `${label} (stored)`;
+            milestoneSelect.appendChild(option);
+            option.selected = true;
+            return true;
+        }
+
         function getSelectedRepoPayload() {
             if (!repoSelect || !repoSelect.value) {
                 return null;
@@ -490,8 +605,18 @@
                             const message = (data && data.message) || 'Unable to load GitHub metadata.';
                             displayFlashMessage(message, 'danger');
                         }
-                        projectSelect.disabled = true;
-                        milestoneSelect.disabled = true;
+                        const hasProject = ensureProjectFallback();
+                        const hasMilestone = ensureMilestoneFallback();
+                        if (data && data.project_warning) {
+                            setWarning(projectWarning, data.project_warning);
+                        }
+                        if (data && data.milestone_warning) {
+                            setWarning(milestoneWarning, data.milestone_warning);
+                        }
+                        projectSelect.disabled = !hasProject;
+                        milestoneSelect.disabled = !hasMilestone;
+                        projectSelect.dataset.metadataLoaded = hasProject ? 'true' : 'false';
+                        milestoneSelect.dataset.metadataLoaded = hasMilestone ? 'true' : 'false';
                         return;
                     }
 
@@ -529,6 +654,8 @@
 
                     applySelectedProject();
                     applySelectedMilestone();
+                    ensureProjectFallback();
+                    ensureMilestoneFallback();
 
                     setWarning(projectWarning, data.project_warning || null);
                     setWarning(milestoneWarning, data.milestone_warning || null);
@@ -539,6 +666,8 @@
                         displayFlashMessage('Unable to load GitHub projects and milestones.', 'danger');
                     }
                     prepareMetadataControls();
+                    ensureProjectFallback();
+                    ensureMilestoneFallback();
                 });
         }
 
@@ -658,12 +787,15 @@
                 if (!milestoneSelect.value) {
                     milestoneSelect.dataset.selectedMilestone = '';
                 } else {
-                    const selectedOption = milestoneSelect.options[milestoneSelect.selectedIndex];
-                    const title = selectedOption ? selectedOption.dataset.milestoneTitle || '' : '';
-                    milestoneSelect.dataset.selectedMilestone = JSON.stringify({
-                        number: Number.parseInt(milestoneSelect.value, 10),
-                        title,
-                    });
+                    try {
+                        const parsed = JSON.parse(milestoneSelect.value);
+                        milestoneSelect.dataset.selectedMilestone = JSON.stringify({
+                            number: parsed.number,
+                            title: parsed.title,
+                        });
+                    } catch (error) {
+                        milestoneSelect.dataset.selectedMilestone = '';
+                    }
                 }
                 setWarning(milestoneWarning, null);
             });
