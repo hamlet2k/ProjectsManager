@@ -293,7 +293,7 @@ app.jinja_env.filters["dateformat"] = dateformat
 # ------------------------------
 @app.route("/")
 def home():
-    return redirect(url_for("scope"))
+    return redirect(url_for("scopes.list_scopes"))
 
 
 # Themes
