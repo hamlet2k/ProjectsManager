@@ -107,6 +107,19 @@
                                     <button type="button" class="btn task-action-btn task-copy-btn" aria-label="Copy task {{ task.name | e }}">
                                         <i class="bi bi-clipboard"></i>
                                     </button>
+                                    {% if github_enabled and not task.has_github_issue %}
+                                        <button type="button"
+                                                class="btn task-action-btn task-github-btn"
+                                                data-task-id="{{ task.id }}"
+                                                data-has-issue="false"
+                                                data-task-has-github="false"
+                                                data-task-github-state=""
+                                                aria-label="Link with GitHub"
+                                                title="Link with GitHub">
+                                            <i class="bi bi-github"></i>
+                                            <span class="visually-hidden">Link with GitHub</span>
+                                        </button>
+                                    {% endif %}
                                     <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}" data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}">
                                         <i class="bi bi-tags"></i>
                                     </button>
