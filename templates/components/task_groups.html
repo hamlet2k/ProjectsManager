@@ -48,67 +48,55 @@
                              data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
                              data-task-github-state="{{ task.github_issue_state or '' }}">
                             <div class="task-item-header my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
-                                <div class="d-flex align-items-center flex-grow-1">
-                                    <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }}" id="grip" data-item-id="{{ task.id }}"></i>
+                                <div class="d-flex align-items-start w-100">
+                                    <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }} mt-1" id="grip" data-item-id="{{ task.id }}"></i>
                                     {% if has_details %}
-                                        <a href="#" class="text-decoration-none task-toggle no-visited d-flex align-items-center flex-grow-1 gap-2 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
-                                            <div class="flex-grow-1 task-title">
+                                        <a href="#" class="text-decoration-none task-toggle no-visited flex-grow-1 ms-2 collapsed" data-bs-toggle="collapse" data-bs-target="#collapse{{ group.dom_id }}-{{ task.id }}" aria-expanded="false" aria-controls="collapse{{ group.dom_id }}-{{ task.id }}">
+                                            <div class="task-title">
+                                                <span class="task-name">
+                                                    {% if task.completed %}
+                                                        <del>{{ task.name }}</del>
+                                                    {% else %}
+                                                        {{ task.name }}
+                                                    {% endif %}
+                                                </span>
+                                                {% if task.github_issue_number and task.github_issue_url %}
+                                                    <a href="{{ task.github_issue_url }}" 
+                                                       target="_blank" 
+                                                       rel="noopener" 
+                                                       class="github-issue-badge"
+                                                       onclick="event.stopPropagation()"
+                                                       title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                        <i class="bi bi-github"></i>
+                                                        #{{ task.github_issue_number }}
+                                                    </a>
+                                                {% endif %}
+                                            </div>
+                                        </a>
+                                        <i class="bi bi-chevron-right task-chevron mt-1 ms-2" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
+                                    {% else %}
+                                        <div class="task-title ms-2 flex-grow-1">
+                                            <span class="task-name">
                                                 {% if task.completed %}
                                                     <del>{{ task.name }}</del>
                                                 {% else %}
                                                     {{ task.name }}
                                                 {% endif %}
-                                                {% if task.github_issue_number and task.github_issue_url %}
-                                                    <a href="{{ task.github_issue_url }}" 
-                                                       target="_blank" 
-                                                       rel="noopener" 
-                                                       class="github-issue-link text-decoration-none ms-2"
-                                                       onclick="event.stopPropagation()"
-                                                       title="Open GitHub issue #{{ task.github_issue_number }}">
-                                                        <small class="text-muted">#{{ task.github_issue_number }}</small>
-                                                    </a>
-                                                {% endif %}
-                                            </div>
-                                            <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
-                                        </a>
-                                    {% else %}
-                                        <div class="mx-2 flex-grow-1 task-title">
-                                            {% if task.completed %}
-                                                <del>{{ task.name }}</del>
-                                            {% else %}
-                                                {{ task.name }}
-                                            {% endif %}
+                                            </span>
                                             {% if task.github_issue_number and task.github_issue_url %}
                                                 <a href="{{ task.github_issue_url }}" 
                                                    target="_blank" 
                                                    rel="noopener" 
-                                                   class="github-issue-link text-decoration-none ms-2"
+                                                   class="github-issue-badge"
                                                    title="Open GitHub issue #{{ task.github_issue_number }}">
-                                                    <small class="text-muted">#{{ task.github_issue_number }}</small>
+                                                    <i class="bi bi-github"></i>
+                                                    #{{ task.github_issue_number }}
                                                 </a>
                                             {% endif %}
                                         </div>
                                     {% endif %}
-                                </div>
-                                <div class="task-action-group">
-                                    {% if github_enabled %}
-                                        <button type="button"
-                                            class="btn task-action-btn task-github-btn"
-                                            data-task-id="{{ task.id }}"
-                                            data-has-issue="{{ 'true' if task.has_github_issue else 'false' }}"
-                                            {% if task.github_issue_number %}data-issue-number="{{ task.github_issue_number }}"{% endif %}
-                                            {% if task.github_issue_url %}data-issue-url="{{ task.github_issue_url }}"{% endif %}
-                                            data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
-                                            data-task-github-state="{{ task.github_issue_state or '' }}"
-                                            title="{{ 'Sync GitHub issue' if task.has_github_issue else 'Create GitHub issue' }}">
-                                            {% if task.has_github_issue %}
-                                                <i class="bi bi-arrow-repeat"></i>
-                                            {% else %}
-                                                <i class="bi bi-github"></i>
-                                            {% endif %}
-                                        </button>
-                                    {% endif %}
-                                    <a class="btn task-action-btn task-complete-btn"
+                                    <div class="task-action-group">
+                                        <a class="btn task-action-btn task-complete-btn"
                                         href="{{ url_for('complete_task', id=task.id) }}"
                                         data-task-name="{{ task.name | e }}"
                                         data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
