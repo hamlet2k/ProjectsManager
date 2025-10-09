@@ -58,6 +58,16 @@
                                                 {% else %}
                                                     {{ task.name }}
                                                 {% endif %}
+                                                {% if task.github_issue_number and task.github_issue_url %}
+                                                    <a href="{{ task.github_issue_url }}" 
+                                                       target="_blank" 
+                                                       rel="noopener" 
+                                                       class="github-issue-link text-decoration-none ms-2"
+                                                       onclick="event.stopPropagation()"
+                                                       title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                        <small class="text-muted">#{{ task.github_issue_number }}</small>
+                                                    </a>
+                                                {% endif %}
                                             </div>
                                             <i class="bi bi-chevron-right task-chevron" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
                                         </a>
@@ -67,6 +77,15 @@
                                                 <del>{{ task.name }}</del>
                                             {% else %}
                                                 {{ task.name }}
+                                            {% endif %}
+                                            {% if task.github_issue_number and task.github_issue_url %}
+                                                <a href="{{ task.github_issue_url }}" 
+                                                   target="_blank" 
+                                                   rel="noopener" 
+                                                   class="github-issue-link text-decoration-none ms-2"
+                                                   title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                    <small class="text-muted">#{{ task.github_issue_number }}</small>
+                                                </a>
                                             {% endif %}
                                         </div>
                                     {% endif %}
@@ -88,15 +107,6 @@
                                                 <i class="bi bi-github"></i>
                                             {% endif %}
                                         </button>
-                                        {% if task.github_issue_url %}
-                                            <a class="btn task-action-btn"
-                                               href="{{ task.github_issue_url }}"
-                                               target="_blank"
-                                               rel="noopener"
-                                               aria-label="Open GitHub issue">
-                                                <i class="bi bi-box-arrow-up-right"></i>
-                                            </a>
-                                        {% endif %}
                                     {% endif %}
                                     <a class="btn task-action-btn task-complete-btn"
                                         href="{{ url_for('complete_task', id=task.id) }}"
