@@ -1026,10 +1026,13 @@ def github_projects():
             except SQLAlchemyError:
                 db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            message = "Unable to load GitHub projects. Ensure your token includes project access."
+        if error.status_code in (401, 403, 410):
+            message = (
+                "Unable to load GitHub projects. Ensure your token includes project access "
+                "and that classic projects are enabled for the repository."
+            )
         response = {"success": False, "message": message}
-        if error.status_code in (401, 403):
+        if error.status_code in (401, 403, 410):
             response["permission_error"] = True
         return jsonify(response), status
 
@@ -1061,10 +1064,13 @@ def github_milestones():
             except SQLAlchemyError:
                 db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            message = "Unable to load GitHub milestones. Ensure your token includes milestone access."
+        if error.status_code in (401, 403, 410):
+            message = (
+                "Unable to load GitHub milestones. Ensure your token includes milestone access "
+                "and that milestones are enabled for the repository."
+            )
         response = {"success": False, "message": message}
-        if error.status_code in (401, 403):
+        if error.status_code in (401, 403, 410):
             response["permission_error"] = True
         return jsonify(response), status
 

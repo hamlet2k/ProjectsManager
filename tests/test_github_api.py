@@ -78,6 +78,24 @@ class GitHubApiTestCase(unittest.TestCase):
         self.assertTrue(payload.get("permission_error"))
         self.assertIn("Ensure your token includes project access", payload["message"])
 
+    def test_github_projects_endpoint_projects_gone(self):
+        repository = {"owner": "octocat", "name": "hello-world"}
+
+        with patch(
+            "app.list_repository_projects",
+            side_effect=GitHubError(
+                "GitHub repository projects are not available for this repository.",
+                410,
+            ),
+        ):
+            response = self.client.post("/api/github/projects", json={"repository": repository})
+
+        self.assertEqual(response.status_code, 410)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload.get("permission_error"))
+        self.assertIn("classic projects", payload["message"])
+
     def test_github_milestones_endpoint_success(self):
         repository = {"owner": "octocat", "name": "hello-world"}
         milestones = [
@@ -117,6 +135,27 @@ class GitHubApiTestCase(unittest.TestCase):
         self.assertFalse(payload["success"])
         self.assertTrue(payload.get("permission_error"))
         self.assertIn("Ensure your token includes milestone access", payload["message"])
+
+    def test_github_milestones_endpoint_projects_gone(self):
+        repository = {"owner": "octocat", "name": "hello-world"}
+
+        with patch(
+            "app.list_repository_milestones",
+            side_effect=GitHubError(
+                "GitHub repository projects are not available for this repository.",
+                410,
+            ),
+        ):
+            response = self.client.post(
+                "/api/github/milestones",
+                json={"repository": repository},
+            )
+
+        self.assertEqual(response.status_code, 410)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload.get("permission_error"))
+        self.assertIn("milestone access", payload["message"])
 
 
 if __name__ == "__main__":

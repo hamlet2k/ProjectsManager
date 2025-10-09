@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
+from http.client import RemoteDisconnected
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib import request as urllib_request, error as urllib_error
 from urllib.parse import quote
@@ -120,6 +121,8 @@ def _request(
     except urllib_error.HTTPError as error:
         status = error.code
         raw = error.read()
+    except RemoteDisconnected as error:
+        raise GitHubError("GitHub closed the connection unexpectedly.") from error
     except urllib_error.URLError as error:
         raise GitHubError("Unable to reach GitHub.") from error
 
@@ -174,6 +177,11 @@ def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str
             raise GitHubError("Unauthorized", status)
         if status == 404:
             raise GitHubError("Repository not found", status)
+        if status == 410:
+            raise GitHubError(
+                "GitHub repository projects are not available for this repository.",
+                status,
+            )
         if status >= 400:
             raise GitHubError("Unable to list projects", status)
         if not isinstance(payload, list) or not payload:
