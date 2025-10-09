@@ -66,7 +66,7 @@
 
     .task-item-header {
         display: flex;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         align-items: flex-start;
         column-gap: 0.5rem;
         row-gap: 0.35rem;
@@ -94,6 +94,12 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 0.5rem;
+        justify-content: flex-start;
+    }
+
+    .task-name {
+        flex-shrink: 1;
+        word-break: break-word;
     }
 
     .task-title del {
@@ -126,6 +132,52 @@
 
     .github-issue-badge i {
         font-size: 0.65rem;
+    }
+
+    .task-action-group {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .task-title-container {
+        display: flex;
+        align-items: flex-start;
+        flex-grow: 1;
+        min-width: 0;
+    }
+
+    /* On smaller screens, move actions to new line */
+    @media (max-width: 767px) {
+        .task-item-header {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .task-action-group {
+            margin-left: 0;
+            justify-content: flex-end;
+            margin-top: 0.25rem;
+        }
+
+        .task-title-container {
+            width: 100%;
+        }
+    }
+
+    /* Medium screens (tablets) */
+    @media (min-width: 768px) and (max-width: 991px) {
+        .task-item-header {
+            flex-direction: row;
+            flex-wrap: wrap;
+        }
+
+        .task-action-group {
+            margin-left: auto;
+            margin-top: 0;
+        }
     }
 
     .tag-section-label {
@@ -340,6 +392,12 @@
     @media (min-width: 992px) {
         .task-item-header {
             flex-wrap: nowrap;
+            flex-direction: row;
+        }
+
+        .task-action-group {
+            margin-left: auto;
+            margin-top: 0;
         }
 
         .task-filter-collapse.collapse {
