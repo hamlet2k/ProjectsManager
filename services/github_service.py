@@ -18,7 +18,7 @@ from flask import current_app
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_APP_LABEL = "ProjectsManager"
 MISSING_ISSUE_STATUS_CODES = {404, 410}
-PROJECTS_ACCEPT_HEADER = "application/vnd.github+json, application/vnd.github.inertia-preview+json"
+PROJECTS_ACCEPT_HEADER = "application/vnd.github+json"
 UNSET = object()
 GRAPHQL_PROJECTS_QUERY = """
 query($login: String!, $first: Int!) {
