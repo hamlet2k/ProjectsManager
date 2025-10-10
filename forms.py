@@ -72,7 +72,7 @@ class ScopeForm(FlaskForm):
 
 
 class TaskForm(FlaskForm):
-    name = StringField("Name", [DataRequired()])
+    name = TextAreaField("Name", [DataRequired()])
     description = TextAreaField("Description")
     end_date = DateTimeLocalField("End Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
     tags = HiddenField("Tags")

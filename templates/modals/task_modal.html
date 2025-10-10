@@ -13,7 +13,7 @@
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="task-modal-description">Capture or update the essential details for this task.</p>
                 <div class="form-floating mb-3">
-                    {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_=task_form.name.name) }}
+                    {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_=task_form.name.name, rows=1) }}
                     {{ task_form.name.label(class="form-label") }}
                     {% if task_form.name.errors %}
                         {% for error in task_form.name.errors %}

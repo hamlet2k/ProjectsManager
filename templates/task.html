@@ -64,6 +64,23 @@
         gap: 0.25rem;
     }
 
+    .quick-task-input {
+        height: 2.75rem;
+        min-height: 2.75rem;
+        max-height: 12rem;
+        resize: none;
+        overflow: hidden;
+        transition: height 0.2s ease, min-height 0.2s ease;
+    }
+
+    .quick-task-input.quick-task-input--expanded {
+        min-height: 3.25rem;
+    }
+
+    .quick-task-input.quick-task-input--overflow {
+        overflow-y: auto;
+    }
+
     .task-item-header {
         display: flex;
         flex-wrap: wrap;
@@ -507,7 +524,14 @@
                 <span class="input-group-text clickable-icon collapsed" data-bs-toggle="collapse" data-bs-target="#detailed-item-container">
                     <i class="bi bi-chevron-down text-muted"></i>
                 </span>
-                {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_="Add new task...") }}
+                {{ task_form.name(
+                    class_='form-control quick-task-input' + (' is-invalid' if task_form.name.errors else ''),
+                    placeholder_="Add new task...",
+                    rows=1,
+                    data_auto_resize="quick-task-input",
+                    data_collapsed_height="44",
+                    data_auto_resize_max="192"
+                ) }}
                 <button id="quick-add-btn" class="btn btn-primary" type="submit">
                     <i class="bi bi-floppy"></i>
                 </button>
@@ -658,6 +682,80 @@
     const quickAddBtn = document.getElementById('quick-add-btn');
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
     const nameField = document.getElementById('name');
+    const quickTaskInput = (nameField && nameField.dataset && nameField.dataset.autoResize === 'quick-task-input')
+        ? nameField
+        : null;
+    if (quickTaskInput) {
+        const parsedCollapsedHeight = parseInt(quickTaskInput.dataset.collapsedHeight || '44', 10);
+        const parsedMaxHeight = parseInt(quickTaskInput.dataset.autoResizeMax || '192', 10);
+        const collapsedHeight = Math.max(Number.isFinite(parsedCollapsedHeight) ? parsedCollapsedHeight : 44, 1);
+        const maxExpandedHeight = Math.max(
+            Number.isFinite(parsedMaxHeight) ? parsedMaxHeight : 192,
+            collapsedHeight
+        );
+
+        const collapseQuickTaskInput = () => {
+            quickTaskInput.classList.remove('quick-task-input--expanded', 'quick-task-input--overflow');
+            quickTaskInput.style.overflowY = 'hidden';
+            quickTaskInput.style.minHeight = `${collapsedHeight}px`;
+            quickTaskInput.style.height = `${collapsedHeight}px`;
+            quickTaskInput.style.maxHeight = `${maxExpandedHeight}px`;
+        };
+
+        const expandQuickTaskInput = () => {
+            quickTaskInput.classList.add('quick-task-input--expanded');
+            quickTaskInput.style.maxHeight = `${maxExpandedHeight}px`;
+            quickTaskInput.style.minHeight = `${collapsedHeight}px`;
+            quickTaskInput.style.height = 'auto';
+            const fullHeight = quickTaskInput.scrollHeight;
+            const desiredHeight = Math.min(fullHeight, maxExpandedHeight);
+            quickTaskInput.style.height = `${desiredHeight}px`;
+            const isOverflowing = fullHeight > maxExpandedHeight;
+            if (isOverflowing) {
+                quickTaskInput.classList.add('quick-task-input--overflow');
+                quickTaskInput.style.overflowY = 'auto';
+            } else {
+                quickTaskInput.classList.remove('quick-task-input--overflow');
+                quickTaskInput.style.overflowY = 'hidden';
+            }
+        };
+
+        const updateQuickTaskInputHeight = () => {
+            if (document.activeElement === quickTaskInput) {
+                expandQuickTaskInput();
+            } else {
+                collapseQuickTaskInput();
+            }
+        };
+
+        quickTaskInput.addEventListener('focus', () => {
+            expandQuickTaskInput();
+        });
+
+        quickTaskInput.addEventListener('input', () => {
+            expandQuickTaskInput();
+        });
+
+        quickTaskInput.addEventListener('blur', () => {
+            collapseQuickTaskInput();
+        });
+
+        if (quickTaskInput.form) {
+            quickTaskInput.form.addEventListener('reset', () => {
+                window.requestAnimationFrame(() => {
+                    collapseQuickTaskInput();
+                });
+            });
+        }
+
+        const quickTaskObserver = new MutationObserver(() => {
+            window.requestAnimationFrame(updateQuickTaskInputHeight);
+        });
+        quickTaskObserver.observe(quickTaskInput, { characterData: true, childList: true, subtree: true });
+
+        window.addEventListener('resize', updateQuickTaskInputHeight);
+        updateQuickTaskInputHeight();
+    }
     const descriptionField = document.getElementById('description');
     const endDateField = document.getElementById('end_date');
     const githubMilestoneContainer = document.querySelector('[data-github-milestone-container]');
