@@ -70,7 +70,7 @@
         max-height: 12rem;
         resize: none;
         overflow: hidden;
-        transition: height 0.2s ease, min-height 0.2s ease;
+        transition: height 0.25s ease, min-height 0.25s ease;
     }
 
     .quick-task-input.quick-task-input--expanded {
@@ -78,6 +78,23 @@
     }
 
     .quick-task-input.quick-task-input--overflow {
+        overflow-y: auto;
+    }
+
+    .task-description-input {
+        height: 2.75rem;
+        min-height: 2.75rem;
+        max-height: 80vh;
+        resize: none;
+        overflow: hidden;
+        transition: height 0.25s ease, min-height 0.25s ease;
+    }
+
+    .task-description-input.task-description-input--expanded {
+        min-height: 3.5rem;
+    }
+
+    .task-description-input.task-description-input--overflow {
         overflow-y: auto;
     }
 
@@ -530,7 +547,9 @@
                     rows=1,
                     data_auto_resize="quick-task-input",
                     data_collapsed_height="44",
-                    data_auto_resize_max="192"
+                    data_auto_resize_max="192",
+                    data_expanded_class="quick-task-input--expanded",
+                    data_overflow_class="quick-task-input--overflow"
                 ) }}
                 <button id="quick-add-btn" class="btn btn-primary" type="submit">
                     <i class="bi bi-floppy"></i>
@@ -545,7 +564,16 @@
         <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
             <div class="accordion-body">
                 <div class="form-floating mb-3">
-                    {{ task_form.description(class_='form-control auto-resize-textarea'+ (' is-invalid' if task_form.description.errors else ''), rows=3, placeholder_='Add more details') }}
+                    {{ task_form.description(
+                        class_='form-control task-description-input' + (' is-invalid' if task_form.description.errors else ''),
+                        rows=1,
+                        placeholder_='Add more details',
+                        data_auto_resize="task-description",
+                        data_collapsed_height="44",
+                        data_max_viewport_ratio="0.8",
+                        data_expanded_class="task-description-input--expanded",
+                        data_overflow_class="task-description-input--overflow"
+                    ) }}
                     {{ task_form.description.label(class_='form-label') }}
                     {% set description_error = task_form.description.errors[0] if task_form.description.errors else '' %}
                     <div class="invalid-feedback {% if not description_error %}d-none{% endif %}" data-feedback-for="description">{{ description_error }}</div>
@@ -682,81 +710,18 @@
     const quickAddBtn = document.getElementById('quick-add-btn');
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
     const nameField = document.getElementById('name');
-    const quickTaskInput = (nameField && nameField.dataset && nameField.dataset.autoResize === 'quick-task-input')
-        ? nameField
-        : null;
-    if (quickTaskInput) {
-        const parsedCollapsedHeight = parseInt(quickTaskInput.dataset.collapsedHeight || '44', 10);
-        const parsedMaxHeight = parseInt(quickTaskInput.dataset.autoResizeMax || '192', 10);
-        const collapsedHeight = Math.max(Number.isFinite(parsedCollapsedHeight) ? parsedCollapsedHeight : 44, 1);
-        const maxExpandedHeight = Math.max(
-            Number.isFinite(parsedMaxHeight) ? parsedMaxHeight : 192,
-            collapsedHeight
-        );
-
-        const collapseQuickTaskInput = () => {
-            quickTaskInput.classList.remove('quick-task-input--expanded', 'quick-task-input--overflow');
-            quickTaskInput.style.overflowY = 'hidden';
-            quickTaskInput.style.minHeight = `${collapsedHeight}px`;
-            quickTaskInput.style.height = `${collapsedHeight}px`;
-            quickTaskInput.style.maxHeight = `${maxExpandedHeight}px`;
-        };
-
-        const expandQuickTaskInput = () => {
-            quickTaskInput.classList.add('quick-task-input--expanded');
-            quickTaskInput.style.maxHeight = `${maxExpandedHeight}px`;
-            quickTaskInput.style.minHeight = `${collapsedHeight}px`;
-            quickTaskInput.style.height = 'auto';
-            const fullHeight = quickTaskInput.scrollHeight;
-            const desiredHeight = Math.min(fullHeight, maxExpandedHeight);
-            quickTaskInput.style.height = `${desiredHeight}px`;
-            const isOverflowing = fullHeight > maxExpandedHeight;
-            if (isOverflowing) {
-                quickTaskInput.classList.add('quick-task-input--overflow');
-                quickTaskInput.style.overflowY = 'auto';
-            } else {
-                quickTaskInput.classList.remove('quick-task-input--overflow');
-                quickTaskInput.style.overflowY = 'hidden';
-            }
-        };
-
-        const updateQuickTaskInputHeight = () => {
-            if (document.activeElement === quickTaskInput) {
-                expandQuickTaskInput();
-            } else {
-                collapseQuickTaskInput();
-            }
-        };
-
-        quickTaskInput.addEventListener('focus', () => {
-            expandQuickTaskInput();
-        });
-
-        quickTaskInput.addEventListener('input', () => {
-            expandQuickTaskInput();
-        });
-
-        quickTaskInput.addEventListener('blur', () => {
-            collapseQuickTaskInput();
-        });
-
-        if (quickTaskInput.form) {
-            quickTaskInput.form.addEventListener('reset', () => {
-                window.requestAnimationFrame(() => {
-                    collapseQuickTaskInput();
-                });
-            });
-        }
-
-        const quickTaskObserver = new MutationObserver(() => {
-            window.requestAnimationFrame(updateQuickTaskInputHeight);
-        });
-        quickTaskObserver.observe(quickTaskInput, { characterData: true, childList: true, subtree: true });
-
-        window.addEventListener('resize', updateQuickTaskInputHeight);
-        updateQuickTaskInputHeight();
-    }
     const descriptionField = document.getElementById('description');
+
+    Array.from(document.querySelectorAll('textarea[data-auto-resize]')).forEach((textarea) => {
+        initializeAutoResizingTextarea(textarea);
+    });
+
+    const nameFieldAutoResize = nameField && nameField.__autoResizeController
+        ? nameField.__autoResizeController
+        : null;
+    const descriptionFieldAutoResize = descriptionField && descriptionField.__autoResizeController
+        ? descriptionField.__autoResizeController
+        : null;
     const endDateField = document.getElementById('end_date');
     const githubMilestoneContainer = document.querySelector('[data-github-milestone-container]');
     const githubMilestoneSelect = document.getElementById('task-github-milestone-select');
@@ -1188,12 +1153,142 @@
         }
     }
 
-    function autoResizeTextarea(textarea) {
+    function initializeAutoResizingTextarea(textarea) {
         if (!textarea) {
-            return;
+            return null;
         }
-        textarea.style.height = 'auto';
-        textarea.style.height = `${textarea.scrollHeight}px`;
+        if (textarea.__autoResizeController) {
+            return textarea.__autoResizeController;
+        }
+
+        const dataset = textarea.dataset || {};
+        const computedStyle = window.getComputedStyle(textarea);
+        const fallbackCollapsedHeight = (() => {
+            const lineHeight = parseFloat(computedStyle.lineHeight) || 0;
+            const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+            const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+            const borderTop = parseFloat(computedStyle.borderTopWidth) || 0;
+            const borderBottom = parseFloat(computedStyle.borderBottomWidth) || 0;
+            const total = lineHeight + paddingTop + paddingBottom + borderTop + borderBottom;
+            return total > 0 ? Math.ceil(total) : 44;
+        })();
+        const parsedCollapsed = parseInt(dataset.collapsedHeight || '', 10);
+        const collapsedHeight = Math.max(
+            Number.isFinite(parsedCollapsed) && parsedCollapsed > 0 ? parsedCollapsed : fallbackCollapsedHeight,
+            1
+        );
+
+        const parsedMax = parseInt(dataset.autoResizeMax || '', 10);
+        const explicitMaxHeight = Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : Infinity;
+
+        let viewportRatio = parseFloat(dataset.maxViewportRatio || '');
+        if (Number.isFinite(viewportRatio)) {
+            if (viewportRatio > 1) {
+                viewportRatio /= 100;
+            }
+            if (viewportRatio <= 0) {
+                viewportRatio = null;
+            } else if (viewportRatio > 1) {
+                viewportRatio = 1;
+            }
+        } else {
+            viewportRatio = null;
+        }
+
+        const expandedClass = dataset.expandedClass || '';
+        const overflowClass = dataset.overflowClass || '';
+
+        const computeMaxHeight = () => {
+            const viewportLimit = viewportRatio ? Math.floor(window.innerHeight * viewportRatio) : Infinity;
+            const limit = Math.min(explicitMaxHeight, viewportLimit);
+            if (!Number.isFinite(limit)) {
+                return Infinity;
+            }
+            return Math.max(collapsedHeight, limit);
+        };
+
+        const setExpandedState = (isExpanded) => {
+            if (!expandedClass) {
+                return;
+            }
+            textarea.classList.toggle(expandedClass, Boolean(isExpanded));
+        };
+
+        const setOverflowState = (isOverflowing) => {
+            if (overflowClass) {
+                textarea.classList.toggle(overflowClass, Boolean(isOverflowing));
+            }
+            textarea.style.overflowY = isOverflowing ? 'auto' : 'hidden';
+        };
+
+        const collapse = () => {
+            setExpandedState(false);
+            setOverflowState(false);
+            textarea.style.minHeight = `${collapsedHeight}px`;
+            const maxHeight = computeMaxHeight();
+            textarea.style.maxHeight = Number.isFinite(maxHeight) ? `${maxHeight}px` : '';
+            textarea.style.height = `${collapsedHeight}px`;
+        };
+
+        const expand = () => {
+            setExpandedState(true);
+            textarea.style.minHeight = `${collapsedHeight}px`;
+            const maxHeight = computeMaxHeight();
+            textarea.style.maxHeight = Number.isFinite(maxHeight) ? `${maxHeight}px` : '';
+            textarea.style.height = 'auto';
+            const fullHeight = textarea.scrollHeight;
+            const cap = Number.isFinite(maxHeight) ? maxHeight : fullHeight;
+            const desiredHeight = Math.max(collapsedHeight, Math.min(fullHeight, cap));
+            textarea.style.height = `${desiredHeight}px`;
+            setOverflowState(Number.isFinite(maxHeight) && fullHeight > maxHeight);
+        };
+
+        const refresh = () => {
+            if (document.activeElement === textarea) {
+                expand();
+            } else {
+                collapse();
+            }
+        };
+
+        const handleFocus = () => expand();
+        const handleInput = () => expand();
+        const handleBlur = () => collapse();
+        const handleResize = () => refresh();
+        const handleFormReset = () => window.requestAnimationFrame(() => collapse());
+
+        textarea.style.resize = 'none';
+        textarea.style.overflowY = 'hidden';
+
+        textarea.addEventListener('focus', handleFocus);
+        textarea.addEventListener('input', handleInput);
+        textarea.addEventListener('blur', handleBlur);
+        window.addEventListener('resize', handleResize);
+
+        const form = textarea.form;
+        if (form) {
+            form.addEventListener('reset', handleFormReset);
+        }
+
+        const controller = {
+            refresh,
+            expand,
+            collapse,
+            destroy() {
+                textarea.removeEventListener('focus', handleFocus);
+                textarea.removeEventListener('input', handleInput);
+                textarea.removeEventListener('blur', handleBlur);
+                window.removeEventListener('resize', handleResize);
+                if (form) {
+                    form.removeEventListener('reset', handleFormReset);
+                }
+                delete textarea.__autoResizeController;
+            },
+        };
+
+        textarea.__autoResizeController = controller;
+        refresh();
+        return controller;
     }
 
     function selectDueDateBucket(bucket) {
@@ -1418,8 +1513,11 @@
                 taskForm.reset();
                 clearInlineSelection();
                 collapseAccordionItem('detailed-item-container');
-                if (descriptionField) {
-                    descriptionField.style.height = '';
+                if (nameFieldAutoResize) {
+                    nameFieldAutoResize.refresh();
+                }
+                if (descriptionFieldAutoResize) {
+                    descriptionFieldAutoResize.refresh();
                 }
                 setTaskFormActionToAdd();
 
@@ -3114,6 +3212,9 @@
         const taskData = getTaskDataFromButton(button);
         if (nameField) {
             nameField.value = taskData.name || '';
+            if (nameFieldAutoResize) {
+                nameFieldAutoResize.refresh();
+            }
         }
 
         editingTaskHasGithub = taskData.has_github_issue;
@@ -3121,7 +3222,9 @@
 
         if (descriptionField) {
             descriptionField.value = taskData.description || '';
-            autoResizeTextarea(descriptionField);
+            if (descriptionFieldAutoResize) {
+                descriptionFieldAutoResize.refresh();
+            }
         }
 
         if (endDateField) {
@@ -3628,8 +3731,11 @@
             setTaskFormActionToAdd();
             clearInlineSelection();
             applyTaskFormErrors({});
-            if (descriptionField) {
-                descriptionField.style.height = '';
+            if (nameFieldAutoResize) {
+                nameFieldAutoResize.refresh();
+            }
+            if (descriptionFieldAutoResize) {
+                descriptionFieldAutoResize.refresh();
             }
             editingTaskHasGithub = false;
         });
@@ -3661,11 +3767,6 @@
             }
         });
     }
-
-    document.querySelectorAll('textarea.auto-resize-textarea').forEach((textarea) => {
-        autoResizeTextarea(textarea);
-        textarea.addEventListener('input', () => autoResizeTextarea(textarea));
-    });
 
     function buildFilterUrl() {
         if (!filterForm) {

@@ -22,7 +22,16 @@
                     {% endif %}
                 </div>
                 <div class="form-floating mb-3">
-                    {{ task_form.description(class_='form-control'+ (' is-invalid' if task_form.description.errors else ''), placeholder_=task_form.description.name) }}
+                    {{ task_form.description(
+                        class_='form-control task-description-input' + (' is-invalid' if task_form.description.errors else ''),
+                        placeholder_=task_form.description.name,
+                        rows=1,
+                        data_auto_resize="task-description",
+                        data_collapsed_height="44",
+                        data_max_viewport_ratio="0.8",
+                        data_expanded_class="task-description-input--expanded",
+                        data_overflow_class="task-description-input--overflow"
+                    ) }}
                     {{ task_form.description.label(class="form-label") }}
                     {% if task_form.description.errors %}
                         {% for error in task_form.description.errors %}
@@ -63,6 +72,11 @@
     const taskModalTitle = document.getElementById('task-modal-title');
     const taskModalDescription = document.getElementById('task-modal-description');
     const taskSubmitButton = document.getElementById('submitTaskButton');
+
+    const modalAutoResizeFields = Array.from(document.querySelectorAll('#task-modal textarea[data-auto-resize]'));
+    if (typeof initializeAutoResizingTextarea === 'function') {
+        modalAutoResizeFields.forEach((textarea) => initializeAutoResizingTextarea(textarea));
+    }
 
     function setTaskModalContent({ title, description, submitLabel }) {
         if (taskModalTitle) {
