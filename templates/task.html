@@ -359,6 +359,85 @@
         display: none;
     }
 
+    .task-tag-display {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        width: 100%;
+        padding: 0.45rem 0.65rem;
+        border-radius: 0.75rem;
+        border: 1px solid transparent;
+        background-color: transparent;
+        color: var(--bs-secondary-color, var(--bs-body-color));
+        font-size: 0.85rem;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        text-align: left;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    .task-tag-display:hover,
+    .task-tag-display:focus-visible {
+        background-color: var(--bs-tertiary-bg);
+        border-color: rgba(var(--bs-border-color-rgb, 222, 226, 230), 0.8);
+        box-shadow: 0 0.25rem 0.75rem rgba(33, 37, 41, 0.08);
+        outline: 0;
+        text-decoration: none;
+    }
+
+    .task-tag-display:focus-visible {
+        box-shadow: 0 0 0 0.15rem rgba(var(--bs-primary-rgb, 13, 110, 253), 0.25);
+    }
+
+    [data-bs-theme="dark"] .task-tag-display:hover,
+    [data-bs-theme="dark"] .task-tag-display:focus-visible {
+        border-color: rgba(255, 255, 255, 0.25);
+        box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.3);
+    }
+
+    .task-tag-display .task-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin: 0;
+        padding: 0;
+    }
+
+    .task-tag-display .tag-pill {
+        background-color: transparent;
+        border: none;
+        padding: 0;
+        margin: 0;
+        color: inherit;
+        font-weight: 600;
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
+    }
+
+    .task-tag-placeholder {
+        font-style: italic;
+        color: var(--bs-secondary-color, var(--bs-secondary));
+        opacity: 0.75;
+    }
+
+    .task-tags--animate {
+        animation: taskTagFadeIn 0.25s ease;
+    }
+
+    @keyframes taskTagFadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
     .inline-tag-chip {
         border-radius: 999px;
         padding: 0.25rem 0.75rem;
@@ -2421,6 +2500,7 @@
         const container = document.getElementById(`task-tags-${taskId}`);
         if (container) {
             container.innerHTML = '';
+            container.classList.remove('task-tags--animate');
             tags.forEach((tag) => {
                 const pill = document.createElement('span');
                 pill.className = 'tag-pill';
@@ -2429,6 +2509,14 @@
                 pill.textContent = `#${tag.name}`;
                 container.appendChild(pill);
             });
+            // Trigger a lightweight animation to highlight updates
+            void container.offsetWidth; // force reflow
+            container.classList.add('task-tags--animate');
+        }
+
+        const placeholder = document.querySelector(`[data-tag-placeholder-id="${taskId}"]`);
+        if (placeholder) {
+            placeholder.classList.toggle('d-none', Array.isArray(tags) && tags.length > 0);
         }
 
         const taskWrapper = document.querySelector(`.task-item[data-task-id="${taskId}"]`);
@@ -3929,27 +4017,27 @@
     }
 
     function attachTagManagerListeners() {
-        document.querySelectorAll('.tag-manager-btn').forEach((button) => {
-            if (button.dataset.tagManagerListenerAttached === 'true') {
+        document.querySelectorAll('[data-tag-manager-trigger]').forEach((trigger) => {
+            if (trigger.dataset.tagManagerListenerAttached === 'true') {
                 return;
             }
-            button.dataset.tagManagerListenerAttached = 'true';
-            button.addEventListener('click', (event) => {
+            trigger.dataset.tagManagerListenerAttached = 'true';
+            trigger.addEventListener('click', (event) => {
                 event.preventDefault();
                 if (!tagModal) {
                     return;
                 }
 
-                currentTaskId = button.dataset.taskId;
+                currentTaskId = trigger.dataset.taskId;
                 currentTaskTags = new Map();
-                currentTaskHasGithub = button.dataset.taskHasGithub === 'true';
+                currentTaskHasGithub = trigger.dataset.taskHasGithub === 'true';
 
                 if (tagModalTaskName) {
-                    const taskLabel = button.dataset.taskName || 'this task';
+                    const taskLabel = trigger.dataset.taskName || 'this task';
                     tagModalTaskName.textContent = `Task: "${taskLabel}"`;
                 }
 
-                const tagContainer = document.getElementById(`task-tags-${currentTaskId}`);
+                const tagContainer = currentTaskId ? document.getElementById(`task-tags-${currentTaskId}`) : null;
                 if (tagContainer) {
                     tagContainer.querySelectorAll('[data-tag-id]').forEach((pill) => {
                         const id = String(pill.dataset.tagId);

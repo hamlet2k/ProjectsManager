@@ -30,7 +30,7 @@
             <div class="accordion" id="{{ group.dom_id }}" data-sortable="{{ 'true' if group.sortable else 'false' }}">
                 {% if group.tasks %}
                     {% for task in group.tasks %}
-                        {% set has_details = task.has_info() or task.completed_date %}
+                        {% set has_details = True %}
                         {% set subtask_ns = namespace(items=[]) %}
                         {% for subtask in task.subtasks %}
                             {% set _ = subtask_ns.items.append({'name': subtask.name, 'description': subtask.description}) %}
@@ -179,9 +179,6 @@
                                             <span class="visually-hidden">Link with GitHub</span>
                                         </button>
                                     {% endif %}
-                                    <button type="button" class="btn task-action-btn tag-manager-btn" data-task-id="{{ task.id }}" data-task-name="{{ task.name | e }}" data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}">
-                                        <i class="bi bi-tags"></i>
-                                    </button>
                                     <button type="button" class="btn task-action-btn edit-task-btn"
                                         data-task-id="{{ task.id }}"
                                         data-task-name="{{ task.name | e }}"
@@ -213,7 +210,22 @@
                             </div>
                             <div id="collapse{{ group.dom_id }}-{{ task.id }}" class="accordion-collapse collapse" data-bs-parent="#{{ group.dom_id }}">
                                 {% if has_details %}
-                                <div class="accordion-body d-flex flex-column gap-2">
+                                <div class="accordion-body d-flex flex-column gap-3">
+                                    <button type="button"
+                                            class="task-tag-display text-start"
+                                            data-tag-manager-trigger
+                                            data-task-id="{{ task.id }}"
+                                            data-task-name="{{ task.name | e }}"
+                                            data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                                            aria-label="Edit tags for {{ task.name }}"
+                                            title="Edit tags for {{ task.name }}">
+                                        <div class="task-tags" id="task-tags-{{ task.id }}">
+                                            {% for tag in task.tags %}
+                                                <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</span>
+                                            {% endfor %}
+                                        </div>
+                                        <span class="task-tag-placeholder {% if task.tags %}d-none{% endif %}" data-tag-placeholder-id="{{ task.id }}">Add tags</span>
+                                    </button>
                                     {% if task.description %}
                                         <div class="small task-description markdown-content mb-0">{{ task.description_html }}</div>
                                     {% endif %}
@@ -229,11 +241,6 @@
                                             <span class="completed-date" data-completed-date="{{ task.completed_date.isoformat() }}"></span>
                                         </div>
                                     {% endif %}
-                                    <div class="d-flex flex-wrap gap-2 task-tags" id="task-tags-{{ task.id }}">
-                                        {% for tag in task.tags %}
-                                            <span class="tag-pill" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}">#{{ tag.name }}</span>
-                                        {% endfor %}
-                                    </div>
                                     {% for subtask in task.subtasks %}
                                         <div class="ms-3">
                                             <strong>{{ subtask.name }}</strong> - {{ subtask.description }}
