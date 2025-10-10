@@ -462,6 +462,7 @@ def _remove_local_github_tag(task: Task) -> None:
 
 def _clear_github_issue_link(task: Task) -> None:
     task.github_issue_id = None
+    task.github_issue_node_id = None
     task.github_issue_number = None
     task.github_issue_url = None
     task.github_issue_state = None
@@ -486,12 +487,13 @@ def _serialize_task_payload(task: Task) -> dict[str, object]:
         "tag_ids": [tag.id for tag in task.tags],
         "has_github_issue": task.has_github_issue,
         "github_issue_state": task.github_issue_state,
+        "github_issue_node_id": task.github_issue_node_id,
         "github_milestone_number": task.github_milestone_number,
         "github_milestone_title": task.github_milestone_title,
         "github_milestone_due_on": _format_github_datetime(task.github_milestone_due_on),
         "github_repo_owner": task.github_repo_owner,
         "github_repo_name": task.github_repo_name,
-        "github_project_id": task.github_project_id,
+        "github_project_id": str(task.github_project_id) if task.github_project_id else None,
         "github_project_name": task.github_project_name,
     }
 
@@ -548,7 +550,7 @@ def _scope_github_context(scope: Scope | None, user: User | None):
         "owner": scope.github_repo_owner,
         "name": scope.github_repo_name,
         "id": scope.github_repo_id,
-        "project_id": scope.github_project_id,
+        "project_id": str(scope.github_project_id) if scope.github_project_id else None,
         "project_name": scope.github_project_name,
         "milestone_number": scope.github_milestone_number,
         "milestone_title": scope.github_milestone_title,
@@ -582,33 +584,31 @@ def _apply_scope_project_to_task(
     task: Task,
     scope: Scope | None,
     context: dict[str, object] | None,
-    issue_id: Optional[int],
+    issue_node_id: Optional[str],
     warnings: list[str],
     *,
     failure_message: str | None = None,
 ) -> None:
     project_id = getattr(scope, "github_project_id", None)
     project_name = getattr(scope, "github_project_name", None)
+    if project_id:
+        project_id = str(project_id)
     if not project_id:
         if task.github_project_id or task.github_project_name:
             task.github_project_id = None
             task.github_project_name = None
         return
-    if task.github_project_id == project_id:
+    if task.github_project_id and str(task.github_project_id) == project_id:
+        task.github_project_id = project_id
         task.github_project_name = project_name
         return
-    if context is None or not issue_id:
+    if context is None or not issue_node_id:
         return
     try:
-        normalized_project_id = int(project_id)
-    except (TypeError, ValueError):
-        logging.warning("Unable to normalize GitHub project id %s", project_id)
-        return
-    try:
-        add_issue_to_project(context["token"], normalized_project_id, issue_id)
+        add_issue_to_project(context["token"], project_id, issue_node_id)
     except GitHubError as error:
         logging.warning(
-            "Unable to add issue %s to project %s: %s", issue_id, project_id, error
+            "Unable to add issue %s to project %s: %s", issue_node_id, project_id, error
         )
         message, _ = _github_error_response(error)
         if error.status_code in (401, 403):
@@ -619,7 +619,7 @@ def _apply_scope_project_to_task(
                 or "Issue synced but could not be added to the configured project."
             )
     else:
-        task.github_project_id = normalized_project_id
+        task.github_project_id = project_id
         task.github_project_name = project_name
 
 
@@ -665,6 +665,12 @@ def _tags_for_labels(scope: Scope, labels: list[str]):
 
 
 def _sync_task_from_issue(task: Task, issue, scope: Scope):
+    issue_id = getattr(issue, "id", None)
+    if issue_id is not None:
+        task.github_issue_id = issue_id
+    node_id = getattr(issue, "node_id", None)
+    if node_id:
+        task.github_issue_node_id = node_id
     task.name = issue.title or task.name
     task.description = issue.body or task.description
     task.github_issue_state = issue.state
@@ -1129,7 +1135,7 @@ def github_projects():
         if error.status_code in (401, 403, 410):
             message = (
                 "Unable to load GitHub projects. Ensure your token includes project access "
-                "and that classic projects are enabled for the repository."
+                "and that GitHub Projects V2 is available for the repository owner."
             )
         response = {"success": False, "message": message}
         if error.status_code in (401, 403, 410):
@@ -1236,12 +1242,13 @@ def github_issue_create():
         task,
         task.scope,
         context,
-        issue.id,
+        issue.node_id,
         warnings,
         failure_message="Issue created but could not be added to the configured project.",
     )
 
     task.github_issue_id = issue.id
+    task.github_issue_node_id = issue.node_id or None
     task.github_issue_number = issue.number
     task.github_issue_url = issue.url
     task.github_issue_state = issue.state
@@ -1363,7 +1370,7 @@ def github_issue_sync():
 
     try:
         _sync_task_from_issue(task, issue, g.scope)
-        _apply_scope_project_to_task(task, g.scope, context, issue.id, warnings)
+        _apply_scope_project_to_task(task, g.scope, context, issue.node_id, warnings)
         _record_sync(task, "sync_issue", "success", f"Issue #{issue.number} synced")
         db.session.commit()
     except SQLAlchemyError as exc:
@@ -1376,11 +1383,11 @@ def github_issue_sync():
     response_payload = {
         "success": True,
         "issue": {
-            "id": issue.id,
-            "number": issue.number,
-            "url": issue.url,
-            "state": issue.state,
-            "labels": issue.labels,
+        "id": issue.id,
+        "number": issue.number,
+        "url": issue.url,
+        "state": issue.state,
+        "labels": issue.labels,
             "milestone": {
                 "number": issue.milestone_number,
                 "title": issue.milestone_title,

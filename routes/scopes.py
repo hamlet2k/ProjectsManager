@@ -274,7 +274,8 @@ def add_scope():
                 scope.github_repo_name = repo_payload.get("name")
                 scope.github_repo_owner = repo_payload.get("owner")
                 if project_payload:
-                    scope.github_project_id = project_payload.get("id")
+                    project_id = project_payload.get("id")
+                    scope.github_project_id = str(project_id) if project_id else None
                     scope.github_project_name = project_payload.get("name")
                 else:
                     scope.github_project_id = None
@@ -391,7 +392,8 @@ def edit_scope(scope_id: int):
                 scope.github_repo_name = repo_payload.get("name")
                 scope.github_repo_owner = repo_payload.get("owner")
                 if project_payload:
-                    scope.github_project_id = project_payload.get("id")
+                    project_id = project_payload.get("id")
+                    scope.github_project_id = str(project_id) if project_id else None
                     scope.github_project_name = project_payload.get("name")
                 else:
                     scope.github_project_id = None

@@ -20,6 +20,41 @@ GITHUB_APP_LABEL = "ProjectsManager"
 MISSING_ISSUE_STATUS_CODES = {404, 410}
 PROJECTS_ACCEPT_HEADER = "application/vnd.github+json, application/vnd.github.inertia-preview+json"
 UNSET = object()
+GRAPHQL_PROJECTS_QUERY = """
+query($login: String!, $first: Int!) {
+  user(login: $login) {
+    projectsV2(first: $first) {
+      nodes {
+        id
+        title
+        number
+        url
+        closed
+      }
+    }
+  }
+  organization(login: $login) {
+    projectsV2(first: $first) {
+      nodes {
+        id
+        title
+        number
+        url
+        closed
+      }
+    }
+  }
+}
+"""
+GRAPHQL_PROJECT_MUTATION = """
+mutation($project: ID!, $content: ID!) {
+  addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+    item {
+      id
+    }
+  }
+}
+"""
 
 
 class GitHubError(RuntimeError):
@@ -44,6 +79,7 @@ class GitHubIssue:
     """Simplified issue payload returned from GitHub."""
 
     id: int
+    node_id: str
     number: int
     title: str
     body: str
@@ -140,6 +176,53 @@ def _request(
     return status, body
 
 
+def _graphql_request(
+    token: str,
+    query: str,
+    variables: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"query": query}
+    if variables:
+        payload["variables"] = variables
+
+    status, response = _request(
+        "POST",
+        f"{GITHUB_API_BASE}/graphql",
+        token,
+        payload=payload,
+        accept="application/json",
+    )
+
+    if status in (401, 403):
+        raise GitHubError("Unauthorized", status)
+    if status >= 400:
+        raise GitHubError("GitHub GraphQL request failed", status)
+
+    if not isinstance(response, dict):
+        raise GitHubError("Unexpected GraphQL response payload.")
+
+    errors = response.get("errors")
+    if errors:
+        message = errors[0].get("message", "GitHub GraphQL request failed")
+        status_code = 400
+        for entry in errors:
+            error_type = (entry.get("extensions") or {}).get("code") or entry.get("type")
+            if error_type == "FORBIDDEN":
+                status_code = 403
+                break
+            if error_type in {"NOT_FOUND", "RESOURCE_NOT_FOUND"}:
+                status_code = 404
+        raise GitHubError(message, status_code)
+
+    data = response.get("data")
+    if data is None:
+        raise GitHubError("GitHub GraphQL request returned no data.")
+    if not isinstance(data, dict):
+        raise GitHubError("Unexpected GraphQL data payload type.")
+
+    return data
+
+
 def test_connection(token: str) -> bool:
     status, _ = _request("GET", "/user", token)
     return 200 <= status < 300
@@ -164,7 +247,9 @@ def list_repositories(token: str) -> List[GitHubRepository]:
     return repos
 
 
-def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+def _list_classic_repository_projects(
+    token: str, owner: str, repo: str
+) -> List[Dict[str, Any]]:
     projects: List[Dict[str, Any]] = []
     page = 1
     while True:
@@ -192,11 +277,61 @@ def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str
             if identifier is None:
                 continue
             name = project.get("name") or project.get("body") or f"Project #{identifier}"
-            projects.append({"id": identifier, "name": name})
+            projects.append({"id": str(identifier), "name": name, "type": "classic"})
         if len(payload) < 100:
             break
         page += 1
     return projects
+
+
+def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+    projects: List[Dict[str, Any]] = []
+
+    try:
+        data = _graphql_request(
+            token,
+            GRAPHQL_PROJECTS_QUERY,
+            {"login": owner, "first": 100},
+        )
+    except GitHubError as error:
+        if error.status_code in (401, 403):
+            raise
+        # If the owner is not found, fall back to the classic API to preserve previous behaviour.
+        if error.status_code == 404:
+            classic = _list_classic_repository_projects(token, owner, repo)
+            return classic
+        logging.warning("Unable to load GitHub Projects V2 for %s: %s", owner, error)
+    else:
+        container = data.get("organization") or data.get("user")
+        nodes = (
+            container.get("projectsV2", {}).get("nodes")
+            if isinstance(container, dict)
+            else None
+        )
+        if nodes:
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                identifier = node.get("id")
+                title = node.get("title")
+                if not identifier or not title:
+                    continue
+                projects.append(
+                    {
+                        "id": identifier,
+                        "name": title,
+                        "number": node.get("number"),
+                        "url": node.get("url"),
+                        "closed": node.get("closed"),
+                        "type": "v2",
+                    }
+                )
+
+    if projects:
+        return projects
+
+    # Fall back to the classic projects API when no V2 projects are available.
+    return _list_classic_repository_projects(token, owner, repo)
 
 
 def list_repository_milestones(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
@@ -293,6 +428,7 @@ def create_issue(
     milestone_payload = payload.get("milestone") or {}
     return GitHubIssue(
         id=payload["id"],
+        node_id=payload.get("node_id", ""),
         number=payload["number"],
         title=payload.get("title", ""),
         body=payload.get("body", ""),
@@ -317,6 +453,7 @@ def fetch_issue(token: str, owner: str, repo: str, issue_number: int) -> GitHubI
     milestone_payload = payload.get("milestone") or {}
     return GitHubIssue(
         id=payload["id"],
+        node_id=payload.get("node_id", ""),
         number=payload["number"],
         title=payload.get("title", ""),
         body=payload.get("body", ""),
@@ -367,6 +504,7 @@ def update_issue(
     milestone_payload = data.get("milestone") or {}
     return GitHubIssue(
         id=data["id"],
+        node_id=data.get("node_id", ""),
         number=data["number"],
         title=data.get("title", ""),
         body=data.get("body", ""),
@@ -418,35 +556,22 @@ def remove_label_from_issue(token: str, owner: str, repo: str, issue_number: int
     return []
 
 
-def add_issue_to_project(token: str, project_id: int, issue_id: int) -> None:
-    status, columns = _request(
-        "GET",
-        f"/projects/{project_id}/columns",
-        token,
-        accept=PROJECTS_ACCEPT_HEADER,
-    )
-    if status in (401, 403):
-        raise GitHubError("Unauthorized", status)
-    if status == 404:
-        raise GitHubError("Project not found", status)
-    if status >= 400:
-        raise GitHubError("Unable to list project columns", status)
-    if not isinstance(columns, list) or not columns:
-        raise GitHubError("Project has no columns", status)
-    column_id = columns[0].get("id")
-    if not column_id:
-        raise GitHubError("Project column identifier is missing", status)
+def add_issue_to_project(token: str, project_id: str, issue_node_id: str) -> None:
+    if not project_id or not issue_node_id:
+        raise GitHubError("Project id and issue id are required to add an issue to a project.")
 
-    create_status, _ = _request(
-        "POST",
-        f"/projects/columns/{column_id}/cards",
-        token,
-        payload={"content_id": issue_id, "content_type": "Issue"},
-        accept=PROJECTS_ACCEPT_HEADER,
-    )
-    if create_status in (401, 403):
-        raise GitHubError("Unauthorized", create_status)
-    if create_status == 404:
-        raise GitHubError("Project column not found", create_status)
-    if create_status not in (200, 201, 202, 204, 422):
-        raise GitHubError("Unable to add issue to project", create_status)
+    try:
+        data = _graphql_request(
+            token,
+            GRAPHQL_PROJECT_MUTATION,
+            {"project": project_id, "content": issue_node_id},
+        )
+    except GitHubError as error:
+        message = str(error).lower()
+        if "already exists" in message:
+            return
+        raise
+
+    mutation_payload = data.get("addProjectV2ItemById") if isinstance(data, dict) else None
+    if not mutation_payload:
+        raise GitHubError("Unable to add issue to the GitHub project.")

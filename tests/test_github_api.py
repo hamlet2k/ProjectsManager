@@ -110,7 +110,7 @@ class GitHubApiTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertFalse(payload["success"])
         self.assertTrue(payload.get("permission_error"))
-        self.assertIn("classic projects", payload["message"])
+        self.assertIn("Projects V2", payload["message"])
 
     def test_github_milestones_endpoint_success(self):
         repository = {"owner": "octocat", "name": "hello-world"}
@@ -190,6 +190,7 @@ class GitHubApiTestCase(unittest.TestCase):
 
         issue_response = GitHubIssue(
             id=1001,
+            node_id="ISSUE_NODE_ID",
             number=101,
             title="Issue",
             body="",
@@ -253,6 +254,7 @@ class GitHubApiTestCase(unittest.TestCase):
 
         issue_response = GitHubIssue(
             id=2002,
+            node_id="ANOTHER_NODE",
             number=202,
             title="Issue",
             body="",

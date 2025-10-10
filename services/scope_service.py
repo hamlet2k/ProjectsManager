@@ -187,7 +187,7 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
     project = None
     if scope.github_project_id and scope.github_project_name:
         project = {
-            "id": scope.github_project_id,
+            "id": str(scope.github_project_id),
             "name": scope.github_project_name,
         }
     milestone = None
