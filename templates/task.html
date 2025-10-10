@@ -379,6 +379,14 @@
         border-color: var(--bs-primary);
     }
 
+    .inline-tag-chip.auto-applied {
+        box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb, 13, 110, 253), 0.2);
+    }
+
+    [data-bs-theme="dark"] .inline-tag-chip.auto-applied {
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35);
+    }
+
     .tag-filter-button {
         display: inline-flex;
         align-items: center;
@@ -947,6 +955,7 @@
                 applyTagFilters();
             }
             persistTaskPreferences();
+            handleActiveFilterChange();
         });
     }
 
@@ -1409,7 +1418,171 @@
         return info;
     }
 
+    function markAutoAppliedTags(tagIds = []) {
+        const normalized = Array.isArray(tagIds)
+            ? tagIds.map((value) => String(value).trim()).filter((value) => value)
+            : [];
+        autoAppliedTagIds = new Set(normalized);
+    }
+
+    function clearAutoAppliedTags() {
+        autoAppliedTagIds = new Set();
+    }
+
+    function isGithubTagLike(tagId, fallbackName = '') {
+        const key = String(tagId || '').trim();
+        if (!key) {
+            return false;
+        }
+        const stored = availableTagsMap.get(key);
+        const name = stored && typeof stored.name === 'string' && stored.name
+            ? stored.name
+            : typeof fallbackName === 'string'
+            ? fallbackName
+            : '';
+        if (!name) {
+            return false;
+        }
+        if (typeof GITHUB_LOCAL_TAG_NAME !== 'string' || !GITHUB_LOCAL_TAG_NAME) {
+            return false;
+        }
+        return name.trim().toLowerCase() === GITHUB_LOCAL_TAG_NAME.trim().toLowerCase();
+    }
+
+    function getActiveFilterTagIds() {
+        if (!filterContainer) {
+            return [];
+        }
+        return Array.from(filterContainer.querySelectorAll('.tag-filter-button.active'))
+            .map((button) => ({
+                id: String(button.dataset.tagId || '').trim(),
+                name:
+                    button.dataset.tagName ||
+                    button.textContent.replace('#', '').trim(),
+            }))
+            .filter(({ id, name }) => id && !isGithubTagLike(id, name))
+            .map(({ id }) => id);
+    }
+
+    function normalizeStoredTagEntry(entry) {
+        if (!entry) {
+            return null;
+        }
+        const rawId = entry.id != null ? String(entry.id) : String(entry);
+        const id = (rawId || '').trim();
+        if (!id) {
+            return null;
+        }
+        const name = typeof entry.name === 'string' ? entry.name : '';
+        if (isGithubTagLike(id, name)) {
+            return null;
+        }
+        return { id, name };
+    }
+
+    function persistLastUsedTagsForScope(entries = []) {
+        if (typeof setStoredLastTags !== 'function' || typeof clearStoredLastTags !== 'function') {
+            return;
+        }
+        const scopeId = getCurrentScopeId();
+        if (!scopeId) {
+            return;
+        }
+        const normalized = Array.isArray(entries)
+            ? entries
+                  .map((entry) => normalizeStoredTagEntry(entry))
+                  .filter(Boolean)
+            : [];
+        if (normalized.length === 0) {
+            clearStoredLastTags(scopeId);
+            return;
+        }
+        setStoredLastTags(scopeId, normalized);
+    }
+
+    function applyDefaultInlineTags(options = {}) {
+        const { reason = '', skipFilters = false } = options || {};
+        if (!taskForm || isEditingCurrentTask()) {
+            return;
+        }
+
+        const scopeId = getCurrentScopeId();
+        const storedRaw =
+            scopeId && typeof getStoredLastTags === 'function'
+                ? getStoredLastTags(scopeId)
+                : [];
+        const storedEntries = Array.isArray(storedRaw)
+            ? storedRaw.map((entry) => normalizeStoredTagEntry(entry)).filter(Boolean)
+            : [];
+
+        const storedTagIds = [];
+        storedEntries.forEach(({ id, name }) => {
+            if (!availableTagsMap.has(id) && name) {
+                const numericId = Number(id);
+                if (!Number.isNaN(numericId)) {
+                    ensureTagInFilter({ id: numericId, name, task_count: 0 });
+                }
+            }
+            if (availableTagsMap.has(id)) {
+                storedTagIds.push(id);
+            }
+        });
+
+        const activeTagIds = skipFilters ? [] : getActiveFilterTagIds();
+        if (activeTagIds.length > 0) {
+            const activeSet = new Set(activeTagIds);
+            const additionalIds = storedTagIds.filter((id) => !activeSet.has(id));
+            const combined = [...activeTagIds, ...additionalIds];
+            setInlineTagsFromString(combined.join(','));
+            markAutoAppliedTags(combined);
+            renderInlineTagOptions();
+            return;
+        }
+
+        if (storedTagIds.length === 0) {
+            clearAutoAppliedTags();
+            setInlineTagsFromString('');
+            renderInlineTagOptions();
+            return;
+        }
+
+        setInlineTagsFromString(storedTagIds.join(','));
+        markAutoAppliedTags(storedTagIds);
+        renderInlineTagOptions();
+    }
+
+    function handleActiveFilterChange() {
+        const activeTagIds = getActiveFilterTagIds();
+        const signature = activeTagIds.slice().sort().join(',');
+        const scopeId = getCurrentScopeId();
+        const storageAvailable =
+            typeof setStoredLastTags === 'function' && typeof clearStoredLastTags === 'function';
+        if (signature !== lastFilterSignature) {
+            lastFilterSignature = signature;
+            if (storageAvailable && scopeId) {
+                if (activeTagIds.length > 0) {
+                    const entries = activeTagIds
+                        .map((id) => {
+                            const tag = availableTagsMap.get(String(id));
+                            const name = tag && typeof tag.name === 'string' ? tag.name : '';
+                            return normalizeStoredTagEntry({ id, name });
+                        })
+                        .filter(Boolean);
+                    if (entries.length > 0) {
+                        setStoredLastTags(scopeId, entries);
+                    } else {
+                        clearStoredLastTags(scopeId);
+                    }
+                } else {
+                    // No active filters – preserve existing last-used tags
+                }
+            }
+        }
+        applyDefaultInlineTags({ reason: 'filters-updated' });
+    }
+
     function setInlineTagsFromString(tagString, taskId = null) {
+        clearAutoAppliedTags();
         inlineSelectedTags = new Map();
         if (!tagString) {
             syncInlineTagsField();
@@ -1464,10 +1637,14 @@
             const chip = document.createElement('button');
             chip.type = 'button';
             chip.className = 'inline-tag-chip';
-            chip.dataset.tagId = String(tag.id);
+            const key = String(tag.id);
+            chip.dataset.tagId = key;
             chip.textContent = `#${tag.name}`;
-            if (inlineSelectedTags.has(String(tag.id))) {
+            if (inlineSelectedTags.has(key)) {
                 chip.classList.add('active');
+                if (autoAppliedTagIds.has(key)) {
+                    chip.classList.add('auto-applied');
+                }
             }
             const isGithubTag = (tag.name || '').toLowerCase() === GITHUB_LOCAL_TAG_NAME;
             if (isGithubTag) {
@@ -1506,6 +1683,7 @@
         } else {
             inlineSelectedTags.set(tagId, tag);
         }
+        autoAppliedTagIds.delete(tagId);
         syncInlineTagsField();
         renderInlineTagOptions();
         if (inlineTagFeedback) {
@@ -1515,6 +1693,7 @@
 
     function clearInlineSelection() {
         inlineSelectedTags = new Map();
+        clearAutoAppliedTags();
         syncInlineTagsField();
         renderInlineTagOptions();
         if (inlineTagInput) {
@@ -1582,8 +1761,10 @@
                 const message = data.message || (isEditingCurrentTask() ? 'Task updated!' : 'Task added!');
                 displayFlashMessage(message, 'success');
 
+                if (!isEditingCurrentTask()) {
+                    persistLastUsedTagsForScope(Array.from(inlineSelectedTags.values()));
+                }
                 taskForm.reset();
-                clearInlineSelection();
                 collapseAccordionItem('detailed-item-container');
                 if (nameFieldAutoResize) {
                     nameFieldAutoResize.refresh();
@@ -1805,6 +1986,7 @@
                     id: Number(tag.id),
                     name: tag.name,
                 });
+                autoAppliedTagIds.delete(String(tag.id));
                 syncInlineTagsField();
                 renderInlineTagOptions();
                 inlineTagInput.value = '';
@@ -1852,10 +2034,12 @@
     let currentTaskId = null;
     let currentTaskTags = new Map();
     let inlineSelectedTags = new Map();
+    let autoAppliedTagIds = new Set();
     let currentTaskHasGithub = false;
     let editingTaskHasGithub = false;
     const pendingTagDeletions = new Map();
     const collapseSkipGithubSync = new WeakSet();
+    let lastFilterSignature = null;
 
     function fetchGitHubIssueSync(taskId) {
         if (!taskId) {
@@ -2105,6 +2289,7 @@
             displayFlashMessage(`Tag "#${tagName}" deleted.`, 'success');
         }
         persistTaskPreferences();
+        handleActiveFilterChange();
     }
 
     function deleteTagFromServer(tagId, tagName = '', { onSuccess = null, onError = null, showError = true } = {}) {
@@ -2487,6 +2672,7 @@
         button.classList.toggle('active');
         applyTagFilters();
         persistTaskPreferences();
+        handleActiveFilterChange();
     }
 
     const handleFilterRemoveKeydown = (event) => {
@@ -2514,6 +2700,7 @@
             });
             applyTagFilters();
             persistTaskPreferences();
+            handleActiveFilterChange();
         });
     }
 
@@ -3795,6 +3982,7 @@
             clearInlineSelection();
             collapseAccordionItem('detailed-item-container');
             applyTaskFormErrors({});
+            applyDefaultInlineTags({ reason: 'quick-cancel' });
         });
     }
 
@@ -3809,6 +3997,7 @@
             if (descriptionFieldAutoResize) {
                 descriptionFieldAutoResize.refresh();
             }
+            applyDefaultInlineTags({ reason: 'form-reset' });
             editingTaskHasGithub = false;
         });
         if (typeof window.fetch === 'function') {
@@ -3930,6 +4119,7 @@
                 updateDateDisplays();
                 applyTagFilters();
                 persistTaskPreferences();
+                handleActiveFilterChange();
             })
             .catch((error) => {
                 console.error('Unable to refresh tasks', error);
@@ -3938,7 +4128,11 @@
 
     initializeSortableGroups();
     hydrateAvailableTagsFromFilter();
-    setInlineTagsFromString(tagsField ? tagsField.value : '');
+    if (tagsField && tagsField.value) {
+        setInlineTagsFromString(tagsField.value);
+    } else {
+        clearInlineSelection();
+    }
     hideMilestoneField();
     attachTaskCompleteListeners();
     attachEditTaskListeners();
@@ -3954,6 +4148,7 @@
     updateDateDisplays();
 
     restoreTaskPreferences();
+    applyDefaultInlineTags({ reason: 'initial-load' });
 
     if (milestoneModalElement) {
         milestoneModalElement.addEventListener('hidden.bs.modal', resetMilestoneModal);

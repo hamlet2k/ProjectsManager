@@ -3,6 +3,7 @@
  */
 
 const PREFERENCE_STORAGE_KEY = 'pm:preferences';
+const LAST_TAG_KEY_PREFIX = 'pm:lastTags_';
 
 /**
  * Read preference data from localStorage with fallback
@@ -40,6 +41,119 @@ function writePreferenceData(data) {
         window.localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(data));
     } catch (error) {
         console.warn('Unable to persist task preferences to localStorage.', error);
+    }
+}
+
+function buildLastTagStorageKey(scopeId) {
+    const key = String(scopeId ?? '');
+    return key ? `${LAST_TAG_KEY_PREFIX}${key}` : null;
+}
+
+function getStoredLastTags(scopeId) {
+    if (scopeId == null || typeof window === 'undefined' || !('localStorage' in window)) {
+        return [];
+    }
+    const storageKey = buildLastTagStorageKey(scopeId);
+    if (!storageKey) {
+        return [];
+    }
+    try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+        return parsed
+            .map((entry) => {
+                if (entry == null) {
+                    return null;
+                }
+                if (typeof entry === 'string' || typeof entry === 'number') {
+                    const id = String(entry).trim();
+                    return id ? { id, name: '' } : null;
+                }
+                if (typeof entry === 'object' && entry.id != null) {
+                    const id = String(entry.id).trim();
+                    if (!id) {
+                        return null;
+                    }
+                    const name = typeof entry.name === 'string' ? entry.name : '';
+                    return { id, name };
+                }
+                return null;
+            })
+            .filter(Boolean);
+    } catch (error) {
+        console.warn('Unable to read last-used tags from localStorage.', error);
+        return [];
+    }
+}
+
+function setStoredLastTags(scopeId, tags) {
+    if (scopeId == null || typeof window === 'undefined' || !('localStorage' in window)) {
+        return;
+    }
+    const storageKey = buildLastTagStorageKey(scopeId);
+    if (!storageKey) {
+        return;
+    }
+    const normalized = Array.isArray(tags)
+        ? tags
+              .map((tag) => {
+                  if (tag == null) {
+                      return null;
+                  }
+                  if (typeof tag === 'string' || typeof tag === 'number') {
+                      const id = String(tag).trim();
+                      return id ? { id, name: '' } : null;
+                  }
+                  if (typeof tag === 'object' && tag.id != null) {
+                      const id = String(tag.id).trim();
+                      if (!id) {
+                          return null;
+                      }
+                      const name = typeof tag.name === 'string' ? tag.name : '';
+                      return { id, name };
+                  }
+                  return null;
+              })
+              .filter(Boolean)
+        : [];
+    if (normalized.length === 0) {
+        clearStoredLastTags(scopeId);
+        return;
+    }
+    const unique = [];
+    const seen = new Set();
+    normalized.forEach(({ id, name }) => {
+        if (seen.has(id)) {
+            return;
+        }
+        seen.add(id);
+        unique.push({ id, name });
+    });
+    try {
+        window.localStorage.setItem(storageKey, JSON.stringify(unique));
+    } catch (error) {
+        console.warn('Unable to persist last-used tags to localStorage.', error);
+    }
+}
+
+function clearStoredLastTags(scopeId) {
+    if (scopeId == null || typeof window === 'undefined' || !('localStorage' in window)) {
+        return;
+    }
+    const storageKey = buildLastTagStorageKey(scopeId);
+    if (!storageKey) {
+        return;
+    }
+    try {
+        window.localStorage.removeItem(storageKey);
+    } catch (error) {
+        console.warn('Unable to clear last-used tags from localStorage.', error);
     }
 }
 
@@ -90,9 +204,13 @@ function getStoredScopePreferences(scopeId) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         PREFERENCE_STORAGE_KEY,
+        LAST_TAG_KEY_PREFIX,
         readPreferenceData,
         writePreferenceData,
         updatePreferenceData,
         getStoredScopePreferences,
+        getStoredLastTags,
+        setStoredLastTags,
+        clearStoredLastTags,
     };
 }
