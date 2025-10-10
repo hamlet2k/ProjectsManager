@@ -551,11 +551,11 @@
                     data_expanded_class="quick-task-input--expanded",
                     data_overflow_class="quick-task-input--overflow"
                 ) }}
+                <button id="quick-cancel-btn" class="btn btn-outline-secondary" type="reset">
+                    <i class="bi bi-x-circle"></i>
+                </button>
                 <button id="quick-add-btn" class="btn btn-primary" type="submit">
                     <i class="bi bi-floppy"></i>
-                </button>
-                <button id="quick-cancel-btn" class="btn btn-secondary" type="reset">
-                    <i class="bi bi-x-circle"></i>
                 </button>
                 {% set name_error = task_form.name.errors[0] if task_form.name.errors else '' %}
                 <div class="invalid-feedback {% if not name_error %}d-none{% endif %}" data-feedback-for="name">{{ name_error }}</div>
