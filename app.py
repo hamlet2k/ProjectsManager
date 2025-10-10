@@ -2128,22 +2128,27 @@ def edit_task(id):
         context = _task_github_context(item, g.user)
         if item.github_issue_number and context:
             labels = _labels_for_github(item)
-            milestone_raw = form.github_milestone.data or ""
+            milestone_field_submitted = "github_milestone" in request.form
             milestone_number: Optional[int] = None
-            if milestone_raw:
-                try:
-                    milestone_payload = json.loads(milestone_raw)
-                    milestone_value = milestone_payload.get("number")
-                    if isinstance(milestone_value, str):
-                        try:
-                            milestone_number = int(milestone_value)
-                        except ValueError:
-                            pass
-                    elif isinstance(milestone_value, int):
-                        milestone_number = milestone_value
-                except ValueError:
-                    logging.warning("Ignoring invalid milestone selection payload: %s", milestone_raw)
-            milestone_changed = milestone_number != item.github_milestone_number
+            if milestone_field_submitted:
+                milestone_raw = form.github_milestone.data or ""
+                if milestone_raw:
+                    try:
+                        milestone_payload = json.loads(milestone_raw)
+                        milestone_value = milestone_payload.get("number")
+                        if isinstance(milestone_value, str):
+                            try:
+                                milestone_number = int(milestone_value)
+                            except ValueError:
+                                pass
+                        elif isinstance(milestone_value, int):
+                            milestone_number = milestone_value
+                    except ValueError:
+                        milestone_field_submitted = False
+                        logging.warning("Ignoring invalid milestone selection payload: %s", milestone_raw)
+            milestone_changed = milestone_field_submitted and (
+                milestone_number != item.github_milestone_number
+            )
             try:
                 update_kwargs = {
                     "title": item.name,
