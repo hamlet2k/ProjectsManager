@@ -8,7 +8,7 @@ import json
 import logging
 from dataclasses import dataclass
 from http.client import RemoteDisconnected
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib import request as urllib_request, error as urllib_error
 from urllib.parse import quote
 
@@ -22,25 +22,27 @@ PROJECTS_ACCEPT_HEADER = "application/vnd.github+json"
 UNSET = object()
 GRAPHQL_PROJECTS_QUERY = """
 query($login: String!, $first: Int!) {
-  user(login: $login) {
-    projectsV2(first: $first) {
-      nodes {
-        id
-        title
-        number
-        url
-        closed
+  repositoryOwner(login: $login) {
+    ... on User {
+      projectsV2(first: $first) {
+        nodes {
+          id
+          title
+          number
+          url
+          closed
+        }
       }
     }
-  }
-  organization(login: $login) {
-    projectsV2(first: $first) {
-      nodes {
-        id
-        title
-        number
-        url
-        closed
+    ... on Organization {
+      projectsV2(first: $first) {
+        nodes {
+          id
+          title
+          number
+          url
+          closed
+        }
       }
     }
   }
@@ -297,6 +299,7 @@ def _list_classic_repository_projects(
 
 def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
     projects: List[Dict[str, Any]] = []
+    seen_ids: Set[str] = set()
 
     try:
         data = _graphql_request(
@@ -313,20 +316,30 @@ def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str
             return classic
         logging.warning("Unable to load GitHub Projects V2 for %s: %s", owner, error)
     else:
-        container = data.get("organization") or data.get("user") or data.get("viewer")
-        nodes = (
-            container.get("projectsV2", {}).get("nodes")
-            if isinstance(container, dict)
-            else None
-        )
-        if nodes:
+        containers: List[Dict[str, Any]] = []
+        owner_container = data.get("repositoryOwner")
+        if isinstance(owner_container, dict):
+            containers.append(owner_container)
+        viewer_container = data.get("viewer")
+        if isinstance(viewer_container, dict):
+            containers.append(viewer_container)
+
+        for container in containers:
+            nodes = (
+                container.get("projectsV2", {}).get("nodes")
+                if isinstance(container, dict)
+                else None
+            )
+            if not nodes:
+                continue
             for node in nodes:
                 if not isinstance(node, dict):
                     continue
                 identifier = node.get("id")
                 title = node.get("title")
-                if not identifier or not title:
+                if not identifier or not title or identifier in seen_ids:
                     continue
+                seen_ids.add(identifier)
                 projects.append(
                     {
                         "id": identifier,
