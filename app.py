@@ -711,7 +711,9 @@ def _github_error_response(error: GitHubError):
     elif status in GITHUB_MISSING_ISSUE_STATUS_CODES:
         message = "Requested GitHub resource was not found."
     else:
-        message = str(error)
+        # Log the detailed error for diagnostics, but do not expose to users
+        logging.error("GitHubError encountered: %s", error, exc_info=True)
+        message = "An error occurred while communicating with GitHub."
     return message, status
 
 
