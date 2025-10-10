@@ -82,8 +82,8 @@
     }
 
     .task-description-input {
-        height: 2.75rem;
-        min-height: 2.75rem;
+        height: 5.5rem;
+        min-height: 5.5rem;
         max-height: 80vh;
         resize: none;
         overflow: hidden;
@@ -91,7 +91,7 @@
     }
 
     .task-description-input.task-description-input--expanded {
-        min-height: 3.5rem;
+        min-height: 6.25rem;
     }
 
     .task-description-input.task-description-input--overflow {
@@ -602,7 +602,7 @@
                         rows=1,
                         placeholder_='Add more details',
                         data_auto_resize="task-description",
-                        data_collapsed_height="44",
+                        data_collapsed_height="88",
                         data_max_viewport_ratio="0.8",
                         data_expanded_class="task-description-input--expanded",
                         data_overflow_class="task-description-input--overflow"
@@ -1231,6 +1231,26 @@
         const expandedClass = dataset.expandedClass || '';
         const overflowClass = dataset.overflowClass || '';
 
+        const parseDuration = (value, fallback) => {
+            const parsed = parseFloat(value);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+                return fallback;
+            }
+            return parsed;
+        };
+
+        const collapseDuration = parseDuration(dataset.collapseDuration, 0.25);
+        const expandDuration = parseDuration(dataset.expandDuration, collapseDuration);
+
+        const applyTransition = (seconds) => {
+            if (!Number.isFinite(seconds) || seconds <= 0) {
+                textarea.style.transition = '';
+                return;
+            }
+            const duration = Math.min(seconds, 5);
+            textarea.style.transition = `height ${duration}s ease, min-height ${duration}s ease`;
+        };
+
         const computeMaxHeight = () => {
             const viewportLimit = viewportRatio ? Math.floor(window.innerHeight * viewportRatio) : Infinity;
             const limit = Math.min(explicitMaxHeight, viewportLimit);
@@ -1255,6 +1275,7 @@
         };
 
         const collapse = () => {
+            applyTransition(collapseDuration);
             setExpandedState(false);
             setOverflowState(false);
             textarea.style.minHeight = `${collapsedHeight}px`;
@@ -1264,12 +1285,29 @@
         };
 
         const expand = () => {
+            applyTransition(expandDuration);
             setExpandedState(true);
             textarea.style.minHeight = `${collapsedHeight}px`;
             const maxHeight = computeMaxHeight();
             textarea.style.maxHeight = Number.isFinite(maxHeight) ? `${maxHeight}px` : '';
+            
+            // Get current height to animate from
+            const currentHeight = textarea.offsetHeight;
+            
+            // Temporarily set height to auto to measure content, but make it invisible
+            const previousTransition = textarea.style.transition;
+            textarea.style.transition = 'none';
             textarea.style.height = 'auto';
             const fullHeight = textarea.scrollHeight;
+            
+            // Reset to current height before animating
+            textarea.style.height = `${currentHeight}px`;
+            
+            // Force reflow to ensure the browser registers the height change
+            textarea.offsetHeight;
+            
+            // Restore transition and animate to target height
+            textarea.style.transition = previousTransition;
             const cap = Number.isFinite(maxHeight) ? maxHeight : fullHeight;
             const desiredHeight = Math.max(collapsedHeight, Math.min(fullHeight, cap));
             textarea.style.height = `${desiredHeight}px`;
@@ -1292,6 +1330,7 @@
 
         textarea.style.resize = 'none';
         textarea.style.overflowY = 'hidden';
+        applyTransition(collapseDuration);
 
         textarea.addEventListener('focus', handleFocus);
         textarea.addEventListener('input', handleInput);
