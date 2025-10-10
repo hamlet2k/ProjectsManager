@@ -8,7 +8,7 @@ from app import app, db
 from models.scope import Scope
 from models.task import Task
 from models.user import User
-from services.github_service import GitHubError, GitHubIssue
+from services.github_service import GitHubError, GitHubIssue, list_repository_projects
 
 
 class GitHubApiTestCase(unittest.TestCase):
@@ -173,6 +173,7 @@ class GitHubApiTestCase(unittest.TestCase):
         self.assertTrue(payload.get("permission_error"))
         self.assertIn("milestone access", payload["message"])
 
+
     def test_update_task_milestone_success(self):
         with app.app_context():
             task = Task(
@@ -281,6 +282,49 @@ class GitHubApiTestCase(unittest.TestCase):
             self.assertIsNone(updated.github_milestone_number)
             self.assertIsNone(updated.github_milestone_title)
             self.assertIsNone(updated.github_milestone_due_on)
+
+
+class GitHubProjectsServiceTest(unittest.TestCase):
+    def test_list_repository_projects_uses_viewer_when_owner_scope_missing(self):
+        graphql_payload = {
+            "viewer": {
+                "projectsV2": {
+                    "nodes": [
+                        {
+                            "id": "PVT_123",
+                            "title": "Viewer Project",
+                            "number": 7,
+                            "url": "https://github.com/orgs/example/projects/7",
+                            "closed": False,
+                        }
+                    ]
+                }
+            }
+        }
+
+        with patch(
+            "services.github_service._graphql_request",
+            return_value=graphql_payload,
+        ) as mock_graphql, patch(
+            "services.github_service._list_classic_repository_projects"
+        ) as mock_classic:
+            projects = list_repository_projects("token", "octocat", "hello-world")
+
+        self.assertEqual(
+            [
+                {
+                    "id": "PVT_123",
+                    "name": "Viewer Project",
+                    "number": 7,
+                    "url": "https://github.com/orgs/example/projects/7",
+                    "closed": False,
+                    "type": "v2",
+                }
+            ],
+            projects,
+        )
+        mock_graphql.assert_called_once()
+        mock_classic.assert_not_called()
 
 
 if __name__ == "__main__":

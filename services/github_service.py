@@ -44,6 +44,17 @@ query($login: String!, $first: Int!) {
       }
     }
   }
+  viewer {
+    projectsV2(first: $first) {
+      nodes {
+        id
+        title
+        number
+        url
+        closed
+      }
+    }
+  }
 }
 """
 GRAPHQL_PROJECT_MUTATION = """
@@ -302,7 +313,7 @@ def list_repository_projects(token: str, owner: str, repo: str) -> List[Dict[str
             return classic
         logging.warning("Unable to load GitHub Projects V2 for %s: %s", owner, error)
     else:
-        container = data.get("organization") or data.get("user")
+        container = data.get("organization") or data.get("user") or data.get("viewer")
         nodes = (
             container.get("projectsV2", {}).get("nodes")
             if isinstance(container, dict)
