@@ -150,6 +150,22 @@
         font-size: 0.65rem;
     }
 
+    [data-bs-theme="dark"] .github-issue-badge {
+        background-color: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.18);
+        color: var(--bs-gray-200);
+    }
+
+    [data-bs-theme="dark"] .github-issue-badge i {
+        color: inherit;
+    }
+
+    [data-bs-theme="dark"] .github-issue-badge:hover {
+        background-color: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.24);
+        color: var(--bs-white);
+    }
+
     .task-github-pill-group {
         display: inline-flex;
         align-items: center;
@@ -189,6 +205,23 @@
         max-width: 9rem;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    [data-bs-theme="dark"] .github-milestone-pill {
+        background-color: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.18);
+        color: var(--bs-gray-200);
+    }
+
+    [data-bs-theme="dark"] .github-milestone-pill i {
+        color: inherit;
+    }
+
+    [data-bs-theme="dark"] .github-milestone-pill:hover,
+    [data-bs-theme="dark"] .github-milestone-pill:focus {
+        background-color: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.24);
+        color: var(--bs-white);
     }
 
     .task-action-group {
