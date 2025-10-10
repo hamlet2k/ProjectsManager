@@ -1,4 +1,4 @@
-<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}" data-scope-id="{{ g.scope.id if g.scope else '' }}">
+<div class="container mt-2" id="task-groups-container" data-sort-by="{{ sort_by }}" data-sortable-groups='{{ sortable_group_ids | tojson | e }}' data-has-github-linked="{{ 'true' if has_github_linked_tasks else 'false' }}" data-scope-id="{{ g.scope.id if g.scope else '' }}" data-scope-github-owner="{{ g.scope.github_repo_owner if g.scope else '' }}" data-scope-github-name="{{ g.scope.github_repo_name if g.scope else '' }}" data-scope-github-milestone-number="{{ g.scope.github_milestone_number if g.scope else '' }}" data-scope-github-milestone-title="{{ g.scope.github_milestone_title if g.scope else '' }}">
     {% set ns = namespace(has_tasks=false) %}
     {% for group in task_groups %}
         {% if group.tasks %}
@@ -61,15 +61,36 @@
                                             </span>
                                         </a>
                                         {% if task.github_issue_number and task.github_issue_url %}
-                                            <a href="{{ task.github_issue_url }}" 
-                                               target="_blank" 
-                                               rel="noopener" 
-                                               class="github-issue-badge ms-2"
-                                               onclick="event.stopPropagation()"
-                                               title="Open GitHub issue #{{ task.github_issue_number }}">
-                                                <i class="bi bi-github"></i>
-                                                #{{ task.github_issue_number }}
-                                            </a>
+                                            <div class="task-github-pill-group ms-2">
+                                                <a href="{{ task.github_issue_url }}"
+                                                   target="_blank"
+                                                   rel="noopener"
+                                                   class="github-issue-badge"
+                                                   onclick="event.stopPropagation()"
+                                                   title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                    <i class="bi bi-github"></i>
+                                                    #{{ task.github_issue_number }}
+                                                </a>
+                                                {% if task.has_github_issue and task.github_milestone_title %}
+                                                    <button type="button"
+                                                            class="github-milestone-pill"
+                                                            data-task-milestone-trigger
+                                                            data-task-id="{{ task.id }}"
+                                                            data-task-name="{{ task.name | e }}"
+                                                            data-github-owner="{{ task.github_repo_owner or (g.scope.github_repo_owner if g.scope else '') }}"
+                                                            data-github-name="{{ task.github_repo_name or (g.scope.github_repo_name if g.scope else '') }}"
+                                                            data-current-milestone-number="{{ task.github_milestone_number or '' }}"
+                                                            data-current-milestone-title="{{ task.github_milestone_title or '' }}"
+                                                            data-current-milestone-due="{{ task.github_milestone_due_on.isoformat() if task.github_milestone_due_on else '' }}"
+                                                            data-bs-toggle="tooltip"
+                                                            data-bs-placement="top"
+                                                            title="">
+                                                        <i class="bi bi-signpost-2"></i>
+                                                        <span class="milestone-name text-truncate">{{ task.github_milestone_title }}</span>
+                                                        <span class="visually-hidden">Edit milestone</span>
+                                                    </button>
+                                                {% endif %}
+                                            </div>
                                         {% endif %}
                                         <i class="bi bi-chevron-right task-chevron mt-1 ms-auto" data-chevron-for="collapse{{ group.dom_id }}-{{ task.id }}" aria-hidden="true"></i>
                                     {% else %}
@@ -81,14 +102,35 @@
                                             {% endif %}
                                         </div>
                                         {% if task.github_issue_number and task.github_issue_url %}
-                                            <a href="{{ task.github_issue_url }}" 
-                                               target="_blank" 
-                                               rel="noopener" 
-                                               class="github-issue-badge ms-auto"
-                                               title="Open GitHub issue #{{ task.github_issue_number }}">
-                                                <i class="bi bi-github"></i>
-                                                #{{ task.github_issue_number }}
-                                            </a>
+                                            <div class="task-github-pill-group ms-auto">
+                                                <a href="{{ task.github_issue_url }}"
+                                                   target="_blank"
+                                                   rel="noopener"
+                                                   class="github-issue-badge"
+                                                   title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                    <i class="bi bi-github"></i>
+                                                    #{{ task.github_issue_number }}
+                                                </a>
+                                                {% if task.has_github_issue and task.github_milestone_title %}
+                                                    <button type="button"
+                                                            class="github-milestone-pill"
+                                                            data-task-milestone-trigger
+                                                            data-task-id="{{ task.id }}"
+                                                            data-task-name="{{ task.name | e }}"
+                                                            data-github-owner="{{ task.github_repo_owner or (g.scope.github_repo_owner if g.scope else '') }}"
+                                                            data-github-name="{{ task.github_repo_name or (g.scope.github_repo_name if g.scope else '') }}"
+                                                            data-current-milestone-number="{{ task.github_milestone_number or '' }}"
+                                                            data-current-milestone-title="{{ task.github_milestone_title or '' }}"
+                                                            data-current-milestone-due="{{ task.github_milestone_due_on.isoformat() if task.github_milestone_due_on else '' }}"
+                                                            data-bs-toggle="tooltip"
+                                                            data-bs-placement="top"
+                                                            title="">
+                                                        <i class="bi bi-signpost-2"></i>
+                                                        <span class="milestone-name text-truncate">{{ task.github_milestone_title }}</span>
+                                                        <span class="visually-hidden">Edit milestone</span>
+                                                    </button>
+                                                {% endif %}
+                                            </div>
                                         {% endif %}
                                     {% endif %}
                                 </div>
@@ -107,6 +149,24 @@
                                     <button type="button" class="btn task-action-btn task-copy-btn" aria-label="Copy task {{ task.name | e }}">
                                         <i class="bi bi-clipboard"></i>
                                     </button>
+                                    {% if task.has_github_issue and not task.github_milestone_number %}
+                                        <button type="button"
+                                                class="btn task-action-btn task-milestone-add-btn"
+                                                data-task-milestone-trigger
+                                                data-task-id="{{ task.id }}"
+                                                data-task-name="{{ task.name | e }}"
+                                                data-github-owner="{{ task.github_repo_owner or (g.scope.github_repo_owner if g.scope else '') }}"
+                                                data-github-name="{{ task.github_repo_name or (g.scope.github_repo_name if g.scope else '') }}"
+                                                data-current-milestone-number=""
+                                                data-current-milestone-title=""
+                                                data-current-milestone-due=""
+                                                data-bs-toggle="tooltip"
+                                                data-bs-placement="top"
+                                                title="Add milestone">
+                                            <i class="bi bi-signpost-2"></i>
+                                            <span class="visually-hidden">Add milestone</span>
+                                        </button>
+                                    {% endif %}
                                     {% if github_enabled and not task.has_github_issue %}
                                         <button type="button"
                                                 class="btn task-action-btn task-github-btn"
@@ -130,6 +190,10 @@
                                         data-task-end_date="{{ task.end_date.isoformat() if task.end_date else '' }}"
                                         data-task-tags="{{ task.tags | map(attribute='id') | join(',') }}"
                                         data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
+                                        data-task-github-owner="{{ task.github_repo_owner or '' }}"
+                                        data-task-github-name="{{ task.github_repo_name or '' }}"
+                                        data-task-github-milestone-number="{{ task.github_milestone_number or '' }}"
+                                        data-task-github-milestone-title="{{ task.github_milestone_title or '' }}"
                                     >
                                         <i class="bi bi-pencil"></i>
                                     </button>

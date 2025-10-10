@@ -66,6 +66,32 @@
                             </div>
                             <div class="form-text">Choose the repository to use for GitHub actions in this scope.</div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-project-select">Project <span class="text-muted">(optional)</span></label>
+                            {{ scope_form.github_project(class="form-select" + (' is-invalid' if scope_form.github_project.errors else ''), id="scope-github-project-select", **{'data-selected-project': scope_form.github_project.data or '', 'data-field': 'github_project'}) }}
+                            <div class="invalid-feedback{% if scope_form.github_project.errors %} d-block{% endif %}" data-field-errors="github_project">
+                                {% for error in scope_form.github_project.errors %}
+                                    <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">Automatically add new issues to this GitHub project.</div>
+                        </div>
+                        <div class="alert alert-warning py-2 px-3 d-none" data-github-project-warning role="alert">
+                            Unable to load projects for this repository. Ensure your GitHub token includes project access.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-milestone-select">Milestone <span class="text-muted">(optional)</span></label>
+                            {{ scope_form.github_milestone(class="form-select" + (' is-invalid' if scope_form.github_milestone.errors else ''), id="scope-github-milestone-select", **{'data-selected-milestone': scope_form.github_milestone.data or '', 'data-field': 'github_milestone'}) }}
+                            <div class="invalid-feedback{% if scope_form.github_milestone.errors %} d-block{% endif %}" data-field-errors="github_milestone">
+                                {% for error in scope_form.github_milestone.errors %}
+                                    <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">Use this milestone as the default for new issues.</div>
+                        </div>
+                        <div class="alert alert-warning py-2 px-3 d-none" data-github-milestone-warning role="alert">
+                            Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
+                        </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-warning role="alert">
                             A repository must be selected to enable GitHub integration for this scope.
                         </div>

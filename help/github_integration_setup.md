@@ -1,64 +1,65 @@
-# 🧩 How to Set Up GitHub Integration in ProjectsManager
+# 🧩 GitHub Integration Setup in ProjectsManager
 
-Follow these steps to connect your GitHub account to ProjectsManager and enable issue synchronization.
-
----
-
-## ⚙️ Step 1. Open the Profile Page
-
-1. Log into **ProjectsManager**
-2. Go to your **User Profile** (top-right corner or sidebar)
-3. Scroll to the **GitHub Integration** section
+This guide explains how to connect your ProjectsManager account to GitHub to synchronize issues, milestones, and projects.
 
 ---
 
-## 🔑 Step 2. Enable GitHub Integration
+## 🪄 Step 1. Enable GitHub Integration
 
-1. Toggle **“Enable GitHub Integration”** to *ON*
-2. Paste your GitHub **Personal Access Token (PAT)** (see the token creation guide)
-3. Click **“Test Connection”**
-   - The system will verify your token and permissions
-   - If valid, you’ll see a success message
-
----
-
-## 🧭 Step 3. Select Repository
-
-1. Once verified, ProjectsManager will load your accessible repositories
-2. Select the repository you want to sync tasks with
-3. The repository info (`owner`, `name`, and `id`) will be stored securely
+1. Navigate to **Profile → GitHub Integration**.  
+2. Toggle **Enable GitHub Integration**.  
+3. Paste your GitHub **Personal Access Token (PAT)** in the provided field.  
+4. Click **Test Connection** to confirm validity.
 
 ---
 
-## 🧩 Step 4. Configure Optional Fields (Project & Milestone)
+## 🧠 Step 2. Configure Repository Access
 
-1. In the GitHub integration section, you can optionally select:
-   - **Project** → the default GitHub Project for created issues
-   - **Milestone** → the default milestone to assign issues to
-2. These values will apply automatically when creating new linked tasks
+Once verified, ProjectsManager will automatically retrieve your available repositories via the GitHub API.  
 
----
-
-## ✅ Step 5. Save and Use the Integration
-
-Once your integration is active:
-
-- Each task shows a **GitHub icon** to create or sync issues
-- Linked tasks are automatically updated with issue state, title, and body
-- Closing a task in ProjectsManager closes the linked issue in GitHub
-- You can refresh or unlink issues manually
+- Select the repository to associate with your scopes.  
+- This setting defines where new issues are created when syncing tasks.
 
 ---
 
-## 🧱 Troubleshooting
+## ⚙️ Step 3. Optional Fields: Project & Milestone
 
-| Issue | Solution |
-|-------|-----------|
-| Token invalid or expired | Regenerate from GitHub and update in your profile |
-| Repo not showing | Check that the token has access to that repo |
-| Permission denied when syncing | Ensure your token includes `repo` and `issues:write` |
-| Label or milestone missing | Ensure your token has `projects` and `metadata` read/write permissions |
+You can configure a **default GitHub Project** and **Milestone** per scope.
+
+- When a new task is created and synced, it will automatically inherit the configured milestone and project.
+- If the milestone or project changes in the app, the update is synced back to GitHub.
+
+### 🔗 GitHub Projects (v2) Requirements
+
+- To automatically add issues to your GitHub **Projects (v2)** board, ensure your token includes:
+  - `project` (Classic token), or  
+  - `Projects (Read & Write)` (Fine-grained token)
+- This uses the **GraphQL API**, not the deprecated REST API.
+- Works with **personal projects** and **repository-level projects** — no organization access required.
 
 ---
 
-Your GitHub integration is now ready! 🎉
+## 🔒 Step 4. Security Notes
+
+- Your token is encrypted and never exposed to third parties.  
+- Only minimal permissions are used (issues, metadata, projects).  
+- You can disable the integration toggle anytime — data will remain stored locally.
+
+---
+
+## 🚀 Step 5. Common Actions
+
+- **Create GitHub Issue** → From any task, click the GitHub icon.  
+- **Sync Issue** → Click the refresh icon to update task data from GitHub.  
+- **Close Task** → Closes the linked GitHub issue automatically.  
+- **Global Sync** → Refresh all linked issues for the active user.
+
+---
+
+## 🧩 Troubleshooting
+
+| Problem | Solution |
+|----------|-----------|
+| Token invalid | Regenerate a new one and re-test connection |
+| GitHub project not found | Ensure Projects (v2) is enabled and token has correct scope |
+| Project not updated | Check that the issue exists in the linked repository |
