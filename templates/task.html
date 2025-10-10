@@ -260,15 +260,6 @@
         background-color: var(--bs-secondary-bg, #e9ecef);
     }
 
-    .task-chevron {
-        font-size: 1em;
-        transition: transform 0.2s ease-in-out;
-    }
-
-    .task-chevron-rotated {
-        transform: rotate(90deg);
-    }
-
     .task-description {
         white-space: pre-wrap;
         color: var(--bs-secondary-color, var(--bs-body-color));
@@ -661,38 +652,6 @@
         const container = getTaskGroupsContainer();
         return container ? container.dataset.sortBy || null : null;
     }
-
-    function updateChevronForCollapse(collapseId, isExpanded) {
-        if (!collapseId) {
-            return;
-        }
-        const icon = document.querySelector(`.task-chevron[data-chevron-for="${collapseId}"]`);
-        if (icon) {
-            icon.classList.toggle('task-chevron-rotated', isExpanded);
-        }
-    }
-
-    function syncChevronStates() {
-        document.querySelectorAll('.task-chevron').forEach((icon) => {
-            const collapseId = icon.dataset.chevronFor;
-            if (!collapseId) {
-                return;
-            }
-            const target = document.getElementById(collapseId);
-            if (!target) {
-                return;
-            }
-            icon.classList.toggle('task-chevron-rotated', target.classList.contains('show'));
-        });
-    }
-
-    document.addEventListener('show.bs.collapse', (event) => {
-        updateChevronForCollapse(event.target.id, true);
-    });
-
-    document.addEventListener('hide.bs.collapse', (event) => {
-        updateChevronForCollapse(event.target.id, false);
-    });
 
     const defaultTaskAction = '{{ url_for("add_task") }}';
     const taskForm = document.getElementById('task-form');
@@ -3697,7 +3656,6 @@
                 attachMilestoneTriggerListeners(newContainer);
                 initializeMilestoneTooltips(newContainer);
                 hideMilestoneField();
-                syncChevronStates();
                 updateDateDisplays();
                 applyTagFilters();
                 persistTaskPreferences();
@@ -3723,7 +3681,6 @@
     initializeMilestoneTooltips();
     applyTagFilters();
     updateDateDisplays();
-    syncChevronStates();
 
     restoreTaskPreferences();
 
