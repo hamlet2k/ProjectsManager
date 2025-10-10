@@ -2132,8 +2132,11 @@ def edit_task(id):
                 try:
                     milestone_payload = json.loads(milestone_raw)
                     milestone_value = milestone_payload.get("number")
-                    if isinstance(milestone_value, str) and milestone_value.isdigit():
-                        milestone_number = int(milestone_value)
+                    if isinstance(milestone_value, str):
+                        try:
+                            milestone_number = int(milestone_value)
+                        except ValueError:
+                            pass
                     elif isinstance(milestone_value, int):
                         milestone_number = milestone_value
                 except ValueError:
