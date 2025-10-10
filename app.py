@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from functools import wraps
 import logging
@@ -472,6 +472,7 @@ def _clear_github_issue_link(task: Task) -> None:
     task.github_project_name = None
     task.github_milestone_number = None
     task.github_milestone_title = None
+    task.github_milestone_due_on = None
     _remove_local_github_tag(task)
 
 
@@ -487,11 +488,38 @@ def _serialize_task_payload(task: Task) -> dict[str, object]:
         "github_issue_state": task.github_issue_state,
         "github_milestone_number": task.github_milestone_number,
         "github_milestone_title": task.github_milestone_title,
+        "github_milestone_due_on": _format_github_datetime(task.github_milestone_due_on),
         "github_repo_owner": task.github_repo_owner,
         "github_repo_name": task.github_repo_name,
         "github_project_id": task.github_project_id,
         "github_project_name": task.github_project_name,
     }
+
+
+def _parse_github_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        logging.warning("Unable to parse GitHub datetime value: %s", value)
+        return None
+
+
+def _format_github_datetime(value: Optional[datetime]) -> Optional[str]:
+    if not value:
+        return None
+    target = value
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=timezone.utc)
+    else:
+        target = target.astimezone(timezone.utc)
+    return target.isoformat().replace("+00:00", "Z")
 
 
 def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
@@ -642,6 +670,9 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
     task.github_issue_state = issue.state
     task.github_milestone_number = getattr(issue, "milestone_number", None)
     task.github_milestone_title = getattr(issue, "milestone_title", None) or None
+    task.github_milestone_due_on = _parse_github_datetime(
+        getattr(issue, "milestone_due_on", None)
+    )
     if not getattr(scope, "github_project_id", None):
         task.github_project_id = None
         task.github_project_name = None
@@ -1148,6 +1179,7 @@ def github_milestones():
             "number": milestone["number"],
             "title": milestone["title"],
             "state": milestone["state"],
+            "due_on": milestone.get("due_on"),
         }
         for milestone in milestones
     ]
@@ -1218,6 +1250,7 @@ def github_issue_create():
     task.github_repo_owner = context["owner"]
     task.github_milestone_number = issue.milestone_number
     task.github_milestone_title = issue.milestone_title or None
+    task.github_milestone_due_on = _parse_github_datetime(issue.milestone_due_on)
     try:
         _ensure_local_github_tag(task)
     except SQLAlchemyError as exc:
@@ -1244,6 +1277,7 @@ def github_issue_create():
                 "number": issue.milestone_number,
                 "title": issue.milestone_title,
                 "state": issue.milestone_state,
+                "due_on": issue.milestone_due_on,
             }
             if issue.milestone_number
             else None,
@@ -1351,6 +1385,7 @@ def github_issue_sync():
                 "number": issue.milestone_number,
                 "title": issue.milestone_title,
                 "state": issue.milestone_state,
+                "due_on": issue.milestone_due_on,
             }
             if issue.milestone_number
             else None,
@@ -1359,6 +1394,159 @@ def github_issue_sync():
     }
     if warnings:
         response_payload["warnings"] = warnings
+
+    return jsonify(response_payload)
+
+
+@app.route("/api/tasks/<int:task_id>/milestone", methods=["POST"])
+@scope_required
+def update_task_milestone(task_id: int):
+    if g.user is None:
+        return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    task = _get_task_in_scope_or_404(task_id)
+    _task_owner_guard(task)
+
+    if not task.github_issue_number:
+        return (
+            jsonify({"success": False, "message": "Task is not linked to a GitHub issue."}),
+            400,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    if "milestone" not in payload:
+        return (
+            jsonify({"success": False, "message": "Milestone selection is required."}),
+            400,
+        )
+
+    milestone_raw = payload.get("milestone")
+
+    def _coerce_milestone_number(value) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            candidate = value.strip()
+            if candidate.isdigit():
+                return int(candidate)
+        return None
+
+    desired_number: Optional[int]
+    requested_state: Optional[str] = None
+    requested_due_on: Optional[str] = None
+    if milestone_raw in (None, "", {}):
+        desired_number = None
+    elif isinstance(milestone_raw, dict):
+        desired_number = _coerce_milestone_number(milestone_raw.get("number"))
+        requested_state = (
+            milestone_raw.get("state") if isinstance(milestone_raw.get("state"), str) else None
+        )
+        if milestone_raw.get("due_on"):
+            requested_due_on = str(milestone_raw.get("due_on"))
+        if desired_number is None:
+            return (
+                jsonify({"success": False, "message": "Invalid milestone selection."}),
+                400,
+            )
+    else:
+        desired_number = _coerce_milestone_number(milestone_raw)
+        if desired_number is None:
+            return (
+                jsonify({"success": False, "message": "Invalid milestone selection."}),
+                400,
+            )
+
+    context = _task_github_context(task, g.user)
+    if not context:
+        return (
+            jsonify({"success": False, "message": "GitHub integration is not configured."}),
+            400,
+        )
+
+    original_number = task.github_milestone_number
+
+    issue = None
+    try:
+        if desired_number != original_number:
+            issue = update_issue(
+                context["token"],
+                context["owner"],
+                context["name"],
+                task.github_issue_number,
+                milestone=desired_number,
+            )
+            task.github_issue_state = issue.state
+            task.github_milestone_number = issue.milestone_number
+            task.github_milestone_title = issue.milestone_title or None
+            task.github_milestone_due_on = _parse_github_datetime(issue.milestone_due_on)
+            _record_sync(
+                task,
+                "update_issue",
+                "success",
+                f"Issue #{issue.number} milestone updated",
+            )
+        elif requested_due_on is not None:
+            task.github_milestone_due_on = _parse_github_datetime(requested_due_on)
+        db.session.commit()
+    except GitHubError as error:
+        db.session.rollback()
+        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
+            _clear_github_issue_link(task)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+            response = {
+                "success": False,
+                "message": GITHUB_ISSUE_MISSING_MESSAGE,
+                "github_issue_unlinked": True,
+                "task": _serialize_task_payload(task),
+            }
+            return jsonify(response), error.status_code or 404
+        if error.status_code in (401, 403):
+            _invalidate_github(g.user)
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+        message, status = _github_error_response(error)
+        return jsonify({"success": False, "message": message}), status
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        logging.error("Unable to update milestone locally: %s", exc, exc_info=True)
+        return (
+            jsonify({"success": False, "message": "Unable to update the milestone."}),
+            500,
+        )
+
+    updated_number = task.github_milestone_number
+    milestone_payload = None
+    if updated_number is not None:
+        milestone_payload = {
+            "number": updated_number,
+            "title": task.github_milestone_title,
+            "state": issue.milestone_state if issue else requested_state,
+            "due_on": _format_github_datetime(task.github_milestone_due_on),
+        }
+
+    if original_number is None and updated_number is not None:
+        message = f"Milestone set to {task.github_milestone_title}."
+    elif original_number is not None and updated_number is None:
+        message = "Milestone removed."
+    elif original_number == updated_number:
+        message = "Milestone unchanged."
+    else:
+        message = "Milestone updated."
+
+    response_payload = {
+        "success": True,
+        "message": message,
+        "task": _serialize_task_payload(task),
+    }
+    if milestone_payload is not None:
+        response_payload["milestone"] = milestone_payload
 
     return jsonify(response_payload)
 
@@ -1962,6 +2150,9 @@ def edit_task(id):
                 item.github_issue_state = issue.state
                 item.github_milestone_number = issue.milestone_number
                 item.github_milestone_title = issue.milestone_title or None
+                item.github_milestone_due_on = _parse_github_datetime(
+                    issue.milestone_due_on
+                )
                 _record_sync(item, "update_issue", "success", f"Issue #{issue.number} updated")
             except GitHubError as error:
                 if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:

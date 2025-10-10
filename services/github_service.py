@@ -53,6 +53,7 @@ class GitHubIssue:
     milestone_number: Optional[int]
     milestone_title: str
     milestone_state: Optional[str]
+    milestone_due_on: Optional[str]
 
 
 def _get_fernet() -> Fernet:
@@ -221,7 +222,15 @@ def list_repository_milestones(token: str, owner: str, repo: str) -> List[Dict[s
                 continue
             title = milestone.get("title") or f"Milestone #{number}"
             state = milestone.get("state") or "open"
-            milestones.append({"number": number, "title": title, "state": state})
+            due_on = milestone.get("due_on")
+            milestones.append(
+                {
+                    "number": number,
+                    "title": title,
+                    "state": state,
+                    "due_on": due_on,
+                }
+            )
         if len(payload) < 100:
             break
         page += 1
@@ -293,6 +302,7 @@ def create_issue(
         milestone_number=milestone_payload.get("number"),
         milestone_title=milestone_payload.get("title") or "",
         milestone_state=milestone_payload.get("state"),
+        milestone_due_on=milestone_payload.get("due_on"),
     )
 
 
@@ -316,6 +326,7 @@ def fetch_issue(token: str, owner: str, repo: str, issue_number: int) -> GitHubI
         milestone_number=milestone_payload.get("number"),
         milestone_title=milestone_payload.get("title") or "",
         milestone_state=milestone_payload.get("state"),
+        milestone_due_on=milestone_payload.get("due_on"),
     )
 
 
@@ -365,6 +376,7 @@ def update_issue(
         milestone_number=milestone_payload.get("number"),
         milestone_title=milestone_payload.get("title") or "",
         milestone_state=milestone_payload.get("state"),
+        milestone_due_on=milestone_payload.get("due_on"),
     )
 
 
