@@ -620,7 +620,8 @@
     display: none;
 }
 
-.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] .sticky-header__pills {
+.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] .sticky-header__pills,
+.sticky-header[data-sticky-ready="true"][data-sticky-has-expanded="false"] .sticky-header__pills {
     display: block;
 }
 
@@ -720,8 +721,7 @@
     margin-bottom: 0;
 }
 
-.sticky-header[data-sticky-ready="true"] .sticky-header__panel.is-expanded,
-.sticky-header[data-sticky-ready="true"][data-sticky-mode="top"] .sticky-header__panel {
+.sticky-header[data-sticky-ready="true"] .sticky-header__panel.is-expanded {
     max-height: 2000px;
     opacity: 1;
     transform: translateY(0);

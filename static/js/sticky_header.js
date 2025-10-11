@@ -61,16 +61,19 @@
         const collapseButtons = Array.from(header.querySelectorAll('[data-sticky-collapse]'));
         const state = {
             mode: 'top',
+            awaitingVisibility: false,
             panels: {
                 add: { expanded: true },
                 filters: { expanded: true },
             },
         };
         let headerDocumentTop = null;
-        const EXPAND_TOLERANCE = 48;
+        let headerExpandedHeight = null;
+        const EXPAND_TOLERANCE = 64;
         const COLLAPSE_VISIBILITY_BUFFER = 8;
+        const AUTO_EXPAND_THRESHOLD = 96;
 
-        function computeHeaderDocumentTop() {
+        function computeTopMetrics() {
             let documentTop = 0;
             let node = header;
             while (node) {
@@ -79,12 +82,25 @@
                 }
                 node = node.offsetParent;
             }
-            if (!documentTop && typeof header.getBoundingClientRect === 'function') {
+            let measuredHeight = null;
+            if (typeof header.getBoundingClientRect === 'function') {
                 const rect = header.getBoundingClientRect();
-                const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
-                documentTop = rect.top + scrollTop;
+                measuredHeight = rect.height;
+                if (!documentTop) {
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+                    documentTop = rect.top + scrollTop;
+                }
             }
             headerDocumentTop = documentTop;
+            if (
+                state.mode === 'top' &&
+                state.panels.add.expanded &&
+                state.panels.filters.expanded &&
+                typeof measuredHeight === 'number' &&
+                !Number.isNaN(measuredHeight)
+            ) {
+                headerExpandedHeight = measuredHeight;
+            }
         }
 
         function dispatchPanelEvent(type, panelKey, source) {
@@ -104,11 +120,9 @@
             header.dataset.stickyReady = 'true';
             header.dataset.stickyMode = state.mode;
 
-            const expandedKeys = state.mode === 'top'
-                ? Object.keys(panels)
-                : Object.entries(state.panels)
-                      .filter(([, panelState]) => panelState.expanded)
-                      .map(([key]) => key);
+            const expandedKeys = Object.entries(state.panels)
+                .filter(([, panelState]) => panelState.expanded)
+                .map(([key]) => key);
             header.dataset.stickyHasExpanded = expandedKeys.length > 0 ? 'true' : 'false';
             header.dataset.stickyExpandedPanels = expandedKeys.join(',');
 
@@ -116,7 +130,7 @@
                 if (!panel) {
                     return;
                 }
-                const shouldExpand = state.mode === 'top' ? true : state.panels[key].expanded;
+                const shouldExpand = state.panels[key].expanded;
                 panel.classList.toggle('is-expanded', shouldExpand);
             });
 
@@ -124,7 +138,7 @@
                 if (!pill) {
                     return;
                 }
-                const isExpanded = state.mode === 'top' ? true : state.panels[key].expanded;
+                const isExpanded = state.panels[key].expanded;
                 pill.classList.toggle('is-hidden', isExpanded);
                 pill.setAttribute('aria-expanded', String(isExpanded));
             });
@@ -132,7 +146,7 @@
             collapseButtons.forEach((button) => {
                 const target = button.getAttribute('data-sticky-collapse');
                 const panelState = state.panels[target];
-                const isExpanded = state.mode === 'top' ? true : Boolean(panelState && panelState.expanded);
+                const isExpanded = Boolean(panelState && panelState.expanded);
                 button.classList.toggle('is-visible', isExpanded && state.mode !== 'top');
                 button.setAttribute('aria-expanded', String(isExpanded));
             });
@@ -142,11 +156,15 @@
             if (!panels[panelKey]) {
                 return;
             }
-            if (state.mode !== 'top') {
+            const wasExpanded = state.panels[panelKey].expanded;
+            if (!wasExpanded) {
                 state.panels[panelKey].expanded = true;
+                state.awaitingVisibility = false;
             }
             applyState();
-            dispatchPanelEvent('sticky:panel-expanded', panelKey, source);
+            if (!wasExpanded) {
+                dispatchPanelEvent('sticky:panel-expanded', panelKey, source);
+            }
         }
 
         function collapsePanel(panelKey, source = 'manual') {
@@ -164,16 +182,34 @@
             }
             const previousMode = state.mode;
             state.mode = desiredMode;
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
             if (state.mode === 'top') {
-                if (!state.panels.add.expanded) {
-                    state.panels.add.expanded = true;
-                    dispatchPanelEvent('sticky:panel-expanded', 'add', source || 'auto-scroll');
-                }
-                if (!state.panels.filters.expanded) {
-                    state.panels.filters.expanded = true;
-                    dispatchPanelEvent('sticky:panel-expanded', 'filters', source || 'auto-scroll');
+                const autoExpandLimit =
+                    (headerDocumentTop !== null ? headerDocumentTop : 0) + AUTO_EXPAND_THRESHOLD;
+                const shouldExpandPanels = source !== 'auto-scroll' || scrollTop <= autoExpandLimit;
+                if (shouldExpandPanels) {
+                    state.awaitingVisibility = false;
+                    if (!state.panels.add.expanded) {
+                        state.panels.add.expanded = true;
+                        dispatchPanelEvent('sticky:panel-expanded', 'add', source || 'auto-scroll');
+                    }
+                    if (!state.panels.filters.expanded) {
+                        state.panels.filters.expanded = true;
+                        dispatchPanelEvent('sticky:panel-expanded', 'filters', source || 'auto-scroll');
+                    }
+                } else {
+                    state.awaitingVisibility = true;
+                    if (state.panels.add.expanded) {
+                        state.panels.add.expanded = false;
+                        dispatchPanelEvent('sticky:panel-collapsed', 'add', source || 'auto-scroll');
+                    }
+                    if (state.panels.filters.expanded) {
+                        state.panels.filters.expanded = false;
+                        dispatchPanelEvent('sticky:panel-collapsed', 'filters', source || 'auto-scroll');
+                    }
                 }
             } else if (previousMode === 'top') {
+                state.awaitingVisibility = false;
                 if (state.panels.add.expanded) {
                     state.panels.add.expanded = false;
                     dispatchPanelEvent('sticky:panel-collapsed', 'add', source || 'auto-scroll');
@@ -186,7 +222,7 @@
             applyState();
             if (state.mode === 'top') {
                 requestAnimationFrame(() => {
-                    computeHeaderDocumentTop();
+                    computeTopMetrics();
                 });
             }
         }
@@ -197,18 +233,56 @@
 
             if (state.mode === 'top') {
                 const rect = header.getBoundingClientRect();
-                if (rect && typeof rect.bottom === 'number' && rect.bottom <= -COLLAPSE_VISIBILITY_BUFFER) {
+                if (
+                    state.awaitingVisibility &&
+                    rect &&
+                    typeof rect.bottom === 'number' &&
+                    rect.bottom > -COLLAPSE_VISIBILITY_BUFFER
+                ) {
+                    state.awaitingVisibility = false;
+                }
+                if (
+                    !state.awaitingVisibility &&
+                    rect &&
+                    typeof rect.bottom === 'number' &&
+                    rect.bottom <= -COLLAPSE_VISIBILITY_BUFFER
+                ) {
                     desiredMode = 'scrolled';
                 }
             } else if (headerDocumentTop !== null) {
-                if (scrollTop <= headerDocumentTop + EXPAND_TOLERANCE) {
+                let expandBoundary = headerDocumentTop + EXPAND_TOLERANCE;
+                if (typeof headerExpandedHeight === 'number' && !Number.isNaN(headerExpandedHeight)) {
+                    expandBoundary = headerDocumentTop + Math.max(headerExpandedHeight - EXPAND_TOLERANCE, EXPAND_TOLERANCE);
+                }
+                if (scrollTop <= expandBoundary) {
                     desiredMode = 'top';
                 }
             }
-            if (!force && desiredMode === state.mode) {
-                return;
+            if (desiredMode !== state.mode) {
+                setMode(desiredMode, 'auto-scroll');
+            } else if (state.mode === 'top') {
+                const autoExpandLimit =
+                    (headerDocumentTop !== null ? headerDocumentTop : 0) + AUTO_EXPAND_THRESHOLD;
+                if (
+                    scrollTop <= autoExpandLimit &&
+                    (!state.panels.add.expanded || !state.panels.filters.expanded)
+                ) {
+                    const previouslyExpanded = {
+                        add: state.panels.add.expanded,
+                        filters: state.panels.filters.expanded,
+                    };
+                    state.panels.add.expanded = true;
+                    state.panels.filters.expanded = true;
+                    state.awaitingVisibility = false;
+                    applyState();
+                    if (!previouslyExpanded.add) {
+                        dispatchPanelEvent('sticky:panel-expanded', 'add', 'auto-scroll');
+                    }
+                    if (!previouslyExpanded.filters) {
+                        dispatchPanelEvent('sticky:panel-expanded', 'filters', 'auto-scroll');
+                    }
+                }
             }
-            setMode(desiredMode, 'auto-scroll');
         }
 
         Object.entries(pills).forEach(([panelKey, pill]) => {
@@ -253,7 +327,7 @@
         if (supportsResizeObserver) {
             const resizeObserver = new ResizeObserver(() => {
                 if (state.mode === 'top') {
-                    computeHeaderDocumentTop();
+                    computeTopMetrics();
                 }
             });
             resizeObserver.observe(header);
@@ -267,13 +341,13 @@
 
         window.addEventListener('resize', throttle(() => {
             if (state.mode === 'top') {
-                computeHeaderDocumentTop();
+                computeTopMetrics();
             }
             evaluateModeFromScroll(false);
         }, 150));
 
         applyState();
-        computeHeaderDocumentTop();
+        computeTopMetrics();
         evaluateModeFromScroll(true);
 
         window.ProjectsStickyHeader = {
