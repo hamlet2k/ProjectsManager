@@ -584,9 +584,8 @@
     }
 
 .sticky-header {
-    position: sticky;
-    top: 0;
-    z-index: 1020;
+    position: relative;
+    z-index: auto;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -600,6 +599,9 @@
 }
 
 .sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
 }
