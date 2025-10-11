@@ -83,6 +83,7 @@
             expandBuffer: null,
         };
         const COLLAPSE_TOLERANCE = 2;
+        const COLLAPSE_EXTRA_OFFSET = 64;
         const EXPAND_BUFFER_MIN = 140;
         const EXPAND_BUFFER_MAX = 360;
 
@@ -284,8 +285,11 @@
             const baseDocumentTop = getDocumentTop();
 
             if (state.mode === 'top') {
-                const headerHeight = header.offsetHeight;
-                const collapseThreshold = baseDocumentTop + Math.max(headerHeight - COLLAPSE_TOLERANCE, 0);
+                const expandedHeight = metrics.expandedHeight || header.offsetHeight;
+                const collapseThreshold =
+                    baseDocumentTop +
+                    Math.max(expandedHeight - COLLAPSE_TOLERANCE, 0) +
+                    COLLAPSE_EXTRA_OFFSET;
                 if (scrollTop >= collapseThreshold) {
                     setMode('scrolled', 'auto-scroll');
                 }

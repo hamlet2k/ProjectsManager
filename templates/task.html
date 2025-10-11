@@ -1015,6 +1015,58 @@
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
     const nameField = document.getElementById('name');
     const descriptionField = document.getElementById('description');
+    const stickyHeaderElement = document.querySelector('[data-sticky-header]');
+
+    function prefersReducedMotion() {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    function ensureAddPanelVisibility({ source = 'script', focusTarget = null, selectText = false } = {}) {
+        const headerElement = stickyHeaderElement || document.querySelector('[data-sticky-header]');
+        const stickyApi = window.ProjectsStickyHeader;
+
+        if (stickyApi && typeof stickyApi.expandPanel === 'function') {
+            stickyApi.expandPanel('add', source);
+        }
+
+        const applyFocus = () => {
+            if (!focusTarget) {
+                return;
+            }
+            try {
+                focusTarget.focus({ preventScroll: true });
+            } catch (error) {
+                focusTarget.focus();
+            }
+            if (selectText && typeof focusTarget.select === 'function') {
+                focusTarget.select();
+            }
+        };
+
+        if (!headerElement) {
+            applyFocus();
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            const mode = headerElement.dataset.stickyMode || 'top';
+            if (mode === 'top') {
+                const targetElement = taskForm || headerElement;
+                const rect = targetElement.getBoundingClientRect();
+                const fullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                if (!fullyVisible) {
+                    targetElement.scrollIntoView({
+                        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                        block: 'start',
+                    });
+                }
+                window.setTimeout(applyFocus, prefersReducedMotion() ? 0 : 150);
+                return;
+            }
+
+            applyFocus();
+        });
+    }
 
     Array.from(document.querySelectorAll('textarea[data-auto-resize]')).forEach((textarea) => {
         initializeAutoResizingTextarea(textarea);
@@ -2058,13 +2110,6 @@
             return;
         }
 
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        taskForm.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
-        window.setTimeout(() => {
-            nameField.focus();
-            nameField.select();
-        }, prefersReducedMotion ? 0 : 150);
-
         let shouldExpandDetails = false;
 
         if (typeof tagIdValue === 'string') {
@@ -2080,6 +2125,8 @@
                 shouldExpandDetails = true;
             }
         }
+
+        ensureAddPanelVisibility({ source: 'group-add', focusTarget: nameField, selectText: true });
 
         if (shouldExpandDetails && detailedItemCollapse) {
             detailedItemCollapse.show();
@@ -3756,7 +3803,7 @@
 
         applyTaskFormErrors({});
         expandAccordionItem('detailed-item-container');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        ensureAddPanelVisibility({ source: 'edit-task', focusTarget: nameField, selectText: true });
     }
 
     // Use WeakSet to track attached listeners for edit-task-btn
@@ -4431,8 +4478,6 @@
         }
         taskForm.reset();
         taskForm.dataset.ajaxSubmitting = 'false';
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        taskForm.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
         if (expandDetails) {
             if (detailedItemCollapse) {
                 detailedItemCollapse.show();
@@ -4440,12 +4485,7 @@
                 expandAccordionItem('detailed-item-container');
             }
         }
-        window.setTimeout(() => {
-            if (nameField) {
-                nameField.focus({ preventScroll: true });
-                nameField.select();
-            }
-        }, 0);
+        ensureAddPanelVisibility({ source: 'new-task', focusTarget: nameField, selectText: true });
     }
 
     document.addEventListener('keydown', (event) => {
