@@ -59,7 +59,6 @@
             filters: header.querySelector('[data-sticky-pill="filters"]'),
         };
         const collapseButtons = Array.from(header.querySelectorAll('[data-sticky-collapse]'));
-        let sentinel = document.querySelector('[data-sticky-sentinel]');
         const state = {
             mode: 'top',
             panels: {
@@ -67,6 +66,28 @@
                 filters: { expanded: true },
             },
         };
+        let collapseThreshold = null;
+        const SCROLL_TOLERANCE = 12;
+
+        function updateCollapseThreshold() {
+            if (state.mode !== 'top') {
+                return;
+            }
+            let documentTop = 0;
+            let node = header;
+            while (node) {
+                if (typeof node.offsetTop === 'number') {
+                    documentTop += node.offsetTop;
+                }
+                node = node.offsetParent;
+            }
+            if (!documentTop && typeof header.getBoundingClientRect === 'function') {
+                const rect = header.getBoundingClientRect();
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+                documentTop = rect.top + scrollTop;
+            }
+            collapseThreshold = documentTop + header.offsetHeight;
+        }
 
         function dispatchPanelEvent(type, panelKey, source) {
             header.dispatchEvent(
@@ -139,23 +160,6 @@
             dispatchPanelEvent('sticky:panel-collapsed', panelKey, source);
         }
 
-        function ensureSentinel() {
-            if (sentinel) {
-                return sentinel;
-            }
-            const created = document.createElement('div');
-            created.setAttribute('data-sticky-sentinel', '');
-            created.style.position = 'relative';
-            created.style.width = '100%';
-            created.style.height = '1px';
-            created.style.margin = '0';
-            created.style.padding = '0';
-            created.style.pointerEvents = 'none';
-            header.parentNode.insertBefore(created, header);
-            sentinel = created;
-            return sentinel;
-        }
-
         function setMode(desiredMode, source) {
             if (desiredMode === state.mode) {
                 return;
@@ -182,17 +186,22 @@
                 }
             }
             applyState();
+            if (state.mode === 'top') {
+                requestAnimationFrame(() => {
+                    updateCollapseThreshold();
+                });
+            }
         }
 
-        function evaluateModeFromVisibility(force) {
-            const targetSentinel = ensureSentinel();
-            let shouldBeTop = true;
-            if (targetSentinel && typeof targetSentinel.getBoundingClientRect === 'function') {
-                const rect = targetSentinel.getBoundingClientRect();
-                shouldBeTop = rect.bottom > 0;
-            } else {
-                shouldBeTop = window.scrollY <= 0;
+        function evaluateModeFromScroll(force) {
+            if (collapseThreshold === null) {
+                updateCollapseThreshold();
             }
+            if (collapseThreshold === null) {
+                return;
+            }
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+            const shouldBeTop = scrollTop + SCROLL_TOLERANCE < collapseThreshold;
             const desiredMode = shouldBeTop ? 'top' : 'scrolled';
             if (!force && desiredMode === state.mode) {
                 return;
@@ -238,39 +247,32 @@
             });
         });
 
-        const supportsIntersectionObserver = 'IntersectionObserver' in window;
-        let observer = null;
-        if (supportsIntersectionObserver) {
-            observer = new IntersectionObserver((entries) => {
-                entries.forEach((entry) => {
-                    if (entry.target !== sentinel) {
-                        return;
-                    }
-                    const shouldBeTop = entry.isIntersecting && entry.intersectionRatio > 0;
-                    setMode(shouldBeTop ? 'top' : 'scrolled', 'auto-scroll');
-                });
-            }, {
-                root: null,
-                threshold: [0, 1],
+        const supportsResizeObserver = 'ResizeObserver' in window;
+        if (supportsResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                if (state.mode === 'top') {
+                    updateCollapseThreshold();
+                }
             });
-            observer.observe(ensureSentinel());
-        } else {
-            window.addEventListener(
-                'scroll',
-                throttle(() => evaluateModeFromVisibility(false), 75),
-                { passive: true }
-            );
+            resizeObserver.observe(header);
         }
 
+        window.addEventListener(
+            'scroll',
+            throttle(() => evaluateModeFromScroll(false), 75),
+            { passive: true }
+        );
+
         window.addEventListener('resize', throttle(() => {
-            applyState();
-            if (!supportsIntersectionObserver) {
-                evaluateModeFromVisibility(false);
+            if (state.mode === 'top') {
+                updateCollapseThreshold();
             }
+            evaluateModeFromScroll(false);
         }, 150));
 
-        evaluateModeFromVisibility(true);
         applyState();
+        updateCollapseThreshold();
+        evaluateModeFromScroll(true);
 
         window.ProjectsStickyHeader = {
             expandPanel,
