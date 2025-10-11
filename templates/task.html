@@ -571,10 +571,6 @@
         color: var(--bs-white);
     }
 
-    .task-filter-collapse.collapse:not(.show) {
-        display: none;
-    }
-
     @media (min-width: 992px) {
         .task-item-header {
             flex-wrap: nowrap;
@@ -585,13 +581,7 @@
             margin-left: auto;
             margin-top: 0;
         }
-
-    .task-filter-collapse.collapse {
-        display: block !important;
-        height: auto !important;
-        visibility: visible;
     }
-}
 
 .sticky-header {
     position: sticky;
@@ -787,13 +777,7 @@
         </button>
         <div class="sticky-header__panel-body">
             <div class="container">
-                <div class="d-flex justify-content-end mb-2 d-lg-none">
-                    <button class="btn btn-outline-secondary btn-sm" type="button" data-task-filter-toggle data-bs-toggle="collapse" data-bs-target="#task-filter-collapse" aria-expanded="false" aria-controls="task-filter-collapse">
-                        Filters
-                        <i class="bi bi-sliders"></i>
-                    </button>
-                </div>
-                <div id="task-filter-collapse" class="collapse task-filter-collapse">
+                <div id="task-filter-collapse" class="task-filter-collapse">
                     <div class="tag-filter-toolbar d-flex flex-column gap-3">
                         <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end" id="task-filter-form">
                         <div class="col-12 col-md-4">
@@ -1087,10 +1071,6 @@
     const filterContainer = document.getElementById('tag-filter-container');
     const filterClear = document.getElementById('tag-filter-clear');
     const filterEmptyMessage = document.getElementById('tag-filter-empty');
-    const filterCollapseElement = document.getElementById('task-filter-collapse');
-    const filterToggleButtons = document.querySelectorAll('[data-task-filter-toggle]');
-    const filterCollapse = filterCollapseElement ? new bootstrap.Collapse(filterCollapseElement, { toggle: false }) : null;
-    const filterMediaQuery = window.matchMedia('(min-width: 992px)');
 
     // Use shared preferences utilities from preferences.js
     // Derive the active scope id from the DOM (task-groups-container data attribute)
@@ -2205,23 +2185,6 @@
                     });
             });
         });
-    }
-
-    function updateFilterToggleState(isExpanded) {
-        filterToggleButtons.forEach((button) => {
-            button.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-        });
-    }
-
-    function applyResponsiveFilterState() {
-        if (!filterCollapse) {
-            return;
-        }
-        if (filterMediaQuery.matches) {
-            filterCollapse.show();
-        } else {
-            filterCollapse.hide();
-        }
     }
 
     function createTagOnServer(rawValue) {
@@ -4443,25 +4406,6 @@
     }
     if (milestoneModalConfirm) {
         milestoneModalConfirm.addEventListener('click', submitMilestoneSelection);
-    }
-
-    if (filterCollapseElement && filterCollapse) {
-        const handleBreakpointChange = () => {
-            applyResponsiveFilterState();
-        };
-        filterCollapseElement.addEventListener('shown.bs.collapse', () => {
-            updateFilterToggleState(true);
-        });
-        filterCollapseElement.addEventListener('hidden.bs.collapse', () => {
-            updateFilterToggleState(false);
-        });
-        updateFilterToggleState(filterCollapseElement.classList.contains('show'));
-        applyResponsiveFilterState();
-        if (typeof filterMediaQuery.addEventListener === 'function') {
-            filterMediaQuery.addEventListener('change', handleBreakpointChange);
-        } else if (typeof filterMediaQuery.addListener === 'function') {
-            filterMediaQuery.addListener(handleBreakpointChange);
-        }
     }
 
     if (createTagBtn) {
