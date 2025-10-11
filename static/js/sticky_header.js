@@ -66,17 +66,11 @@
                 filters: { expanded: true },
             },
         };
-        const thresholds = {
-            collapse: null,
-            expand: null,
-        };
-        const COLLAPSE_OFFSET = 96;
-        const EXPAND_TOLERANCE = 24;
+        let headerDocumentTop = null;
+        const EXPAND_TOLERANCE = 48;
+        const COLLAPSE_VISIBILITY_BUFFER = 8;
 
-        function updateScrollThresholds() {
-            if (state.mode !== 'top') {
-                return;
-            }
+        function computeHeaderDocumentTop() {
             let documentTop = 0;
             let node = header;
             while (node) {
@@ -90,9 +84,7 @@
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
                 documentTop = rect.top + scrollTop;
             }
-            const expandedHeight = header.offsetHeight;
-            thresholds.collapse = documentTop + expandedHeight;
-            thresholds.expand = Math.max(0, documentTop - EXPAND_TOLERANCE);
+            headerDocumentTop = documentTop;
         }
 
         function dispatchPanelEvent(type, panelKey, source) {
@@ -194,28 +186,22 @@
             applyState();
             if (state.mode === 'top') {
                 requestAnimationFrame(() => {
-                    updateScrollThresholds();
+                    computeHeaderDocumentTop();
                 });
             }
         }
 
         function evaluateModeFromScroll(force) {
-            if (thresholds.collapse === null || thresholds.expand === null) {
-                updateScrollThresholds();
-            }
-            if (thresholds.collapse === null || thresholds.expand === null) {
-                return;
-            }
             const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
             let desiredMode = state.mode;
 
             if (state.mode === 'top') {
-                const collapseTrigger = thresholds.collapse + COLLAPSE_OFFSET;
-                if (scrollTop >= collapseTrigger) {
+                const rect = header.getBoundingClientRect();
+                if (rect && typeof rect.bottom === 'number' && rect.bottom <= -COLLAPSE_VISIBILITY_BUFFER) {
                     desiredMode = 'scrolled';
                 }
-            } else {
-                if (scrollTop <= thresholds.expand) {
+            } else if (headerDocumentTop !== null) {
+                if (scrollTop <= headerDocumentTop + EXPAND_TOLERANCE) {
                     desiredMode = 'top';
                 }
             }
@@ -267,7 +253,7 @@
         if (supportsResizeObserver) {
             const resizeObserver = new ResizeObserver(() => {
                 if (state.mode === 'top') {
-                    updateScrollThresholds();
+                    computeHeaderDocumentTop();
                 }
             });
             resizeObserver.observe(header);
@@ -281,13 +267,13 @@
 
         window.addEventListener('resize', throttle(() => {
             if (state.mode === 'top') {
-                updateScrollThresholds();
+                computeHeaderDocumentTop();
             }
             evaluateModeFromScroll(false);
         }, 150));
 
         applyState();
-        updateScrollThresholds();
+        computeHeaderDocumentTop();
         evaluateModeFromScroll(true);
 
         window.ProjectsStickyHeader = {
