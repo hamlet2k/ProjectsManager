@@ -70,7 +70,8 @@
             collapse: null,
             expand: null,
         };
-        const SCROLL_TOLERANCE = 12;
+        const COLLAPSE_OFFSET = 96;
+        const EXPAND_TOLERANCE = 24;
 
         function updateScrollThresholds() {
             if (state.mode !== 'top') {
@@ -91,7 +92,7 @@
             }
             const expandedHeight = header.offsetHeight;
             thresholds.collapse = documentTop + expandedHeight;
-            thresholds.expand = Math.max(0, documentTop - SCROLL_TOLERANCE);
+            thresholds.expand = Math.max(0, documentTop - EXPAND_TOLERANCE);
         }
 
         function dispatchPanelEvent(type, panelKey, source) {
@@ -209,7 +210,7 @@
             let desiredMode = state.mode;
 
             if (state.mode === 'top') {
-                const collapseTrigger = thresholds.collapse + SCROLL_TOLERANCE;
+                const collapseTrigger = thresholds.collapse + COLLAPSE_OFFSET;
                 if (scrollTop >= collapseTrigger) {
                     desiredMode = 'scrolled';
                 }
