@@ -668,7 +668,7 @@
 }
 
 .sticky-header__panel-body {
-    padding: 1.25rem 0 1.5rem;
+    padding: 1.75rem 0 1.5rem;
 }
 
 .sticky-header__panel-body > .container {
@@ -677,8 +677,9 @@
 
 .sticky-header__collapse {
     position: absolute;
-    top: 0.75rem;
-    right: 1rem;
+    top: 0;
+    right: 1.5rem;
+    transform: translateY(-50%);
     width: 2.25rem;
     height: 2.25rem;
     display: none;
@@ -689,6 +690,7 @@
     background-color: var(--bs-tertiary-bg);
     color: var(--bs-secondary-color, var(--bs-secondary));
     box-shadow: 0 0.4rem 1rem rgba(33, 37, 41, 0.18);
+    z-index: 5;
     transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
@@ -759,8 +761,8 @@
     </div>
 
     <div class="sticky-header__panel sticky-header__panel--filters" data-sticky-panel="filters" id="sticky-panel-filters">
-        <button class="sticky-header__collapse" type="button" data-sticky-collapse="filters" aria-label="Collapse filters" aria-expanded="false">
-            <i class="bi bi-dash-lg" aria-hidden="true"></i>
+        <button class="sticky-header__collapse" type="button" data-sticky-collapse="filters" aria-label="Close filters panel" aria-expanded="false">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
         </button>
         <div class="sticky-header__panel-body">
             <div class="container">
@@ -815,8 +817,8 @@
     </div>
 
     <div class="sticky-header__panel sticky-header__panel--add" data-sticky-panel="add" id="sticky-panel-add">
-        <button class="sticky-header__collapse" type="button" data-sticky-collapse="add" aria-label="Collapse add task form" aria-expanded="false">
-            <i class="bi bi-dash-lg" aria-hidden="true"></i>
+        <button class="sticky-header__collapse" type="button" data-sticky-collapse="add" aria-label="Close add task panel" aria-expanded="false">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
         </button>
         <div class="sticky-header__panel-body">
             <div class="container mt-2">
