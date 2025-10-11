@@ -59,6 +59,7 @@
             filters: header.querySelector('[data-sticky-pill="filters"]'),
         };
         const collapseButtons = Array.from(header.querySelectorAll('[data-sticky-collapse]'));
+        let sentinel = document.querySelector('[data-sticky-sentinel]');
         const state = {
             mode: 'top',
             panels: {
@@ -138,11 +139,25 @@
             dispatchPanelEvent('sticky:panel-collapsed', panelKey, source);
         }
 
-        function evaluateMode(force) {
-            const threshold = 48;
-            const shouldBeTop = window.scrollY <= threshold;
-            const desiredMode = shouldBeTop ? 'top' : 'scrolled';
-            if (!force && desiredMode === state.mode) {
+        function ensureSentinel() {
+            if (sentinel) {
+                return sentinel;
+            }
+            const created = document.createElement('div');
+            created.setAttribute('data-sticky-sentinel', '');
+            created.style.position = 'relative';
+            created.style.width = '100%';
+            created.style.height = '1px';
+            created.style.margin = '0';
+            created.style.padding = '0';
+            created.style.pointerEvents = 'none';
+            header.parentNode.insertBefore(created, header);
+            sentinel = created;
+            return sentinel;
+        }
+
+        function setMode(desiredMode, source) {
+            if (desiredMode === state.mode) {
                 return;
             }
             const previousMode = state.mode;
@@ -150,23 +165,39 @@
             if (state.mode === 'top') {
                 if (!state.panels.add.expanded) {
                     state.panels.add.expanded = true;
-                    dispatchPanelEvent('sticky:panel-expanded', 'add', 'auto-scroll');
+                    dispatchPanelEvent('sticky:panel-expanded', 'add', source || 'auto-scroll');
                 }
                 if (!state.panels.filters.expanded) {
                     state.panels.filters.expanded = true;
-                    dispatchPanelEvent('sticky:panel-expanded', 'filters', 'auto-scroll');
+                    dispatchPanelEvent('sticky:panel-expanded', 'filters', source || 'auto-scroll');
                 }
             } else if (previousMode === 'top') {
                 if (state.panels.add.expanded) {
                     state.panels.add.expanded = false;
-                    dispatchPanelEvent('sticky:panel-collapsed', 'add', 'auto-scroll');
+                    dispatchPanelEvent('sticky:panel-collapsed', 'add', source || 'auto-scroll');
                 }
                 if (state.panels.filters.expanded) {
                     state.panels.filters.expanded = false;
-                    dispatchPanelEvent('sticky:panel-collapsed', 'filters', 'auto-scroll');
+                    dispatchPanelEvent('sticky:panel-collapsed', 'filters', source || 'auto-scroll');
                 }
             }
             applyState();
+        }
+
+        function evaluateModeFromVisibility(force) {
+            const targetSentinel = ensureSentinel();
+            let shouldBeTop = true;
+            if (targetSentinel && typeof targetSentinel.getBoundingClientRect === 'function') {
+                const rect = targetSentinel.getBoundingClientRect();
+                shouldBeTop = rect.bottom > 0;
+            } else {
+                shouldBeTop = window.scrollY <= 0;
+            }
+            const desiredMode = shouldBeTop ? 'top' : 'scrolled';
+            if (!force && desiredMode === state.mode) {
+                return;
+            }
+            setMode(desiredMode, 'auto-scroll');
         }
 
         Object.entries(pills).forEach(([panelKey, pill]) => {
@@ -207,14 +238,38 @@
             });
         });
 
-        window.addEventListener(
-            'scroll',
-            throttle(() => evaluateMode(false), 75),
-            { passive: true }
-        );
-        window.addEventListener('resize', throttle(() => applyState(), 150));
+        const supportsIntersectionObserver = 'IntersectionObserver' in window;
+        let observer = null;
+        if (supportsIntersectionObserver) {
+            observer = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    if (entry.target !== sentinel) {
+                        return;
+                    }
+                    const shouldBeTop = entry.isIntersecting && entry.intersectionRatio > 0;
+                    setMode(shouldBeTop ? 'top' : 'scrolled', 'auto-scroll');
+                });
+            }, {
+                root: null,
+                threshold: [0, 1],
+            });
+            observer.observe(ensureSentinel());
+        } else {
+            window.addEventListener(
+                'scroll',
+                throttle(() => evaluateModeFromVisibility(false), 75),
+                { passive: true }
+            );
+        }
 
-        evaluateMode(true);
+        window.addEventListener('resize', throttle(() => {
+            applyState();
+            if (!supportsIntersectionObserver) {
+                evaluateModeFromVisibility(false);
+            }
+        }, 150));
+
+        evaluateModeFromVisibility(true);
         applyState();
 
         window.ProjectsStickyHeader = {
