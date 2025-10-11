@@ -715,7 +715,7 @@
     display: inline-flex;
 }
 
-.sticky-header[data-sticky-mode="top"] .sticky-header__collapse {
+.sticky-header[data-sticky-mode="top"]:not([data-sticky-mobile="true"]) .sticky-header__collapse {
     display: none !important;
 }
 

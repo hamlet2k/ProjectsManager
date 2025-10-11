@@ -54,6 +54,12 @@
         const anchor =
             previousSibling && previousSibling.hasAttribute('data-sticky-anchor') ? previousSibling : null;
 
+        const viewport = {
+            query: window.matchMedia('(max-width: 767.98px)'),
+            isMobile: false,
+        };
+        viewport.isMobile = viewport.query.matches;
+
         const panels = {
             add: header.querySelector('[data-sticky-panel="add"]'),
             filters: header.querySelector('[data-sticky-panel="filters"]'),
@@ -66,8 +72,8 @@
         const state = {
             mode: 'top',
             panels: {
-                add: { expanded: true },
-                filters: { expanded: true },
+                add: { expanded: !viewport.isMobile },
+                filters: { expanded: !viewport.isMobile },
             },
         };
         const metrics = {
@@ -76,9 +82,26 @@
             collapsedHeight: null,
             expandBuffer: null,
         };
-        const COLLAPSE_TOLERANCE = 8;
+        const COLLAPSE_TOLERANCE = 2;
         const EXPAND_BUFFER_MIN = 140;
         const EXPAND_BUFFER_MAX = 360;
+
+        function shouldAutoExpandPanels() {
+            return !viewport.isMobile;
+        }
+
+        function canCollapsePanelsInTopMode() {
+            return viewport.isMobile;
+        }
+
+        function getDocumentTop() {
+            if (typeof metrics.documentTop === 'number') {
+                return metrics.documentTop;
+            }
+            const anchorTarget = anchor || header;
+            metrics.documentTop = computeDocumentTop(anchorTarget);
+            return metrics.documentTop;
+        }
 
         function computeDocumentTop(element) {
             let documentTop = 0;
@@ -112,7 +135,11 @@
                 }
             }
 
-            const shouldMeasureCollapsed = Boolean(measureCollapsed || state.mode === 'scrolled');
+            const shouldMeasureCollapsed = Boolean(
+                measureCollapsed ||
+                    state.mode === 'scrolled' ||
+                    (!state.panels.add.expanded && !state.panels.filters.expanded)
+            );
             const hasExpandedPanels = state.panels.add.expanded || state.panels.filters.expanded;
             if (shouldMeasureCollapsed && !hasExpandedPanels) {
                 const measuredCollapsed = header.offsetHeight;
@@ -151,6 +178,7 @@
         function applyState() {
             header.dataset.stickyReady = 'true';
             header.dataset.stickyMode = state.mode;
+            header.dataset.stickyMobile = viewport.isMobile ? 'true' : 'false';
 
             const expandedKeys = Object.entries(state.panels)
                 .filter(([, panelState]) => panelState.expanded)
@@ -179,7 +207,8 @@
                 const target = button.getAttribute('data-sticky-collapse');
                 const panelState = state.panels[target];
                 const isExpanded = Boolean(panelState && panelState.expanded);
-                button.classList.toggle('is-visible', isExpanded && state.mode !== 'top');
+                const shouldShow = isExpanded && (state.mode !== 'top' || viewport.isMobile);
+                button.classList.toggle('is-visible', shouldShow);
                 button.setAttribute('aria-expanded', String(isExpanded));
             });
         }
@@ -202,7 +231,10 @@
         }
 
         function collapsePanel(panelKey, source = 'manual') {
-            if (!panels[panelKey] || state.mode === 'top') {
+            if (!panels[panelKey]) {
+                return;
+            }
+            if (state.mode === 'top' && !canCollapsePanelsInTopMode()) {
                 return;
             }
             state.panels[panelKey].expanded = false;
@@ -219,12 +251,14 @@
             state.mode = desiredMode;
             const changedPanels = [];
             if (state.mode === 'top') {
-                ['add', 'filters'].forEach((panelKey) => {
-                    if (!state.panels[panelKey].expanded) {
-                        state.panels[panelKey].expanded = true;
-                        changedPanels.push({ panelKey, type: 'expanded' });
-                    }
-                });
+                if (shouldAutoExpandPanels()) {
+                    ['add', 'filters'].forEach((panelKey) => {
+                        if (!state.panels[panelKey].expanded) {
+                            state.panels[panelKey].expanded = true;
+                            changedPanels.push({ panelKey, type: 'expanded' });
+                        }
+                    });
+                }
             } else if (previousMode === 'top') {
                 ['add', 'filters'].forEach((panelKey) => {
                     if (state.panels[panelKey].expanded) {
@@ -240,22 +274,28 @@
             });
             scheduleMetricsUpdate({
                 measureExpanded: state.mode === 'top',
-                measureCollapsed: state.mode === 'scrolled',
+                measureCollapsed:
+                    state.mode === 'scrolled' || (!state.panels.add.expanded && !state.panels.filters.expanded),
             });
         }
 
         function evaluateModeFromScroll() {
             const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+            const baseDocumentTop = getDocumentTop();
+
             if (state.mode === 'top') {
-                const rect = header.getBoundingClientRect();
-                if (rect && typeof rect.bottom === 'number' && rect.bottom <= COLLAPSE_TOLERANCE) {
+                const headerHeight = header.offsetHeight;
+                const collapseThreshold = baseDocumentTop + Math.max(headerHeight - COLLAPSE_TOLERANCE, 0);
+                if (scrollTop >= collapseThreshold) {
                     setMode('scrolled', 'auto-scroll');
                 }
                 return;
             }
 
-            const baseDocumentTop = typeof metrics.documentTop === 'number' ? metrics.documentTop : 0;
-            const expandBuffer = typeof metrics.expandBuffer === 'number' ? metrics.expandBuffer : EXPAND_BUFFER_MIN;
+            const collapsedHeight = metrics.collapsedHeight || header.offsetHeight;
+            const expandBuffer = typeof metrics.expandBuffer === 'number'
+                ? metrics.expandBuffer
+                : Math.max(EXPAND_BUFFER_MIN, collapsedHeight);
             const expandThreshold = baseDocumentTop + expandBuffer;
 
             if (scrollTop <= expandThreshold) {
@@ -331,8 +371,56 @@
             }, 150)
         );
 
+        function handleViewportChange(event) {
+            const matches = event ? event.matches : viewport.query.matches;
+            const wasMobile = viewport.isMobile;
+            viewport.isMobile = matches;
+            if (viewport.isMobile === wasMobile && event) {
+                return;
+            }
+
+            const changedPanels = [];
+            if (viewport.isMobile) {
+                ['add', 'filters'].forEach((panelKey) => {
+                    if (state.panels[panelKey].expanded) {
+                        state.panels[panelKey].expanded = false;
+                        changedPanels.push({ panelKey, type: 'collapsed' });
+                    }
+                });
+            } else if (state.mode === 'top') {
+                ['add', 'filters'].forEach((panelKey) => {
+                    if (!state.panels[panelKey].expanded) {
+                        state.panels[panelKey].expanded = true;
+                        changedPanels.push({ panelKey, type: 'expanded' });
+                    }
+                });
+            }
+
+            applyState();
+            changedPanels.forEach(({ panelKey, type }) => {
+                const eventName = type === 'expanded' ? 'sticky:panel-expanded' : 'sticky:panel-collapsed';
+                dispatchPanelEvent(eventName, panelKey, 'viewport-change');
+            });
+
+            metrics.documentTop = null;
+            scheduleMetricsUpdate({
+                measureExpanded: state.mode === 'top',
+                measureCollapsed: true,
+            });
+            evaluateModeFromScroll();
+        }
+
+        if (typeof viewport.query.addEventListener === 'function') {
+            viewport.query.addEventListener('change', handleViewportChange);
+        } else if (typeof viewport.query.addListener === 'function') {
+            viewport.query.addListener(handleViewportChange);
+        }
+
         applyState();
-        scheduleMetricsUpdate({ measureExpanded: true });
+        scheduleMetricsUpdate({
+            measureExpanded: state.panels.add.expanded && state.panels.filters.expanded,
+            measureCollapsed: true,
+        });
         evaluateModeFromScroll();
 
         window.ProjectsStickyHeader = {
