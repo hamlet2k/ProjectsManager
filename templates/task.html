@@ -583,6 +583,12 @@
         }
     }
 
+.sticky-header__anchor {
+    display: block;
+    width: 100%;
+    height: 0;
+}
+
 .sticky-header {
     position: relative;
     z-index: auto;
@@ -748,6 +754,8 @@
 {% endblock %}
 
 {% block content %}
+
+<div class="sticky-header__anchor" data-sticky-anchor aria-hidden="true"></div>
 
 <div class="sticky-header" data-sticky-header>
     <div class="sticky-header__pills" data-sticky-pills>

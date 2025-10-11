@@ -50,6 +50,10 @@
             return;
         }
 
+        const previousSibling = header.previousElementSibling;
+        const anchor =
+            previousSibling && previousSibling.hasAttribute('data-sticky-anchor') ? previousSibling : null;
+
         const panels = {
             add: header.querySelector('[data-sticky-panel="add"]'),
             filters: header.querySelector('[data-sticky-panel="filters"]'),
@@ -69,11 +73,12 @@
         const metrics = {
             documentTop: null,
             expandedHeight: null,
-            collapseThreshold: null,
-            expandThreshold: null,
+            collapsedHeight: null,
+            expandBuffer: null,
         };
-        const EXPAND_HYSTERESIS = 96;
-        const COLLAPSE_OFFSET = 24;
+        const COLLAPSE_TOLERANCE = 8;
+        const EXPAND_BUFFER_MIN = 140;
+        const EXPAND_BUFFER_MAX = 360;
 
         function computeDocumentTop(element) {
             let documentTop = 0;
@@ -92,25 +97,35 @@
             return documentTop;
         }
 
-        function updateMetrics({ forceHeight } = {}) {
-            metrics.documentTop = computeDocumentTop(header);
-            const shouldMeasureHeight =
-                forceHeight ||
-                (state.mode === 'top' && state.panels.add.expanded && state.panels.filters.expanded);
-            if (shouldMeasureHeight) {
-                const measuredHeight = header.offsetHeight;
-                if (typeof measuredHeight === 'number' && !Number.isNaN(measuredHeight) && measuredHeight > 0) {
-                    metrics.expandedHeight = measuredHeight;
+        function updateMetrics({ measureExpanded, measureCollapsed } = {}) {
+            const anchorTarget = anchor || header;
+            metrics.documentTop = computeDocumentTop(anchorTarget);
+
+            const shouldMeasureExpanded = Boolean(
+                measureExpanded ||
+                    (state.mode === 'top' && state.panels.add.expanded && state.panels.filters.expanded)
+            );
+            if (shouldMeasureExpanded) {
+                const measuredExpanded = header.offsetHeight;
+                if (typeof measuredExpanded === 'number' && !Number.isNaN(measuredExpanded) && measuredExpanded > 0) {
+                    metrics.expandedHeight = measuredExpanded;
                 }
             }
-            const baselineHeight = metrics.expandedHeight || header.offsetHeight || 0;
-            if (typeof metrics.documentTop === 'number' && baselineHeight > 0) {
-                const collapseThreshold =
-                    metrics.documentTop + Math.max(baselineHeight - COLLAPSE_OFFSET, baselineHeight * 0.85);
-                metrics.collapseThreshold = Math.max(collapseThreshold, 0);
-                const expandThreshold = Math.max(metrics.documentTop - EXPAND_HYSTERESIS, 0);
-                metrics.expandThreshold = Math.min(expandThreshold, metrics.collapseThreshold);
+
+            const shouldMeasureCollapsed = Boolean(measureCollapsed || state.mode === 'scrolled');
+            const hasExpandedPanels = state.panels.add.expanded || state.panels.filters.expanded;
+            if (shouldMeasureCollapsed && !hasExpandedPanels) {
+                const measuredCollapsed = header.offsetHeight;
+                if (typeof measuredCollapsed === 'number' && !Number.isNaN(measuredCollapsed) && measuredCollapsed > 0) {
+                    metrics.collapsedHeight = measuredCollapsed;
+                }
             }
+
+            const resolvedCollapsed = metrics.collapsedHeight || 0;
+            const resolvedExpanded = metrics.expandedHeight || 0;
+            const candidateBuffer = Math.max(EXPAND_BUFFER_MIN, resolvedCollapsed, resolvedExpanded * 0.25);
+            metrics.expandBuffer = Math.min(candidateBuffer, EXPAND_BUFFER_MAX);
+
             evaluateModeFromScroll();
         }
 
@@ -181,7 +196,7 @@
             if (!wasExpanded) {
                 dispatchPanelEvent('sticky:panel-expanded', panelKey, source);
                 if (state.mode === 'top') {
-                    scheduleMetricsUpdate({ forceHeight: true });
+                    scheduleMetricsUpdate({ measureExpanded: true });
                 }
             }
         }
@@ -193,6 +208,7 @@
             state.panels[panelKey].expanded = false;
             applyState();
             dispatchPanelEvent('sticky:panel-collapsed', panelKey, source);
+            scheduleMetricsUpdate({ measureCollapsed: true });
         }
 
         function setMode(desiredMode, source) {
@@ -222,30 +238,28 @@
                 const eventName = type === 'expanded' ? 'sticky:panel-expanded' : 'sticky:panel-collapsed';
                 dispatchPanelEvent(eventName, panelKey, source || 'auto-scroll');
             });
-            scheduleMetricsUpdate({ forceHeight: state.mode === 'top' });
+            scheduleMetricsUpdate({
+                measureExpanded: state.mode === 'top',
+                measureCollapsed: state.mode === 'scrolled',
+            });
         }
 
         function evaluateModeFromScroll() {
             const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
-            let desiredMode = state.mode;
-
             if (state.mode === 'top') {
-                if (
-                    typeof metrics.collapseThreshold === 'number' &&
-                    metrics.collapseThreshold >= 0 &&
-                    scrollTop >= metrics.collapseThreshold
-                ) {
-                    desiredMode = 'scrolled';
+                const rect = header.getBoundingClientRect();
+                if (rect && typeof rect.bottom === 'number' && rect.bottom <= COLLAPSE_TOLERANCE) {
+                    setMode('scrolled', 'auto-scroll');
                 }
-            } else if (
-                typeof metrics.expandThreshold === 'number' &&
-                metrics.expandThreshold >= 0 &&
-                scrollTop <= metrics.expandThreshold
-            ) {
-                desiredMode = 'top';
+                return;
             }
-            if (desiredMode !== state.mode) {
-                setMode(desiredMode, 'auto-scroll');
+
+            const baseDocumentTop = typeof metrics.documentTop === 'number' ? metrics.documentTop : 0;
+            const expandBuffer = typeof metrics.expandBuffer === 'number' ? metrics.expandBuffer : EXPAND_BUFFER_MIN;
+            const expandThreshold = baseDocumentTop + expandBuffer;
+
+            if (scrollTop <= expandThreshold) {
+                setMode('top', 'auto-scroll');
             }
         }
 
@@ -290,7 +304,10 @@
         const supportsResizeObserver = 'ResizeObserver' in window;
         if (supportsResizeObserver) {
             const resizeObserver = new ResizeObserver(() => {
-                scheduleMetricsUpdate({ forceHeight: state.mode === 'top' });
+                scheduleMetricsUpdate({
+                    measureExpanded: state.mode === 'top',
+                    measureCollapsed: state.mode === 'scrolled',
+                });
             });
             resizeObserver.observe(header);
         }
@@ -306,13 +323,16 @@
         window.addEventListener(
             'resize',
             throttle(() => {
-                scheduleMetricsUpdate({ forceHeight: state.mode === 'top' });
+                scheduleMetricsUpdate({
+                    measureExpanded: state.mode === 'top',
+                    measureCollapsed: state.mode === 'scrolled',
+                });
                 evaluateModeFromScroll();
             }, 150)
         );
 
         applyState();
-        scheduleMetricsUpdate({ forceHeight: true });
+        scheduleMetricsUpdate({ measureExpanded: true });
         evaluateModeFromScroll();
 
         window.ProjectsStickyHeader = {
