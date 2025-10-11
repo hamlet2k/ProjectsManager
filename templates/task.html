@@ -650,6 +650,10 @@
     transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.sticky-header__pill--filters {
+    margin-left: auto;
+}
+
 .sticky-header__pill i {
     font-size: 1rem;
 }
@@ -759,7 +763,7 @@
 
 <div class="sticky-header" data-sticky-header>
     <div class="sticky-header__pills" data-sticky-pills>
-        <div class="container d-flex justify-content-between align-items-center gap-2">
+        <div class="container d-flex align-items-center gap-2">
             <button class="sticky-header__pill sticky-header__pill--add" type="button" data-sticky-pill="add" aria-controls="sticky-panel-add" aria-expanded="false">
                 <i class="bi bi-plus-lg" aria-hidden="true"></i>
                 <span class="sticky-header__pill-label">Add task</span>
