@@ -1,0 +1,24 @@
+# Render deployment configuration for ProjectsManager (Flask)
+# Save this file as render.yaml at the root of your repository.
+
+services:
+  - type: web
+    name: projectsmanager
+    env: python
+    plan: free
+    region: oregon
+    runtime: python-3.12.5
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: flask run --host=0.0.0.0 --port=$PORT
+    autoDeploy: true
+
+    envVars:
+      - key: FLASK_APP
+        value: app.py
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false  # optional, for later database connections
