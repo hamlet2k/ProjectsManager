@@ -1585,6 +1585,11 @@
         if (state.emptyState) {
             state.emptyState.classList.add('d-none');
         }
+        document.dispatchEvent(
+            new CustomEvent('scope:updated', {
+                detail: { scope },
+            })
+        );
     }
 
     function updateScopeEditTriggers(scope) {
@@ -1625,6 +1630,10 @@
     }
 
     function buildScopeCard(scope) {
+        const shareState = scope.share_state || {};
+        const shareCount = Number(shareState.accepted_count || 0);
+        const pendingCount = Number(shareState.pending_count || 0);
+
         const col = document.createElement('div');
         col.className = 'col d-flex';
         col.dataset.scopeId = String(scope.id);
@@ -1671,7 +1680,17 @@
             badgesContainer.appendChild(badge);
         }
 
-        if (!scope.is_owner) {
+        if (scope.is_owner) {
+            const ownerShareBadge = document.createElement('span');
+            ownerShareBadge.className = 'badge text-bg-light text-muted';
+            ownerShareBadge.dataset.shareIndicator = 'true';
+            ownerShareBadge.dataset.scopeId = String(scope.id);
+            if (!shareCount) {
+                ownerShareBadge.classList.add('d-none');
+            }
+            ownerShareBadge.textContent = 'Shared';
+            badgesContainer.appendChild(ownerShareBadge);
+        } else {
             const sharedBadge = document.createElement('span');
             sharedBadge.className = 'badge text-bg-light text-muted';
             sharedBadge.textContent = 'Shared';
@@ -1695,6 +1714,16 @@
         actions.appendChild(copyButton);
 
         if (scope.is_owner) {
+            const shareButton = document.createElement('button');
+            shareButton.type = 'button';
+            shareButton.className = shareCount > 0 ? 'btn btn-primary scope-share-btn' : 'btn btn-outline-secondary scope-share-btn';
+            shareButton.dataset.scopeId = String(scope.id);
+            shareButton.dataset.shareCount = String(shareCount);
+            shareButton.dataset.sharePending = pendingCount > 0 ? 'true' : 'false';
+            shareButton.setAttribute('aria-label', `Manage sharing for ${scope.name || ''}`.trim());
+            shareButton.innerHTML = `<i class="bi ${shareCount > 0 ? 'bi-share-fill' : 'bi-share'}" aria-hidden="true"></i>`;
+            actions.appendChild(shareButton);
+
             const editButton = document.createElement('button');
             editButton.type = 'button';
             editButton.className = 'btn btn-outline-secondary edit-scope-btn';
@@ -1729,6 +1758,14 @@
             deleteButton.setAttribute('aria-label', `Delete scope ${scope.name || ''}`.trim());
             deleteButton.innerHTML = '<i class="bi bi-trash3" aria-hidden="true"></i>';
             actions.appendChild(deleteButton);
+        } else {
+            const leaveButton = document.createElement('button');
+            leaveButton.type = 'button';
+            leaveButton.className = 'btn btn-outline-secondary scope-leave-btn';
+            leaveButton.dataset.scopeId = String(scope.id);
+            leaveButton.setAttribute('aria-label', `Leave scope ${scope.name || ''}`.trim());
+            leaveButton.innerHTML = '<i class="bi bi-x-circle" aria-hidden="true"></i>';
+            actions.appendChild(leaveButton);
         }
 
         const body = document.createElement('div');

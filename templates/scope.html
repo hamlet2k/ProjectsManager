@@ -46,7 +46,15 @@
                                         GitHub
                                     </span>
                                 {% endif %}
-                                {% if scope.owner_id != g.user.id %}
+                                {% if scope.owner_id == g.user.id %}
+                                    <span
+                                        class="badge text-bg-light text-muted{% if not scope.share_summary.accepted %} d-none{% endif %}"
+                                        data-share-indicator
+                                        data-scope-id="{{ scope.id }}"
+                                    >
+                                        Shared
+                                    </span>
+                                {% else %}
                                     <span class="badge text-bg-light text-muted">Shared</span>
                                 {% endif %}
                             </div>
@@ -62,6 +70,7 @@
                                     <i class="bi bi-clipboard" aria-hidden="true"></i>
                                 </button>
                                 {% if scope.owner_id == g.user.id %}
+                                    {% include "partials/scope_share_button.html" %}
                                     <button
                                         type="button"
                                         class="btn btn-outline-secondary edit-scope-btn"
@@ -87,6 +96,15 @@
                                         aria-label="Delete scope {{ scope.name }}"
                                     >
                                         <i class="bi bi-trash3" aria-hidden="true"></i>
+                                    </button>
+                                {% else %}
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary scope-leave-btn"
+                                        data-scope-id="{{ scope.id }}"
+                                        aria-label="Leave scope {{ scope.name }}"
+                                    >
+                                        <i class="bi bi-x-circle" aria-hidden="true"></i>
                                     </button>
                                 {% endif %}
                             </div>
@@ -125,9 +143,11 @@
 {% block modals %}
     {{ super() }}
     {% include "modals/scope_modal.html" %}
+    {% include "modals/scope_share_modal.html" %}
 {% endblock modals %}
 
 {% block scripts %}
     {{ super() }}
     <script src="{{ url_for('static', filename='js/scope_form.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/scope_share.js') }}"></script>
 {% endblock scripts %}

@@ -33,11 +33,15 @@ def safe_redirect(referrer, fallback_endpoint):
 from database import db
 from forms import ScopeForm
 from models.scope import Scope
+from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
+from models.user import User
 from services.scope_service import (
     build_scope_page_context,
     get_next_scope_rank,
+    get_scope_share,
     get_user_github_token,
     serialize_scope,
+    serialize_shares,
     serialize_task_for_clipboard,
     user_can_access_scope,
     user_owns_scope,
@@ -122,6 +126,20 @@ def _csrf_token_value() -> str:
     return generate_csrf()
 
 
+def _validate_request_csrf(token: str | None) -> tuple[bool, str | None]:
+    """Validate CSRF tokens supplied with JSON payloads."""
+
+    if not token:
+        return False, "The CSRF token is missing."
+    try:
+        validate_csrf(token)
+    except ValidationError:
+        return False, "The CSRF token is invalid or has expired. Please refresh and try again."
+    except Exception:
+        return False, "The CSRF token is invalid."
+    return True, None
+
+
 def _scope_payload(scope: Scope) -> Dict[str, Any]:
     """Return serialized scope data augmented with related URLs."""
     payload = serialize_scope(scope, g.user)
@@ -174,6 +192,49 @@ def _json_scope_success(scope: Scope, message: str, status: int = 200):
     )
 
 
+def _share_collection(scope: Scope) -> list[dict[str, Any]]:
+    """Return serialized share entries for the provided scope."""
+
+    visible_shares = [
+        share
+        for share in scope.shares
+        if share.status_enum != ScopeShareStatus.REVOKED
+    ]
+    return serialize_shares(visible_shares, g.user)
+
+
+def _share_success_response(scope: Scope, message: str, status: int = 200):
+    """Return a consistent success payload for share operations."""
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": message,
+                "scope": serialize_scope(scope, g.user),
+                "shares": _share_collection(scope),
+                "csrf_token": _csrf_token_value(),
+            }
+        ),
+        status,
+    )
+
+
+def _share_error_response(message: str, *, status: int = 400):
+    """Return an error payload for share requests."""
+
+    return (
+        jsonify(
+            {
+                "success": False,
+                "message": message,
+                "csrf_token": _csrf_token_value(),
+            }
+        ),
+        status,
+    )
+
+
 @scopes_bp.route("/<int:scope_id>")
 def set_scope(scope_id: int):
     scope = Scope.query.get_or_404(scope_id)
@@ -191,6 +252,143 @@ def list_scopes():
     form = ScopeForm()
     context = build_scope_page_context(g.user, form=form)
     return render_template("scope.html", **context)
+
+
+@scopes_bp.route("/<int:scope_id>/shares", methods=["GET"])
+def get_scope_shares(scope_id: int):
+    """Return sharing information for the requested scope."""
+
+    scope = Scope.query.get_or_404(scope_id)
+    if not user_owns_scope(g.user, scope):
+        return _share_error_response("You do not have permission to manage sharing for this scope.", status=403)
+    return _share_success_response(scope, "Sharing settings loaded.")
+
+
+@scopes_bp.route("/<int:scope_id>/share", methods=["POST"])
+def share_scope(scope_id: int):
+    """Add or update a share entry for the supplied scope."""
+
+    scope = Scope.query.get_or_404(scope_id)
+    if not user_owns_scope(g.user, scope):
+        return _share_error_response("Only the scope owner can share it with others.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
+
+    identifier = (payload.get("identifier") or "").strip()
+    role_value = (payload.get("role") or ScopeShareRole.EDITOR.value).strip().lower()
+    try:
+        role_enum = ScopeShareRole(role_value)
+    except ValueError:
+        role_enum = ScopeShareRole.EDITOR
+
+    if not identifier:
+        return _share_error_response("A username or email is required to share this scope.")
+
+    target = (
+        User.query.filter_by(username=identifier).first()
+        or User.query.filter_by(email=identifier).first()
+    )
+    if not target:
+        return _share_error_response("No user was found with that username or email address.", status=404)
+    if target.id == g.user.id:
+        return _share_error_response("You already own this scope.")
+
+    existing = get_scope_share(scope, target)
+    if existing and existing.status_enum == ScopeShareStatus.ACCEPTED:
+        return _share_error_response("That user already has access to this scope.")
+
+    if existing:
+        existing.role_enum = role_enum
+        existing.accept()
+        existing.inviter_id = g.user.id
+        share = existing
+    else:
+        share = ScopeShare(
+            scope=scope,
+            user=target,
+            inviter=g.user,
+        )
+        share.role_enum = role_enum
+        share.accept()
+        db.session.add(share)
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _share_error_response("Unable to update sharing settings. Please try again.", status=500)
+
+    return _share_success_response(scope, f"Scope shared with {target.username}.")
+
+
+@scopes_bp.route("/<int:scope_id>/share/<int:share_id>", methods=["DELETE"])
+def revoke_scope_share(scope_id: int, share_id: int):
+    """Revoke access for a collaborator."""
+
+    scope = Scope.query.get_or_404(scope_id)
+    if not user_owns_scope(g.user, scope):
+        return _share_error_response("You do not have permission to revoke sharing for this scope.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
+
+    share = ScopeShare.query.get_or_404(share_id)
+    if share.scope_id != scope.id:
+        return _share_error_response("That share entry does not belong to this scope.", status=404)
+    if share.status_enum == ScopeShareStatus.REVOKED:
+        return _share_success_response(scope, "Share already revoked.")
+
+    share.mark_revoked()
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _share_error_response("Unable to revoke access. Please try again.", status=500)
+
+    return _share_success_response(scope, "Access revoked.")
+
+
+@scopes_bp.route("/<int:scope_id>/share/self", methods=["DELETE"])
+def reject_scope_share(scope_id: int):
+    """Allow a collaborator to reject or leave a shared scope."""
+
+    scope = Scope.query.get_or_404(scope_id)
+    if g.user is None:
+        return _share_error_response("Authentication required.", status=401)
+    if scope.owner_id == g.user.id:
+        return _share_error_response("Scope owners cannot leave their own scopes.")
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
+
+    share = get_scope_share(scope, g.user)
+    if not share or not share.is_active:
+        return _share_error_response("You do not have access to this scope.", status=404)
+
+    share.mark_rejected()
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _share_error_response("Unable to update sharing settings. Please try again.", status=500)
+
+    response = {
+        "success": True,
+        "message": "You have left the scope.",
+        "removed": True,
+        "scope_id": scope.id,
+        "csrf_token": _csrf_token_value(),
+    }
+    return jsonify(response)
 
 
 @scopes_bp.route("/<int:scope_id>/tasks/export", methods=["GET"])
