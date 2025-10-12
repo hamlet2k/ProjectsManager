@@ -571,10 +571,6 @@
         color: var(--bs-white);
     }
 
-    .task-filter-collapse.collapse:not(.show) {
-        display: none;
-    }
-
     @media (min-width: 992px) {
         .task-item-header {
             flex-wrap: nowrap;
@@ -585,146 +581,339 @@
             margin-left: auto;
             margin-top: 0;
         }
-
-        .task-filter-collapse.collapse {
-            display: block !important;
-            height: auto !important;
-            visibility: visible;
-        }
     }
+
+.sticky-header__anchor {
+    display: block;
+    width: 100%;
+    height: 0;
+}
+
+.sticky-header {
+    position: relative;
+    z-index: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.75rem 0;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.sticky-header[data-sticky-ready="true"] {
+    background-color: transparent;
+    box-shadow: none;
+}
+
+.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"][data-sticky-has-expanded="false"] {
+    padding-bottom: 0.25rem;
+}
+
+.sticky-header[data-sticky-mode="top"],
+.sticky-header[data-sticky-has-expanded="true"] {
+    background-color: var(--bs-body-bg);
+    box-shadow: 0 0.75rem 2rem rgba(33, 37, 41, 0.12);
+}
+
+.sticky-header__pills {
+    display: none;
+    margin-bottom: 0.75rem;
+}
+
+.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] .sticky-header__pills,
+.sticky-header[data-sticky-ready="true"][data-sticky-has-expanded="false"] .sticky-header__pills,
+.sticky-header[data-sticky-ready="true"][data-sticky-mobile="true"] .sticky-header__pills {
+    display: block;
+}
+
+.sticky-header__pills .container {
+    pointer-events: none;
+}
+
+.sticky-header__pill {
+    pointer-events: auto;
+    border-radius: 999px;
+    border: 1px solid var(--bs-border-color);
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.95rem;
+    font-weight: 600;
+    box-shadow: 0 0.6rem 1.4rem rgba(33, 37, 41, 0.16);
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sticky-header__pill--filters {
+    margin-left: auto;
+}
+
+.sticky-header__pill i {
+    font-size: 1rem;
+}
+
+.sticky-header__pill:hover,
+.sticky-header__pill:focus-visible {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: var(--bs-white);
+    box-shadow: 0 0.7rem 1.6rem rgba(33, 37, 41, 0.22);
+}
+
+.sticky-header__pill.is-hidden {
+    display: none !important;
+}
+
+.sticky-header__panel {
+    position: relative;
+    border-radius: 1rem;
+    border: 1px solid var(--bs-border-color);
+    background-color: var(--bs-body-bg);
+    box-shadow: 0 0.75rem 2rem rgba(33, 37, 41, 0.12);
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.25s ease, transform 0.25s ease, margin 0.3s ease;
+}
+
+.sticky-header__panel-body {
+    padding: 2.75rem 0 1.5rem;
+}
+
+.sticky-header__panel-body > .container {
+    margin-top: 0 !important;
+}
+
+.sticky-header__collapse {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-secondary-color, var(--bs-secondary));
+    box-shadow: 0 0.35rem 0.9rem rgba(33, 37, 41, 0.16);
+    z-index: 5;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    padding: 0;
+    font-size: 0.8rem;
+}
+
+.sticky-header__collapse:hover,
+.sticky-header__collapse:focus-visible {
+    background-color: var(--bs-primary);
+    color: var(--bs-white);
+    border-color: var(--bs-primary);
+}
+
+.sticky-header__collapse.is-visible {
+    display: inline-flex;
+}
+
+.sticky-header[data-sticky-mode="top"]:not([data-sticky-mobile="true"]) .sticky-header__collapse {
+    display: none !important;
+}
+
+.sticky-header[data-sticky-ready="true"] .sticky-header__panel {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-0.5rem);
+    pointer-events: none;
+    margin-bottom: 0;
+}
+
+.sticky-header[data-sticky-ready="true"] .sticky-header__panel.is-expanded {
+    max-height: 2000px;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    margin-bottom: 1.25rem;
+}
+
+.sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] .sticky-header__panel.is-expanded .sticky-header__panel-body {
+    padding-top: 3.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sticky-header,
+    .sticky-header__panel {
+        transition: none;
+    }
+
+    .sticky-header__pill,
+    .sticky-header__collapse {
+        transition: none;
+    }
+}
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="container">
-    <div class="d-flex justify-content-end mb-2 d-lg-none">
-        <button class="btn btn-outline-secondary btn-sm" type="button" data-task-filter-toggle data-bs-toggle="collapse" data-bs-target="#task-filter-collapse" aria-expanded="false" aria-controls="task-filter-collapse">
-            Filters
-            <i class="bi bi-sliders"></i>
-        </button>
-    </div>
-    <div id="task-filter-collapse" class="collapse task-filter-collapse">
-        <div class="tag-filter-toolbar d-flex flex-column gap-3">
-            <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end" id="task-filter-form">
-            <div class="col-12 col-md-4">
-                <label for="search" class="form-label">Search tasks</label>
-                <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description" autocomplete="off">
-            </div>
-            <div class="col-12 col-md-3">
-                <label for="sort_by" class="form-label">Sort by</label>
-                <select class="form-select form-select-sm" id="sort_by" name="sort_by">
-                    <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
-                    <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
-                    <option value="tags" {{ 'selected' if sort_by == 'tags' else '' }}>Tags</option>
-                    <option value="due_date" {{ 'selected' if sort_by == 'due_date' else '' }}>Due date</option>
-                </select>
-            </div>
-            <div class="col-12 col-md-3">
-                <div class="form-check form-switch mt-md-4 pt-1">
-                    <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" {{ 'checked' if show_completed else '' }}>
-                    <label class="form-check-label" for="filter-completed">Show completed tasks</label>
-                </div>
-            </div>
-            </form>
-            <div class="d-flex flex-column flex-lg-row gap-2 align-items-lg-center">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="tag-section-label mb-0">Tags:</span>
-                    <button type="button" class="btn btn-sm" id="tag-filter-clear" aria-label="Clear tag filters">
-                        <i class="bi bi-x-circle"></i>
-                    </button>
-                </div>
-                <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
-                    {% for tag in available_tags %}
-                        <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}" data-tag-count="{{ tag_usage.get(tag.id, 0) }}">
-                            <span class="tag-filter-label">#{{ tag.name }}</span>
-                            <span class="tag-filter-remove" role="button" tabindex="0" aria-label="Delete tag #{{ tag.name }}" data-tag-id="{{ tag.id }}">
-                                <i class="bi bi-x-lg"></i>
-                            </span>
-                        </button>
-                    {% endfor %}
-                </div>
-                <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
-                    No tags yet. Add tags to tasks to start filtering.
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
+<div class="sticky-header__anchor" data-sticky-anchor aria-hidden="true"></div>
 
-<div class="container mt-2">
-    <form id="task-form" method="post" action="{{ url_for('add_task') }}">
-        {{ task_form.hidden_tag() }}
-        {{ task_form.tags() }}
-        <div  class="accordion" id="quick-item-accordion">
-            <div class="input-group mb-3">
-                <span class="input-group-text clickable-icon collapsed" data-bs-toggle="collapse" data-bs-target="#detailed-item-container">
-                    <i class="bi bi-chevron-down text-muted"></i>
-                </span>
-                {{ task_form.name(
-                    class_='form-control quick-task-input' + (' is-invalid' if task_form.name.errors else ''),
-                    placeholder_="Add new task...",
-                    rows=1,
-                    data_auto_resize="quick-task-input",
-                    data_collapsed_height="44",
-                    data_auto_resize_max="192",
-                    data_expanded_class="quick-task-input--expanded",
-                    data_overflow_class="quick-task-input--overflow"
-                ) }}
-                <button id="quick-cancel-btn" class="btn btn-outline-secondary" type="reset">
-                    <i class="bi bi-x-circle"></i>
-                </button>
-                <button id="quick-add-btn" class="btn btn-primary" type="submit">
-                    <i class="bi bi-floppy"></i>
-                </button>
-                {% set name_error = task_form.name.errors[0] if task_form.name.errors else '' %}
-                <div class="invalid-feedback {% if not name_error %}d-none{% endif %}" data-feedback-for="name">{{ name_error }}</div>
-            </div>
+<div class="sticky-header" data-sticky-header>
+    <div class="sticky-header__pills" data-sticky-pills>
+        <div class="container d-flex align-items-center gap-2">
+            <button class="sticky-header__pill sticky-header__pill--add" type="button" data-sticky-pill="add" aria-controls="sticky-panel-add" aria-expanded="false">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                <span class="sticky-header__pill-label">Add task</span>
+            </button>
+            <button class="sticky-header__pill sticky-header__pill--filters" type="button" data-sticky-pill="filters" aria-controls="sticky-panel-filters" aria-expanded="false">
+                <span class="sticky-header__pill-label">Filters</span>
+                <i class="bi bi-sliders" aria-hidden="true"></i>
+            </button>
         </div>
-        <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
-            <div class="accordion-body">
-                <div class="form-floating mb-3">
-                    {{ task_form.description(
-                        class_='form-control task-description-input' + (' is-invalid' if task_form.description.errors else ''),
-                        rows=1,
-                        placeholder_='Add more details',
-                        data_auto_resize="task-description",
-                        data_collapsed_height="88",
-                        data_max_viewport_ratio="0.8",
-                        data_expanded_class="task-description-input--expanded",
-                        data_overflow_class="task-description-input--overflow"
-                    ) }}
-                    {{ task_form.description.label(class_='form-label') }}
-                    {% set description_error = task_form.description.errors[0] if task_form.description.errors else '' %}
-                    <div class="invalid-feedback {% if not description_error %}d-none{% endif %}" data-feedback-for="description">{{ description_error }}</div>
-                </div>
-                <div class="form-floating mb-3">
-                    {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_='YYYY-MM-DD') }}
-                    {{ task_form.end_date.label(class_='form-label') }}
-                    {% set end_date_error = task_form.end_date.errors[0] if task_form.end_date.errors else '' %}
-                    <div class="invalid-feedback {% if not end_date_error %}d-none{% endif %}" data-feedback-for="end_date">{{ end_date_error }}</div>
-                </div>
-                <div class="mb-3 d-none" id="task-github-milestone-container" data-github-milestone-container>
-                    <label class="form-label" for="task-github-milestone-select">GitHub Milestone</label>
-                    {{ task_form.github_milestone(class_='form-select', id='task-github-milestone-select', **{'data-field': 'github_milestone'}) }}
-                    <div class="form-text">Update the milestone assigned to the linked GitHub issue.</div>
-                </div>
-                <div class="alert alert-warning py-2 px-3 d-none" data-task-github-milestone-warning role="alert">
-                    Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
-                </div>
-                <div class="mb-3">
-                    <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
-                    <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
-                    <div class="input-group input-group-sm inline-tag-input-group mt-3">
-                        <span class="input-group-text">#</span>
-                        <input type="text" class="form-control" id="task-inline-tag-input" placeholder="Add a tag and press Enter">
-                        <button class="btn btn-outline-primary" type="button" id="task-inline-tag-add">Add</button>
+    </div>
+
+    <div class="sticky-header__panel sticky-header__panel--filters" data-sticky-panel="filters" id="sticky-panel-filters">
+        <button class="sticky-header__collapse" type="button" data-sticky-collapse="filters" aria-label="Close filters panel" aria-expanded="false">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+        <div class="sticky-header__panel-body">
+            <div class="container">
+                <div id="task-filter-collapse" class="task-filter-collapse">
+                    <div class="tag-filter-toolbar d-flex flex-column gap-3">
+                        <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end" id="task-filter-form">
+                        <div class="col-12 col-md-4">
+                            <label for="search" class="form-label">Search tasks</label>
+                            <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="sort_by" class="form-label">Sort by</label>
+                            <select class="form-select form-select-sm" id="sort_by" name="sort_by">
+                                <option value="rank" {{ 'selected' if sort_by == 'rank' else '' }}>Rank</option>
+                                <option value="name" {{ 'selected' if sort_by == 'name' else '' }}>Name</option>
+                                <option value="tags" {{ 'selected' if sort_by == 'tags' else '' }}>Tags</option>
+                                <option value="due_date" {{ 'selected' if sort_by == 'due_date' else '' }}>Due date</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <div class="form-check form-switch mt-md-4 pt-1">
+                                <input class="form-check-input" type="checkbox" role="switch" id="filter-completed" name="show_completed" value="true" {{ 'checked' if show_completed else '' }}>
+                                <label class="form-check-label" for="filter-completed">Show completed tasks</label>
+                            </div>
+                        </div>
+                        </form>
+                        <div class="d-flex flex-column flex-lg-row gap-2 align-items-lg-center">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="tag-section-label mb-0">Tags:</span>
+                                <button type="button" class="btn btn-sm" id="tag-filter-clear" aria-label="Clear tag filters">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2" id="tag-filter-container">
+                                {% for tag in available_tags %}
+                                    <button type="button" class="btn btn-sm tag-chip tag-filter-button" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name | e }}" data-tag-count="{{ tag_usage.get(tag.id, 0) }}">
+                                        <span class="tag-filter-label">#{{ tag.name }}</span>
+                                        <span class="tag-filter-remove" role="button" tabindex="0" aria-label="Delete tag #{{ tag.name }}" data-tag-id="{{ tag.id }}">
+                                            <i class="bi bi-x-lg"></i>
+                                        </span>
+                                    </button>
+                                {% endfor %}
+                            </div>
+                            <p class="text-muted mb-0 small {% if available_tags %}d-none{% endif %}" id="tag-filter-empty">
+                                No tags yet. Add tags to tasks to start filtering.
+                            </p>
+                        </div>
                     </div>
-                    <div class="invalid-feedback d-none" id="task-inline-tag-feedback">Please enter a tag name.</div>
                 </div>
             </div>
         </div>
-    </form>
+    </div>
+
+    <div class="sticky-header__panel sticky-header__panel--add" data-sticky-panel="add" id="sticky-panel-add">
+        <button class="sticky-header__collapse" type="button" data-sticky-collapse="add" aria-label="Close add task panel" aria-expanded="false">
+            <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+        <div class="sticky-header__panel-body">
+            <div class="container mt-2">
+                <form id="task-form" method="post" action="{{ url_for('add_task') }}">
+                    {{ task_form.hidden_tag() }}
+                    {{ task_form.tags() }}
+                    <div  class="accordion" id="quick-item-accordion">
+                        <div class="input-group mb-3">
+                            <span class="input-group-text clickable-icon collapsed" data-bs-toggle="collapse" data-bs-target="#detailed-item-container">
+                                <i class="bi bi-chevron-down text-muted"></i>
+                            </span>
+                            {{ task_form.name(
+                                class_='form-control quick-task-input' + (' is-invalid' if task_form.name.errors else ''),
+                                placeholder_="Add new task...",
+                                rows=1,
+                                data_auto_resize="quick-task-input",
+                                data_collapsed_height="44",
+                                data_auto_resize_max="192",
+                                data_expanded_class="quick-task-input--expanded",
+                                data_overflow_class="quick-task-input--overflow"
+                            ) }}
+                            <button id="quick-cancel-btn" class="btn btn-outline-secondary" type="reset">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                            <button id="quick-add-btn" class="btn btn-primary" type="submit">
+                                <i class="bi bi-floppy"></i>
+                            </button>
+                            {% set name_error = task_form.name.errors[0] if task_form.name.errors else '' %}
+                            <div class="invalid-feedback {% if not name_error %}d-none{% endif %}" data-feedback-for="name">{{ name_error }}</div>
+                        </div>
+                    </div>
+                    <div id="detailed-item-container" class="accordion-collapse collapse" data-bs-parent="#quick-item-accordion">
+                        <div class="accordion-body">
+                            <div class="form-floating mb-3">
+                                {{ task_form.description(
+                                    class_='form-control task-description-input' + (' is-invalid' if task_form.description.errors else ''),
+                                    rows=1,
+                                    placeholder_='Add more details',
+                                    data_auto_resize="task-description",
+                                    data_collapsed_height="88",
+                                    data_max_viewport_ratio="0.8",
+                                    data_expanded_class="task-description-input--expanded",
+                                    data_overflow_class="task-description-input--overflow"
+                                ) }}
+                                {{ task_form.description.label(class_='form-label') }}
+                                {% set description_error = task_form.description.errors[0] if task_form.description.errors else '' %}
+                                <div class="invalid-feedback {% if not description_error %}d-none{% endif %}" data-feedback-for="description">{{ description_error }}</div>
+                            </div>
+                            <div class="form-floating mb-3">
+                                {{ task_form.end_date(class_='form-control'+ (' is-invalid' if task_form.end_date.errors else ''), placeholder_='YYYY-MM-DD') }}
+                                {{ task_form.end_date.label(class_='form-label') }}
+                                {% set end_date_error = task_form.end_date.errors[0] if task_form.end_date.errors else '' %}
+                                <div class="invalid-feedback {% if not end_date_error %}d-none{% endif %}" data-feedback-for="end_date">{{ end_date_error }}</div>
+                            </div>
+                            <div class="mb-3 d-none" id="task-github-milestone-container" data-github-milestone-container>
+                                <label class="form-label" for="task-github-milestone-select">GitHub Milestone</label>
+                                {{ task_form.github_milestone(class_='form-select', id='task-github-milestone-select', **{'data-field': 'github_milestone'}) }}
+                                <div class="form-text">Update the milestone assigned to the linked GitHub issue.</div>
+                            </div>
+                            <div class="alert alert-warning py-2 px-3 d-none" data-task-github-milestone-warning role="alert">
+                                Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
+                            </div>
+                            <div class="mb-3">
+                                <div class="d-flex flex-wrap gap-2" id="task-inline-tag-options"></div>
+                                <p class="text-muted small mb-2 d-none" id="task-inline-tag-empty">No tags yet. Create one below.</p>
+                                <div class="input-group input-group-sm inline-tag-input-group mt-3">
+                                    <span class="input-group-text">#</span>
+                                    <input type="text" class="form-control" id="task-inline-tag-input" placeholder="Add a tag and press Enter">
+                                    <button class="btn btn-outline-primary" type="button" id="task-inline-tag-add">Add</button>
+                                </div>
+                                <div class="invalid-feedback d-none" id="task-inline-tag-feedback">Please enter a tag name.</div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% include 'components/task_groups.html' %}
@@ -787,6 +976,7 @@
 
 {% block scripts %}
 {{ super() }}
+<script src="{{ url_for('static', filename='js/sticky_header.js') }}"></script>
 <script>
     const GITHUB_LOCAL_TAG_NAME = {{ github_local_tag_name|tojson }};
     const GITHUB_ISSUE_MISSING_MESSAGE = {{ github_issue_missing_message|tojson }};
@@ -831,6 +1021,58 @@
     const quickCancelBtn = document.getElementById('quick-cancel-btn');
     const nameField = document.getElementById('name');
     const descriptionField = document.getElementById('description');
+    const stickyHeaderElement = document.querySelector('[data-sticky-header]');
+
+    function prefersReducedMotion() {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    function ensureAddPanelVisibility({ source = 'script', focusTarget = null, selectText = false } = {}) {
+        const headerElement = stickyHeaderElement || document.querySelector('[data-sticky-header]');
+        const stickyApi = window.ProjectsStickyHeader;
+
+        if (stickyApi && typeof stickyApi.expandPanel === 'function') {
+            stickyApi.expandPanel('add', source);
+        }
+
+        const applyFocus = () => {
+            if (!focusTarget) {
+                return;
+            }
+            try {
+                focusTarget.focus({ preventScroll: true });
+            } catch (error) {
+                focusTarget.focus();
+            }
+            if (selectText && typeof focusTarget.select === 'function') {
+                focusTarget.select();
+            }
+        };
+
+        if (!headerElement) {
+            applyFocus();
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            const mode = headerElement.dataset.stickyMode || 'top';
+            if (mode === 'top') {
+                const targetElement = taskForm || headerElement;
+                const rect = targetElement.getBoundingClientRect();
+                const fullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+                if (!fullyVisible) {
+                    targetElement.scrollIntoView({
+                        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+                        block: 'start',
+                    });
+                }
+                window.setTimeout(applyFocus, prefersReducedMotion() ? 0 : 150);
+                return;
+            }
+
+            applyFocus();
+        });
+    }
 
     Array.from(document.querySelectorAll('textarea[data-auto-resize]')).forEach((textarea) => {
         initializeAutoResizingTextarea(textarea);
@@ -887,10 +1129,6 @@
     const filterContainer = document.getElementById('tag-filter-container');
     const filterClear = document.getElementById('tag-filter-clear');
     const filterEmptyMessage = document.getElementById('tag-filter-empty');
-    const filterCollapseElement = document.getElementById('task-filter-collapse');
-    const filterToggleButtons = document.querySelectorAll('[data-task-filter-toggle]');
-    const filterCollapse = filterCollapseElement ? new bootstrap.Collapse(filterCollapseElement, { toggle: false }) : null;
-    const filterMediaQuery = window.matchMedia('(min-width: 992px)');
 
     // Use shared preferences utilities from preferences.js
     // Derive the active scope id from the DOM (task-groups-container data attribute)
@@ -1878,13 +2116,6 @@
             return;
         }
 
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        taskForm.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
-        window.setTimeout(() => {
-            nameField.focus();
-            nameField.select();
-        }, prefersReducedMotion ? 0 : 150);
-
         let shouldExpandDetails = false;
 
         if (typeof tagIdValue === 'string') {
@@ -1900,6 +2131,8 @@
                 shouldExpandDetails = true;
             }
         }
+
+        ensureAddPanelVisibility({ source: 'group-add', focusTarget: nameField, selectText: true });
 
         if (shouldExpandDetails && detailedItemCollapse) {
             detailedItemCollapse.show();
@@ -2005,23 +2238,6 @@
                     });
             });
         });
-    }
-
-    function updateFilterToggleState(isExpanded) {
-        filterToggleButtons.forEach((button) => {
-            button.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-        });
-    }
-
-    function applyResponsiveFilterState() {
-        if (!filterCollapse) {
-            return;
-        }
-        if (filterMediaQuery.matches) {
-            filterCollapse.show();
-        } else {
-            filterCollapse.hide();
-        }
     }
 
     function createTagOnServer(rawValue) {
@@ -3593,7 +3809,7 @@
 
         applyTaskFormErrors({});
         expandAccordionItem('detailed-item-container');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        ensureAddPanelVisibility({ source: 'edit-task', focusTarget: nameField, selectText: true });
     }
 
     // Use WeakSet to track attached listeners for edit-task-btn
@@ -4245,25 +4461,6 @@
         milestoneModalConfirm.addEventListener('click', submitMilestoneSelection);
     }
 
-    if (filterCollapseElement && filterCollapse) {
-        const handleBreakpointChange = () => {
-            applyResponsiveFilterState();
-        };
-        filterCollapseElement.addEventListener('shown.bs.collapse', () => {
-            updateFilterToggleState(true);
-        });
-        filterCollapseElement.addEventListener('hidden.bs.collapse', () => {
-            updateFilterToggleState(false);
-        });
-        updateFilterToggleState(filterCollapseElement.classList.contains('show'));
-        applyResponsiveFilterState();
-        if (typeof filterMediaQuery.addEventListener === 'function') {
-            filterMediaQuery.addEventListener('change', handleBreakpointChange);
-        } else if (typeof filterMediaQuery.addListener === 'function') {
-            filterMediaQuery.addListener(handleBreakpointChange);
-        }
-    }
-
     if (createTagBtn) {
         createTagBtn.addEventListener('click', handleCreateTag);
     }
@@ -4287,8 +4484,6 @@
         }
         taskForm.reset();
         taskForm.dataset.ajaxSubmitting = 'false';
-        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        taskForm.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
         if (expandDetails) {
             if (detailedItemCollapse) {
                 detailedItemCollapse.show();
@@ -4296,12 +4491,7 @@
                 expandAccordionItem('detailed-item-container');
             }
         }
-        window.setTimeout(() => {
-            if (nameField) {
-                nameField.focus({ preventScroll: true });
-                nameField.select();
-            }
-        }, 0);
+        ensureAddPanelVisibility({ source: 'new-task', focusTarget: nameField, selectText: true });
     }
 
     document.addEventListener('keydown', (event) => {
