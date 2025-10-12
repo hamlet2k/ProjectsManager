@@ -11,10 +11,10 @@ dnspython==2.4.2
 email-validator==2.1.0.post1
 filelock==3.19.1
 Flask==3.0.0
-Flask-Migrate==4.0.5
+Flask-Migrate==4.1.0
 Flask-SQLAlchemy==3.1.1
 Flask-WTF==1.2.1
-greenlet==3.0.3
+greenlet==3.2.4
 gunicorn==23.0.0
 identify==2.6.14
 idna==3.6
@@ -33,7 +33,7 @@ Pygments==2.19.2
 pytest==8.4.2
 pytest-mock==3.15.1
 PyYAML==6.0.3
-SQLAlchemy==2.0.24
+SQLAlchemy==2.0.44
 typing_extensions==4.9.0
 virtualenv==20.34.0
 webencodings==0.5.1
