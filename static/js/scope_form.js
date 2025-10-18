@@ -1763,6 +1763,7 @@
             leaveButton.type = 'button';
             leaveButton.className = 'btn btn-outline-secondary scope-leave-btn';
             leaveButton.dataset.scopeId = String(scope.id);
+            leaveButton.dataset.scopeName = scope.name || '';
             leaveButton.setAttribute('aria-label', `Leave scope ${scope.name || ''}`.trim());
             leaveButton.innerHTML = '<i class="bi bi-x-circle" aria-hidden="true"></i>';
             actions.appendChild(leaveButton);

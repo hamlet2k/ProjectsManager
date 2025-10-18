@@ -233,46 +233,67 @@
         if (!scopeId) {
             return;
         }
-        if (typeof window.confirm === 'function') {
-            const confirmed = window.confirm('Are you sure you want to leave this scope?');
-            if (!confirmed) {
-                return;
-            }
+        const scopeName = button.dataset.scopeName || '';
+        const normalizedName = scopeName.trim();
+        let confirmationPromise;
+        if (typeof window.showConfirmationModal === 'function') {
+            confirmationPromise = window.showConfirmationModal({
+                title: 'Abandon scope?',
+                message: normalizedName ? `Abandon scope "${normalizedName}"?` : 'Abandon this scope?',
+                description:
+                    'Abandoning this scope removes your access. Tasks, tags, and configurations remain available to the scope owner and other collaborators.',
+                details: normalizedName ? [`Scope: ${normalizedName}`] : [],
+                confirmLabel: 'Abandon scope',
+                confirmVariant: 'danger',
+            });
+        } else {
+            const fallbackConfirmation =
+                typeof window.confirm === 'function'
+                    ? window.confirm('Are you sure you want to leave this scope?')
+                    : true;
+            confirmationPromise = Promise.resolve(fallbackConfirmation);
         }
-        button.disabled = true;
-        fetch(`/scope/${scopeId}/share/self`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            body: JSON.stringify({ csrf_token: readCsrfToken() }),
-        })
-            .then((response) =>
-                response
-                    .json()
-                    .catch(() => ({}))
-                    .then((data) => ({ ok: response.ok, data }))
-            )
-            .then(({ ok, data }) => {
-                if (data && data.csrf_token) {
-                    updateCsrfToken(data.csrf_token);
+        Promise.resolve(confirmationPromise)
+            .then((confirmed) => {
+                if (!confirmed) {
+                    return null;
                 }
-                if (!data) {
-                    throw new Error('Invalid response payload.');
-                }
-                if (!ok || data.success !== true) {
-                    const message = data.message || 'Unable to leave this scope.';
-                    if (typeof displayFlashMessage === 'function') {
-                        displayFlashMessage(message, 'danger');
-                    }
-                    return;
-                }
-                removeScopeCard(scopeId);
-                if (typeof displayFlashMessage === 'function') {
-                    displayFlashMessage(data.message || 'Scope removed.', 'success');
-                }
+                button.disabled = true;
+                return fetch(`/scope/${scopeId}/share/self`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({ csrf_token: readCsrfToken() }),
+                })
+                    .then((response) =>
+                        response
+                            .json()
+                            .catch(() => ({}))
+                            .then((data) => ({ ok: response.ok, data }))
+                    )
+                    .then(({ ok, data }) => {
+                        if (data && data.csrf_token) {
+                            updateCsrfToken(data.csrf_token);
+                        }
+                        if (!data) {
+                            throw new Error('Invalid response payload.');
+                        }
+                        if (!ok || data.success !== true) {
+                            const message = data.message || 'Unable to leave this scope.';
+                            if (typeof displayFlashMessage === 'function') {
+                                displayFlashMessage(message, 'danger');
+                            }
+                            return null;
+                        }
+                        removeScopeCard(scopeId);
+                        if (typeof displayFlashMessage === 'function') {
+                            displayFlashMessage(data.message || 'Scope removed.', 'success');
+                        }
+                        return null;
+                    });
             })
             .catch((error) => {
                 console.error('Unable to leave scope.', error);
