@@ -27,6 +27,28 @@
       #}
 
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
+        {% if g.scope and g.user and g.scope.owner_id == g.user.id %}
+        {% set share_summary = g.scope.share_summary if g.scope.share_summary is defined else None %}
+        {% set share_count = share_summary.accepted if share_summary else 0 %}
+        {% set has_pending = share_summary.pending if share_summary else 0 %}
+        {% set show_nav_share = request.endpoint in ['task', 'add_task', 'edit_task'] %}
+        {% if show_nav_share %}
+        <li class="nav-item">
+          <button
+            type="button"
+            class="btn btn-sm {{ 'btn-primary' if share_count else 'btn-outline-secondary' }} scope-share-btn"
+            data-scope-id="{{ g.scope.id }}"
+            data-share-count="{{ share_count }}"
+            data-share-pending="{{ 'true' if has_pending else 'false' }}"
+            aria-label="Manage sharing for {{ g.scope.name }}"
+            title="Manage sharing"
+          >
+            <i class="bi {{ 'bi-share-fill' if share_count else 'bi-share' }}" aria-hidden="true"></i>
+            <span class="d-none d-lg-inline ms-1">Share</span>
+          </button>
+        </li>
+        {% endif %}
+        {% endif %}
         {% if g.user and g.user.github_integration_enabled %}
         <li class="nav-item">
           <button class="btn btn-outline-secondary btn-sm" type="button" id="github-refresh-btn">

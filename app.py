@@ -67,6 +67,7 @@ from services.github_service import (
     remove_label_from_issue,
 )
 from services.scope_service import (
+    compute_share_state,
     get_scope_share,
     get_user_github_token,
     user_can_access_scope,
@@ -367,6 +368,15 @@ def load_scope():
         scope = Scope.query.get(scope_selected)
         if scope and user_can_access_scope(g.user, scope):
             g.scope = scope
+            try:
+                share_state = compute_share_state(scope, g.user)
+            except Exception:  # pragma: no cover - defensive fallback
+                share_state = {}
+            scope.share_state = share_state
+            scope.share_summary = {
+                "accepted": share_state.get("accepted_count", 0),
+                "pending": share_state.get("pending_count", 0),
+            }
             return
         session.pop("selected_scope", None)
     g.scope = None
