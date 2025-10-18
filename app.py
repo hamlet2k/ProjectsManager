@@ -80,6 +80,7 @@ from services.scope_service import (
 from services.notification_service import build_notifications_summary
 from routes.scopes import scopes_bp
 from routes.notifications import notifications_bp
+from routes import safe_redirect
 
 LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
@@ -375,7 +376,7 @@ def change_theme(theme):
     """
     if not set_theme(theme):
         flash("Invalid theme", "error")
-    return redirect(request.referrer or url_for("home"))
+    return safe_redirect(request.referrer, "home")
 
 
 
@@ -407,7 +408,7 @@ def scope_required(f):
     def decorated_function(*args, **kwargs):
         if not g.scope or not user_can_access_scope(g.user, g.scope):
             flash("Please select a valid scope", "warning")
-            return redirect(request.referrer or url_for("home"))
+            return safe_redirect(request.referrer, "home")
         return f(*args, **kwargs)
     return decorated_function
 
@@ -2115,7 +2116,7 @@ def add_task():
             if wants_json:
                 return jsonify({"success": False, "message": error_message}), 500
             flash(error_message, "error")
-        return redirect(request.referrer or url_for("task"))
+            return safe_redirect(request.referrer, "task")
     else:
         if wants_json:
             return jsonify({
@@ -2164,7 +2165,7 @@ def edit_task(id):
             if wants_json:
                 return jsonify({"success": False, "message": generic_error_message}), 500
             flash(generic_error_message, "error")
-            return redirect(request.referrer or url_for("task"))
+            return safe_redirect(request.referrer, "task")
         context = _task_github_context(item, g.user)
         if item.github_issue_number and context:
             labels = _labels_for_github(item)
@@ -2226,7 +2227,7 @@ def edit_task(id):
                     if wants_json:
                         return jsonify({"success": False, "message": message}), status
                     flash(message, "danger")
-                    return redirect(request.referrer or url_for("task"))
+                    return safe_redirect(request.referrer, "task")
         try:
             db.session.commit()
             success_message = f'Task "{item.name}" updated!'
@@ -2259,7 +2260,7 @@ def edit_task(id):
             if wants_json:
                 return jsonify({"success": False, "message": generic_error_message}), 500
             flash(generic_error_message, "error")
-        return redirect(request.referrer or url_for("task"))
+            return safe_redirect(request.referrer, "task")
     else:
         if wants_json:
             return jsonify({
@@ -2354,7 +2355,7 @@ def delete_item(item_type, id):
             db.session.rollback()
             flash(f"An error occurred: {str(e)}", "error")
             return jsonify({'success': False, 'message': f"An error occurred: {str(e)}"}), 500
-        # return redirect(request.referrer or url_for(item_type))
+        # return safe_redirect(request.referrer, item_type)
     return "Invalid item type", 404
 
 
@@ -2375,7 +2376,7 @@ def complete_task(id):
                     403,
                 )
             flash(message, "danger")
-            return redirect(request.referrer or url_for("task"))
+            return safe_redirect(request.referrer, "task")
         context = _task_github_context(item, g.user) if item.github_issue_number else None
         issue_unlinked = False
         issue_reopened = False
@@ -2423,7 +2424,7 @@ def complete_task(id):
                                 status,
                             )
                         flash(message, "danger")
-                        return redirect(request.referrer or url_for("task"))
+                        return safe_redirect(request.referrer, "task")
             item.uncomplete_task()
         else:
             if item.github_issue_number and context:
@@ -2474,7 +2475,7 @@ def complete_task(id):
                                 status,
                             )
                         flash(message, "danger")
-                        return redirect(request.referrer or url_for("task"))
+                        return safe_redirect(request.referrer, "task")
             item.complete_task()
         db.session.commit()
 
@@ -2531,7 +2532,7 @@ def complete_task(id):
                 500,
             )
         flash(error_message, "error")
-    return redirect(request.referrer or url_for("task"))
+    return safe_redirect(request.referrer, "task")
 
 
 @app.route("/<string:item_type>/rank", methods=["POST"])

@@ -19,16 +19,8 @@ from flask import (
 from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
-from urllib.parse import urlparse
-def safe_redirect(referrer, fallback_endpoint):
-    """Redirect to referrer if it's a safe internal URL, otherwise to fallback endpoint."""
-    if not referrer:
-        return redirect(url_for(fallback_endpoint))
-    ref_url = urlparse(request.host_url)
-    test_url = urlparse(referrer)
-    if test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc:
-        return redirect(referrer)
-    return redirect(url_for(fallback_endpoint))
+
+from routes import safe_redirect
 
 from database import db
 from forms import ScopeForm
