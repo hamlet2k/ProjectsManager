@@ -1,0 +1,22 @@
+{% set notif = notification %}
+{% if notif %}
+{% set allow_actions = allow_actions if allow_actions is defined else True %}
+<div class="notification-item{% if compact %} notification-item--compact{% endif %}" data-notification-item="{{ notif.id }}" data-notification-status="{{ notif.status }}" data-notification-read="{{ 'true' if notif.is_read else 'false' }}">
+    <div class="notification-item__header d-flex justify-content-between align-items-start gap-3">
+        <div class="notification-item__details flex-grow-1">
+            <div class="notification-item__title fw-semibold">{{ notif.title }}</div>
+            <div class="notification-item__message small text-muted">{{ notif.message }}</div>
+            {% if not compact and notif.created_display %}
+            <div class="notification-item__timestamp small text-muted">{{ notif.created_display }}</div>
+            {% endif %}
+        </div>
+        <span class="notification-item__status badge {{ notif.status_badge or 'text-bg-secondary' }}">{{ notif.status_label }}</span>
+    </div>
+    {% if allow_actions and notif.action_required %}
+    <div class="notification-item__actions mt-2 d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-sm btn-primary" data-notification-accept="{{ notif.id }}">Accept</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-notification-reject="{{ notif.id }}">Reject</button>
+    </div>
+    {% endif %}
+</div>
+{% endif %}

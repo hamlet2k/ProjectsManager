@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div class="py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">Notifications</h1>
+        <span class="badge text-bg-primary" data-notification-page-count>{{ pending_count or 0 }} pending</span>
+    </div>
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="notification-panel h-100">
+                <div class="notification-panel__header d-flex justify-content-between align-items-center">
+                    <span>Pending actions</span>
+                    <span class="badge text-bg-warning" data-notification-page-pending-count>{{ pending|length if pending else 0 }}</span>
+                </div>
+                <div class="notification-list" data-notifications-page-pending>
+                    {% if pending %}
+                        {% for notification in pending %}
+                            {% with notification=notification, compact=False %}
+                                {% include 'partials/notification_item.html' %}
+                            {% endwith %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="notification-empty notification-empty--page text-muted text-center" data-notifications-page-pending-empty>
+                            No pending notifications.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="notification-panel h-100">
+                <div class="notification-panel__header">Recent history</div>
+                <div class="notification-list" data-notifications-page-history>
+                    {% if notifications %}
+                        {% for notification in notifications %}
+                            {% with notification=notification, compact=False, allow_actions=False %}
+                                {% include 'partials/notification_item.html' %}
+                            {% endwith %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="notification-empty notification-empty--page text-muted text-center" data-notifications-page-history-empty>
+                            No notifications yet.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<input type="hidden" data-notification-page-csrf value="{{ csrf_token or '' }}">
+{% endblock %}

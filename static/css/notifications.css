@@ -1,0 +1,104 @@
+.notifications-dropdown .notification-dropdown-menu {
+    border: 1px solid var(--bs-border-color-translucent);
+    background-color: var(--bs-body-bg);
+    padding: 0;
+    width: max-content;
+    min-width: 16rem;
+    max-width: var(--notifications-overlay-max-width, 28rem);
+    border-radius: var(--bs-border-radius-lg, 0.5rem);
+    overflow: hidden;
+}
+
+.notifications-dropdown .notification-list {
+    padding: 0.5rem 0;
+}
+
+.notifications-dropdown .notification-dropdown-footer {
+    background-color: var(--bs-body-bg);
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--bs-border-color-translucent);
+}
+
+.notification-list {
+    margin: 0;
+}
+
+.notification-empty {
+    padding: 1rem 1.25rem;
+}
+
+.notification-item {
+    padding: 0.75rem 1.25rem;
+    background-color: transparent;
+}
+
+.notification-item--compact {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+.notification-item + .notification-item {
+    border-top: 1px solid var(--bs-border-color-translucent);
+}
+
+.notification-item__title {
+    margin-bottom: 0.15rem;
+}
+
+.notification-item__message {
+    margin-bottom: 0.15rem;
+}
+
+.notification-item__timestamp {
+    margin-top: 0.25rem;
+}
+
+.notification-item__actions .btn {
+    min-width: 5.25rem;
+}
+
+.notification-panel {
+    background-color: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    box-shadow: var(--bs-box-shadow-sm);
+    border-radius: var(--bs-border-radius-lg, 0.5rem);
+    padding: 1.5rem;
+}
+
+.notification-panel__header {
+    font-weight: 600;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+
+.notification-panel .notification-list {
+    padding: 0;
+}
+
+.notification-panel .notification-item {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.notification-panel .notification-empty {
+    padding: 1.5rem 0;
+}
+
+.notifications-dropdown .notification-count-badge {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.35rem;
+    line-height: 1;
+    transform: translate(-75%, -15%);
+}
+
+.notification-empty--page {
+    background-color: transparent;
+    border: 0;
+}
+
+@media (max-width: 576px) {
+    .notifications-dropdown .notification-dropdown-menu {
+        min-width: min(16rem, 90vw);
+    }
+}

@@ -10,6 +10,7 @@ A User can only delete a Scope he owns
 
 """
 from database import db
+from models.scope_share import ScopeShareStatus
 
 class Scope(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,6 +34,30 @@ class Scope(db.Model):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+    shares = db.relationship(
+        "ScopeShare",
+        back_populates="scope",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    notifications = db.relationship(
+        "Notification",
+        back_populates="scope",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Scope {self.name}>"
+
+    @property
+    def active_shares(self):
+        """Return all accepted shares for this scope."""
+
+        return [share for share in self.shares if share.status_enum == ScopeShareStatus.ACCEPTED]
+
+    @property
+    def pending_shares(self):
+        """Return pending share invitations."""
+
+        return [share for share in self.shares if share.status_enum == ScopeShareStatus.PENDING]

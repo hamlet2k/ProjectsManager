@@ -12,7 +12,7 @@ A User can manage Tasks (see Task)
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
-from models.user_scope_association import user_scope_association
+from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 
 
 class User(db.Model):
@@ -28,7 +28,25 @@ class User(db.Model):
 
     owned_tasks = db.relationship("Task", backref="task_owner", lazy=True)
     owned_scopes = db.relationship("Scope", backref="scope_owner", lazy=True)
-    scopes = db.relationship("Scope", secondary=user_scope_association, lazy="subquery", backref=db.backref("users", lazy=True))
+    scope_shares = db.relationship(
+        "ScopeShare",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        foreign_keys=[ScopeShare.user_id],
+    )
+    initiated_scope_shares = db.relationship(
+        "ScopeShare",
+        back_populates="inviter",
+        lazy="selectin",
+        foreign_keys=[ScopeShare.inviter_id],
+    )
+    notifications = db.relationship(
+        "Notification",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     ADMIN = 'admin'
     USER = 'user'
@@ -54,3 +72,31 @@ class User(db.Model):
 
     def __repr__(self):
         return f"<User {self.id}>"
+
+    @property
+    def scopes(self):
+        """Return scopes shared with the user (accepted shares only)."""
+
+        return [share.scope for share in self.scope_shares if share.status_enum == ScopeShareStatus.ACCEPTED and share.scope]
+
+    def share_for_scope(self, scope_id: int | None) -> ScopeShare | None:
+        """Return the share entry for the supplied scope if present."""
+
+        if scope_id is None:
+            return None
+        for share in self.scope_shares:
+            if share.scope_id == scope_id:
+                return share
+        return None
+
+    def can_edit_scope(self, scope_id: int | None) -> bool:
+        """True when the user can modify tasks within the specified scope."""
+
+        if scope_id is None:
+            return False
+        if any(scope.id == scope_id for scope in self.owned_scopes):
+            return True
+        share = self.share_for_scope(scope_id)
+        if not share:
+            return False
+        return share.role_enum == ScopeShareRole.EDITOR and share.status_enum == ScopeShareStatus.ACCEPTED

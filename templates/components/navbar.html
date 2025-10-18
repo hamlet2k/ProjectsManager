@@ -27,6 +27,80 @@
       #}
 
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
+        {% if g.user %}
+        {% set summary = notification_summary or {} %}
+        {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
+        <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
+          <button
+            class="btn btn-link nav-link position-relative"
+            type="button"
+            id="notificationDropdown"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            data-notification-toggle
+          >
+            <i class="bi bi-bell fs-5" aria-hidden="true"></i>
+            <span class="visually-hidden">Notifications</span>
+            {% if notification_count %}
+            <span
+              class="position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge"
+              data-notification-count
+            >
+              {{ notification_count }}
+            </span>
+            {% endif %}
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-0 shadow notification-dropdown-menu" aria-labelledby="notificationDropdown">
+            <div class="notification-list" data-notification-list>
+              {% set pending = summary.pending or [] %}
+              {% set pending_ids = pending | map(attribute='id') | list %}
+              {% set recent = summary.recent or [] %}
+              {% if pending or recent %}
+                {% for note in pending %}
+                  {% with notification=note, compact=True %}
+                    {% include 'partials/notification_item.html' %}
+                  {% endwith %}
+                {% endfor %}
+                {% for note in recent %}
+                  {% if note.id not in pending_ids %}
+                    {% with notification=note, compact=True %}
+                      {% include 'partials/notification_item.html' %}
+                    {% endwith %}
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <div class="notification-empty text-muted small" data-notification-empty>No notifications yet.</div>
+              {% endif %}
+            </div>
+            <div class="notification-dropdown-footer text-center">
+              <a class="dropdown-item" href="{{ url_for('notifications.list_notifications') }}">View all notifications</a>
+            </div>
+          </div>
+          <input type="hidden" data-notification-csrf value="{{ summary.csrf_token or '' }}">
+        </li>
+        {% endif %}
+        {% if g.scope and g.user and g.scope.owner_id == g.user.id %}
+        {% set share_summary = g.scope.share_summary if g.scope.share_summary is defined else None %}
+        {% set share_count = share_summary.accepted if share_summary else 0 %}
+        {% set has_pending = share_summary.pending if share_summary else 0 %}
+        {% set show_nav_share = request.endpoint in ['task', 'add_task', 'edit_task'] %}
+        {% if show_nav_share %}
+        <li class="nav-item">
+          <button
+            type="button"
+            class="btn btn-sm {{ 'btn-primary' if share_count else 'btn-outline-secondary' }} scope-share-btn"
+            data-scope-id="{{ g.scope.id }}"
+            data-share-count="{{ share_count }}"
+            data-share-pending="{{ 'true' if has_pending else 'false' }}"
+            aria-label="Manage sharing for {{ g.scope.name }}"
+            title="Manage sharing"
+          >
+            <i class="bi {{ 'bi-share-fill' if share_count else 'bi-share' }}" aria-hidden="true"></i>
+            <span class="d-none d-lg-inline ms-1">Share</span>
+          </button>
+        </li>
+        {% endif %}
+        {% endif %}
         {% if g.user and g.user.github_integration_enabled %}
         <li class="nav-item">
           <button class="btn btn-outline-secondary btn-sm" type="button" id="github-refresh-btn">

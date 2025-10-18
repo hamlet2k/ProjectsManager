@@ -7,15 +7,18 @@ from typing import Any, Optional
 from models.scope import Scope
 from models.task import Task
 from models.user import User
+from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 
 
 def user_can_access_scope(user: User | None, scope: Scope | None) -> bool:
     """Return True when the given user can view the provided scope."""
+
     if user is None or scope is None:
         return False
     if scope.owner_id == user.id:
         return True
-    return any(shared_scope.id == scope.id for shared_scope in user.scopes)
+    share = get_scope_share(scope, user)
+    return bool(share and share.status_enum == ScopeShareStatus.ACCEPTED)
 
 
 def user_owns_scope(user: User | None, scope: Scope | None) -> bool:
@@ -25,11 +28,22 @@ def user_owns_scope(user: User | None, scope: Scope | None) -> bool:
 
 def get_user_scopes(user: User | None) -> list[Scope]:
     """Return all scopes visible to the user ordered by rank."""
+
     if user is None:
         return []
-    scopes: list[Scope] = list(user.owned_scopes) + list(user.scopes)
-    scopes.sort(key=lambda item: ((item.rank or 0), item.id))
-    return scopes
+
+    owned = list(user.owned_scopes)
+    shared = [share.scope for share in user.scope_shares if share.is_active and share.scope is not None]
+    scopes: list[Scope] = owned + shared
+    seen: set[int] = set()
+    unique_scopes: list[Scope] = []
+    for scope in scopes:
+        if scope.id in seen:
+            continue
+        seen.add(scope.id)
+        unique_scopes.append(scope)
+    unique_scopes.sort(key=lambda item: ((item.rank or 0), item.id))
+    return unique_scopes
 
 
 def get_next_scope_rank() -> int:
@@ -115,7 +129,7 @@ def build_scope_page_context(
 ) -> dict[str, Any]:
     """Return context payload for the scope management template."""
     context: dict[str, Any] = {
-        "scopes": get_user_scopes(user),
+        "scopes": annotate_scope_sharing(get_user_scopes(user), user),
         "scope_form": form,
         "github_token_present": bool(user.github_token_encrypted) if user else False,
         "scope_form_state": build_scope_form_initial_state(form),
@@ -176,6 +190,7 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         return {}
 
     is_owner = bool(current_user and scope.owner_id == current_user.id)
+    share_state = compute_share_state(scope, current_user)
     repo = None
     if scope.github_repo_owner and scope.github_repo_name:
         repo = {
@@ -203,9 +218,146 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "description": scope.description or "",
         "owner_id": scope.owner_id,
         "is_owner": is_owner,
-        "is_shared": not is_owner,
+        "is_shared": share_state.get("shared_with_current_user", not is_owner),
         "github_integration_enabled": bool(scope.github_integration_enabled),
         "github_repository": repo,
         "github_project": project,
         "github_milestone": milestone,
+        "share_state": share_state,
     }
+
+
+def annotate_scope_sharing(scopes: list[Scope], current_user: User | None) -> list[Scope]:
+    """Attach share metadata to the provided scopes for template rendering."""
+
+    for scope in scopes:
+        summary = compute_share_state(scope, current_user)
+        scope.share_summary = {
+            "accepted": summary.get("accepted_count", 0),
+            "pending": summary.get("pending_count", 0),
+            "rejected": summary.get("rejected_count", 0),
+        }
+    return scopes
+
+
+def compute_share_state(scope: Scope, current_user: User | None) -> dict[str, Any]:
+    """Return share summary data for the scope and current user."""
+
+    accepted = [share for share in scope.shares if share.status_enum == ScopeShareStatus.ACCEPTED]
+    pending = [share for share in scope.shares if share.status_enum == ScopeShareStatus.PENDING]
+    rejected = [share for share in scope.shares if share.status_enum == ScopeShareStatus.REJECTED]
+    current_share = get_scope_share(scope, current_user) if current_user else None
+
+    return {
+        "accepted_count": len(accepted),
+        "pending_count": len(pending),
+        "rejected_count": len(rejected),
+        "shared_with_current_user": bool(current_share and current_share.status_enum == ScopeShareStatus.ACCEPTED),
+        "current_role": current_share.role if current_share else ("owner" if current_user and scope.owner_id == current_user.id else None),
+    }
+
+
+def get_scope_share(scope: Scope | None, user: User | None) -> ScopeShare | None:
+    """Return the share entry linking the user to the scope if present."""
+
+    if not scope or not user:
+        return None
+    if scope.owner_id == user.id:
+        return None
+    for share in scope.shares:
+        if share.user_id == user.id:
+            return share
+    return None
+
+
+def user_scope_role(user: User | None, scope: Scope | None) -> str | None:
+    """Return the role granted to the user for the provided scope."""
+
+    if not user or not scope:
+        return None
+    if scope.owner_id == user.id:
+        return "owner"
+    share = get_scope_share(scope, user)
+    if not share or not share.is_active:
+        return None
+    return share.role
+
+
+def user_can_edit_scope_tasks(user: User | None, scope: Scope | None) -> bool:
+    """True when the user can modify tasks within the supplied scope."""
+
+    if not user or not scope:
+        return False
+    if scope.owner_id == user.id:
+        return True
+    share = get_scope_share(scope, user)
+    return bool(share and share.is_active and share.role_enum == ScopeShareRole.EDITOR)
+
+
+def user_can_view_task(user: User | None, task: Task | None) -> bool:
+    """True when the user can view the specified task."""
+
+    if not user or not task:
+        return False
+    if task.owner_id == user.id:
+        return True
+    return user_can_access_scope(user, task.scope)
+
+
+def user_can_edit_task(user: User | None, task: Task | None) -> bool:
+    """True when the user can update the supplied task."""
+
+    if not user or not task:
+        return False
+    if task.scope is None:
+        return False
+    if task.scope.owner_id == user.id:
+        return True
+    share = get_scope_share(task.scope, user)
+    if not share or not share.is_active:
+        return False
+    if share.role_enum == ScopeShareRole.EDITOR:
+        return True
+    return task.owner_id == user.id
+
+
+def serialize_share(share: ScopeShare, current_user: User | None) -> dict[str, Any]:
+    """Serialize a share relationship for API responses."""
+
+    user = share.user
+    status_label = share.status.replace("_", " ").title()
+    badge_map = {
+        ScopeShareStatus.ACCEPTED.value: "text-bg-success",
+        ScopeShareStatus.PENDING.value: "text-bg-warning",
+        ScopeShareStatus.REJECTED.value: "text-bg-danger",
+        ScopeShareStatus.REVOKED.value: "text-bg-secondary",
+    }
+    scope_owner_id = share.scope.owner_id if share.scope else None
+    return {
+        "id": share.id,
+        "role": share.role,
+        "status": share.status,
+        "is_pending": share.status_enum == ScopeShareStatus.PENDING,
+        "can_remove": bool(current_user and (current_user.id == share.scope.owner_id or current_user.id == share.user_id)),
+        "is_self": bool(current_user and share.user_id == current_user.id),
+        "can_resend": bool(
+            current_user
+            and scope_owner_id == current_user.id
+            and share.status_enum in {ScopeShareStatus.REJECTED, ScopeShareStatus.REVOKED}
+        ),
+        "status_label": status_label,
+        "status_badge": badge_map.get(share.status, "text-bg-secondary"),
+        "updated_at": share.updated_at.isoformat() if share.updated_at else None,
+        "user": {
+            "id": user.id if user else None,
+            "username": getattr(user, "username", ""),
+            "name": getattr(user, "name", ""),
+            "email": getattr(user, "email", ""),
+        },
+    }
+
+
+def serialize_shares(shares: list[ScopeShare], current_user: User | None) -> list[dict[str, Any]]:
+    """Serialize a list of shares."""
+
+    return [serialize_share(share, current_user) for share in shares]
