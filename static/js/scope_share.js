@@ -169,7 +169,7 @@
                 if (!ok || data.success !== true) {
                     const message = data.message || 'Unable to share this scope.';
                     showError(message);
-                    if (data.message && message) {
+                    if (message) {
                         setFieldError(message);
                     }
                     return;
