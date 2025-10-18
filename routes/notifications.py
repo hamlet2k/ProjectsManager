@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from flask import Blueprint, abort, g, jsonify, render_template, request
+import logging
 from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
@@ -120,11 +121,14 @@ def _handle_notification_action(notification_id: int, action):
             share = reject_share_invitation(notification, g.user)
             message = "Invitation rejected."
     except PermissionError as exc:
-        return _json_error(str(exc), status=403)
+        logging.exception("Permission error during notification action")
+        return _json_error("You do not have permission to perform this action.", status=403)
     except LookupError as exc:
-        return _json_error(str(exc) or "That invitation is no longer available.", status=404)
+        logging.exception("Lookup error during notification action")
+        return _json_error("That invitation is no longer available.", status=404)
     except ValueError as exc:
-        return _json_error(str(exc) or "Unable to process this notification.")
+        logging.exception("Value error during notification action")
+        return _json_error("Unable to process this notification.")
 
     try:
         db.session.commit()
