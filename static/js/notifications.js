@@ -406,7 +406,7 @@
                 }
                 const identifier = element.dataset.notificationItem;
                 if (identifier) {
-                    const parsed = Number.parseInt(identifier, 10);
+                    const parsed = parseInt(identifier, 10);
                     if (!Number.isNaN(parsed)) {
                         ids.add(parsed);
                     }

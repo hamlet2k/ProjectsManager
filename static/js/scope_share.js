@@ -169,7 +169,7 @@
                 if (!ok || data.success !== true) {
                     const message = data.message || 'Unable to share this scope.';
                     showError(message);
-                    if (data.message && message) {
+                    if (message) {
                         setFieldError(message);
                     }
                     return;
@@ -438,7 +438,7 @@
                 resendButton.className = 'btn btn-outline-primary btn-sm';
                 resendButton.setAttribute('data-share-resend', share.id);
                 resendButton.setAttribute('data-scope-id', state.currentScopeId || '');
-                resendButton.innerHTML = '<i class="bi bi-arrow-clockwise" aria-hidden="true"></i>'; // icon
+                resendButton.innerHTML = '<i class="bi bi-arrow-clockwise" aria-hidden="true"></i>';
                 resendButton.setAttribute('aria-label', `Resend invitation to ${displayName || username}`);
                 resendButton.title = 'Resend invitation';
                 actions.appendChild(resendButton);

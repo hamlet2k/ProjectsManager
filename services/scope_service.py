@@ -225,7 +225,6 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_milestone": milestone,
         "share_state": share_state,
     }
-    return payload
 
 
 def annotate_scope_sharing(scopes: list[Scope], current_user: User | None) -> list[Scope]:
