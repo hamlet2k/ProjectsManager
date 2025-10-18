@@ -1,0 +1,49 @@
+<div class="modal fade" id="scope-share-modal" tabindex="-1" aria-labelledby="scope-share-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="scope-share-modal-title">Manage sharing</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger d-none" role="alert" data-share-error></div>
+                <div class="alert alert-success d-none" role="alert" data-share-success></div>
+
+                <section class="mb-4">
+                    <h2 class="h6 mb-3">Shared users</h2>
+                    <p class="text-muted small mb-3" data-share-empty-message>No one else has access yet.</p>
+                    <ul class="list-group" data-share-list></ul>
+                </section>
+
+                <form data-share-form id="scope-share-form" novalidate>
+                    <input type="hidden" name="csrf_token" value="{{ scope_form.csrf_token._value() if scope_form and scope_form.csrf_token else '' }}">
+                    <div class="mb-3">
+                        <label for="share-identifier" class="form-label">Add collaborator</label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="share-identifier"
+                            name="identifier"
+                            placeholder="Username or email"
+                            autocomplete="off"
+                            required
+                        >
+                        <div class="form-text">Enter the username or email address of the collaborator.</div>
+                        <div class="invalid-feedback" data-share-field-error></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="share-role" class="form-label">Role</label>
+                        <select class="form-select" id="share-role" name="role">
+                            <option value="editor" selected>Editor &mdash; can create and update tasks</option>
+                            <option value="viewer">Viewer &mdash; read-only access</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary" form="scope-share-form" data-share-submit>Share scope</button>
+            </div>
+        </div>
+    </div>
+</div>

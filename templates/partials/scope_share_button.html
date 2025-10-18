@@ -1,0 +1,12 @@
+{% set share_count = scope.share_summary.accepted if scope.share_summary else 0 %}
+{% set has_pending = scope.share_summary.pending if scope.share_summary else 0 %}
+<button
+    type="button"
+    class="btn {{ 'btn-primary' if share_count else 'btn-outline-secondary' }} scope-share-btn"
+    data-scope-id="{{ scope.id }}"
+    data-share-count="{{ share_count }}"
+    data-share-pending="{{ 'true' if has_pending else 'false' }}"
+    aria-label="Manage sharing for {{ scope.name }}"
+>
+    <i class="bi {{ 'bi-share-fill' if share_count else 'bi-share' }}" aria-hidden="true"></i>
+</button>

@@ -921,6 +921,7 @@
 
 {% block modals %}
     {{ super() }}
+    {% include "modals/scope_share_modal.html" %}
     <div class="modal fade" id="tagManagerModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -976,6 +977,7 @@
 
 {% block scripts %}
 {{ super() }}
+<script src="{{ url_for('static', filename='js/scope_share.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sticky_header.js') }}"></script>
 <script>
     const GITHUB_LOCAL_TAG_NAME = {{ github_local_tag_name|tojson }};

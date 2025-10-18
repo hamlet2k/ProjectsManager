@@ -66,8 +66,20 @@ from services.github_service import (
     close_issue,
     remove_label_from_issue,
 )
-from services.scope_service import get_user_github_token, user_can_access_scope, user_owns_scope
+from services.scope_service import (
+    compute_share_state,
+    get_scope_share,
+    get_user_github_token,
+    user_can_access_scope,
+    user_can_edit_scope_tasks,
+    user_can_edit_task,
+    user_can_view_task,
+    user_owns_scope,
+    user_scope_role,
+)
+from services.notification_service import build_notifications_summary
 from routes.scopes import scopes_bp
+from routes.notifications import notifications_bp
 
 LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
@@ -83,6 +95,7 @@ GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
 # > flask db upgrade
 migrate = Migrate(app, db)
 app.register_blueprint(scopes_bp)
+app.register_blueprint(notifications_bp)
 
 # User Authentication
 # ------------------------------
@@ -103,8 +116,13 @@ def require_login():
     user_id = session.get("user_id")
     if user_id:
         g.user = User.query.get(user_id)
+        if g.user is not None:
+            g.notification_summary = build_notifications_summary(g.user)
+        else:
+            g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
     else:
         g.user = None
+        g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
         if request.endpoint and request.endpoint not in login_exempt_routes:
             flash("Please login", "info")
             return redirect(url_for("login", next=request.url))
@@ -149,6 +167,7 @@ def inject_forms():
         "login_form": LoginForm(),
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+        "notification_summary": getattr(g, "notification_summary", None),
     }
 
 
@@ -358,6 +377,15 @@ def load_scope():
         scope = Scope.query.get(scope_selected)
         if scope and user_can_access_scope(g.user, scope):
             g.scope = scope
+            try:
+                share_state = compute_share_state(scope, g.user)
+            except Exception:  # pragma: no cover - defensive fallback
+                share_state = {}
+            scope.share_state = share_state
+            scope.share_summary = {
+                "accepted": share_state.get("accepted_count", 0),
+                "pending": share_state.get("pending_count", 0),
+            }
             return
         session.pop("selected_scope", None)
     g.scope = None
@@ -744,10 +772,11 @@ def task():
     search_query = request.args.get("search", "") or ""
     search_query = search_query.strip()
     search_term = search_query.lower()
+    scope_role = user_scope_role(g.user, g.scope)
 
     filtered_tasks = []
     for task in g.scope.tasks:
-        if task.owner_id != g.user.id:
+        if not user_can_view_task(g.user, task):
             continue
         if not show_completed and task.completed:
             continue
@@ -762,7 +791,7 @@ def task():
     github_linked_task_count = sum(
         1
         for scope_task in g.scope.tasks
-        if scope_task.owner_id == g.user.id and scope_task.github_issue_number is not None
+        if user_can_view_task(g.user, scope_task) and scope_task.github_issue_number is not None
     )
     has_github_linked_tasks = github_linked_task_count > 0
 
@@ -790,7 +819,7 @@ def task():
         tag.id: sum(
             1
             for tag_task in tag.tasks
-            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+            if tag_task.scope_id == g.scope.id and user_can_view_task(g.user, tag_task)
         )
         for tag in available_tags
     }
@@ -978,6 +1007,8 @@ def task():
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
+        "scope_role": scope_role,
+        "can_edit_scope": user_can_edit_scope_tasks(g.user, g.scope),
     }
 
     available_tags_payload = [
@@ -1718,14 +1749,9 @@ def list_tags():
             db.session.rollback()
             logging.exception("Unable to assign tags to scope while listing tags")
             abort(500)
-    has_github_linked_tasks = (
-        Task.query.filter(
-            Task.scope_id == g.scope.id,
-            Task.owner_id == g.user.id,
-            Task.github_issue_number.isnot(None),
-        )
-        .first()
-        is not None
+    has_github_linked_tasks = any(
+        user_can_view_task(g.user, task) and task.github_issue_number is not None
+        for task in g.scope.tasks
     )
     serialized_tags = []
     for tag in tags:
@@ -1735,7 +1761,7 @@ def list_tags():
         payload["task_count"] = sum(
             1
             for tag_task in tag.tasks
-            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+            if tag_task.scope_id == g.scope.id and user_can_view_task(g.user, tag_task)
         )
         serialized_tags.append(payload)
     return jsonify({"tags": serialized_tags})
@@ -1773,7 +1799,7 @@ def create_tag():
         "task_count": sum(
             1
             for tag_task in tag.tasks
-            if tag_task.scope_id == g.scope.id and tag_task.owner_id == g.user.id
+            if tag_task.scope_id == g.scope.id and user_can_view_task(g.user, tag_task)
         ),
     }
 
@@ -1799,7 +1825,7 @@ def delete_tag(tag_id):
         )
 
     for task in tag.tasks:
-        if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+        if task.scope_id != g.scope.id or not user_can_edit_task(g.user, task):
             return jsonify({"error": "You do not have permission to delete this tag."}), 403
 
     try:
@@ -1820,8 +1846,8 @@ def _get_task_in_scope_or_404(task_id):
     if (
         g.scope is None
         or task.scope_id != g.scope.id
-        or task.owner_id != g.user.id
         or not user_can_access_scope(g.user, task.scope)
+        or not user_can_view_task(g.user, task)
     ):
         abort(404)
     return task
@@ -2035,11 +2061,13 @@ def get_max_rank(item_type):
 @app.route("/task/add", methods=["GET", "POST"])
 @scope_required
 def add_task():
+    if not user_can_edit_scope_tasks(g.user, g.scope):
+        abort(403)
 
     item = Task()
     form = TaskForm()
     form.tags.data = form.tags.data or ""
-    items = [item for item in g.scope.tasks if item.owner_id == g.user.id and not item.completed]
+    items = [task for task in g.scope.tasks if user_can_view_task(g.user, task) and not task.completed]
     show_modal = False
     wants_json = (
         request.headers.get("X-Requested-With") == "XMLHttpRequest"
@@ -2092,9 +2120,9 @@ def add_task():
 @app.route("/task/edit/<int:id>", methods=["GET", "POST"])
 @scope_required
 def edit_task(id):
-    items = [task for task in g.scope.tasks if task.owner_id == g.user.id and not task.completed]
+    items = [task for task in g.scope.tasks if user_can_view_task(g.user, task) and not task.completed]
     item = Task.query.get_or_404(id)
-    if item.scope_id != g.scope.id or item.owner_id != g.user.id:
+    if item.scope_id != g.scope.id or not user_can_edit_task(g.user, item):
         abort(404)
     form = TaskForm(obj=item)
     if not form.is_submitted():
@@ -2254,7 +2282,7 @@ def delete_item(item_type, id):
                 if (
                     item.scope is None
                     or not user_can_access_scope(g.user, item.scope)
-                    or item.owner_id != g.user.id
+                    or not user_can_edit_task(g.user, item)
                 ):
                     return (
                         jsonify(
@@ -2327,6 +2355,15 @@ def complete_task(id):
     )
     try:
         item = _get_task_in_scope_or_404(id)
+        if not user_can_edit_task(g.user, item):
+            message = "You do not have permission to modify this task."
+            if wants_json:
+                return (
+                    jsonify({"success": False, "message": message, "category": "danger"}),
+                    403,
+                )
+            flash(message, "danger")
+            return redirect(request.referrer or url_for("task"))
         context = _task_github_context(item, g.user) if item.github_issue_number else None
         issue_unlinked = False
         issue_reopened = False
@@ -2502,7 +2539,7 @@ def update_item_rank(item_type):
         if item_type == "task":
             if g.scope is None or not user_can_access_scope(g.user, g.scope):
                 return jsonify({"error": "No scope selected."}), 400
-            if item.scope_id != g.scope.id or item.owner_id != g.user.id:
+            if item.scope_id != g.scope.id or not user_can_edit_task(g.user, item):
                 return jsonify({"error": "You do not have permission to reorder this task."}), 403
         elif item_type == "scope":
             if not user_owns_scope(g.user, item):
