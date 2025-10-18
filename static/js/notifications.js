@@ -309,8 +309,8 @@
             state.countBadge = badge;
         } else {
             state.countBadge = badge || state.countBadge;
-            if (state.countBadge && state.countBadge.parentElement) {
-                state.countBadge.parentElement.removeChild(state.countBadge);
+            if (state.countBadge) {
+                state.countBadge.remove();
             }
             state.countBadge = null;
         }
