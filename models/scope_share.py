@@ -33,7 +33,7 @@ class ScopeShare(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     inviter_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     role = db.Column(db.String(20), nullable=False, default=ScopeShareRole.EDITOR.value)
-    status = db.Column(db.String(20), nullable=False, default=ScopeShareStatus.ACCEPTED.value)
+    status = db.Column(db.String(20), nullable=False, default=ScopeShareStatus.PENDING.value)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime,
@@ -48,6 +48,11 @@ class ScopeShare(db.Model):
         "User",
         back_populates="initiated_scope_shares",
         foreign_keys=[inviter_id],
+    )
+    notifications = db.relationship(
+        "Notification",
+        back_populates="share",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (db.UniqueConstraint("scope_id", "user_id", name="uq_scope_share_user"),)
@@ -87,6 +92,11 @@ class ScopeShare(db.Model):
         """Set the share status to revoked."""
 
         self.status_enum = ScopeShareStatus.REVOKED
+
+    def mark_pending(self) -> None:
+        """Set the share status to pending."""
+
+        self.status_enum = ScopeShareStatus.PENDING
 
     def accept(self) -> None:
         """Mark the share as accepted."""

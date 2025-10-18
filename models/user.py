@@ -41,6 +41,12 @@ class User(db.Model):
         lazy="selectin",
         foreign_keys=[ScopeShare.inviter_id],
     )
+    notifications = db.relationship(
+        "Notification",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     ADMIN = 'admin'
     USER = 'user'

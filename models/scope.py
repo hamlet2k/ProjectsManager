@@ -40,6 +40,12 @@ class Scope(db.Model):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+    notifications = db.relationship(
+        "Notification",
+        back_populates="scope",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<Scope {self.name}>"

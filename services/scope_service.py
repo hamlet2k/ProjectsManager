@@ -236,6 +236,7 @@ def annotate_scope_sharing(scopes: list[Scope], current_user: User | None) -> li
         scope.share_summary = {
             "accepted": summary.get("accepted_count", 0),
             "pending": summary.get("pending_count", 0),
+            "rejected": summary.get("rejected_count", 0),
         }
     return scopes
 
@@ -245,11 +246,13 @@ def compute_share_state(scope: Scope, current_user: User | None) -> dict[str, An
 
     accepted = [share for share in scope.shares if share.status_enum == ScopeShareStatus.ACCEPTED]
     pending = [share for share in scope.shares if share.status_enum == ScopeShareStatus.PENDING]
+    rejected = [share for share in scope.shares if share.status_enum == ScopeShareStatus.REJECTED]
     current_share = get_scope_share(scope, current_user) if current_user else None
 
     return {
         "accepted_count": len(accepted),
         "pending_count": len(pending),
+        "rejected_count": len(rejected),
         "shared_with_current_user": bool(current_share and current_share.status_enum == ScopeShareStatus.ACCEPTED),
         "current_role": current_share.role if current_share else ("owner" if current_user and scope.owner_id == current_user.id else None),
     }
@@ -323,6 +326,14 @@ def serialize_share(share: ScopeShare, current_user: User | None) -> dict[str, A
     """Serialize a share relationship for API responses."""
 
     user = share.user
+    status_label = share.status.replace("_", " ").title()
+    badge_map = {
+        ScopeShareStatus.ACCEPTED.value: "text-bg-success",
+        ScopeShareStatus.PENDING.value: "text-bg-warning",
+        ScopeShareStatus.REJECTED.value: "text-bg-danger",
+        ScopeShareStatus.REVOKED.value: "text-bg-secondary",
+    }
+    scope_owner_id = share.scope.owner_id if share.scope else None
     return {
         "id": share.id,
         "role": share.role,
@@ -330,6 +341,14 @@ def serialize_share(share: ScopeShare, current_user: User | None) -> dict[str, A
         "is_pending": share.status_enum == ScopeShareStatus.PENDING,
         "can_remove": bool(current_user and (current_user.id == share.scope.owner_id or current_user.id == share.user_id)),
         "is_self": bool(current_user and share.user_id == current_user.id),
+        "can_resend": bool(
+            current_user
+            and scope_owner_id == current_user.id
+            and share.status_enum in {ScopeShareStatus.REJECTED, ScopeShareStatus.REVOKED}
+        ),
+        "status_label": status_label,
+        "status_badge": badge_map.get(share.status, "text-bg-secondary"),
+        "updated_at": share.updated_at.isoformat() if share.updated_at else None,
         "user": {
             "id": user.id if user else None,
             "username": getattr(user, "username", ""),

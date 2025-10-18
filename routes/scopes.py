@@ -33,6 +33,7 @@ def safe_redirect(referrer, fallback_endpoint):
 from database import db
 from forms import ScopeForm
 from models.scope import Scope
+from models.notification import NotificationStatus
 from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 from models.user import User
 from services.scope_service import (
@@ -46,6 +47,11 @@ from services.scope_service import (
     user_can_access_scope,
     user_owns_scope,
     validate_github_settings,
+)
+from services.notification_service import (
+    create_scope_share_invite_notification,
+    create_scope_share_response_notification,
+    resolve_invite_notifications,
 )
 
 scopes_bp = Blueprint("scopes", __name__, url_prefix="/scope")
@@ -297,13 +303,22 @@ def share_scope(scope_id: int):
         return _share_error_response("You already own this scope.")
 
     existing = get_scope_share(scope, target)
-    if existing and existing.status_enum == ScopeShareStatus.ACCEPTED:
-        return _share_error_response("That user already has access to this scope.")
+    message: str
+    notification_created = False
 
     if existing:
         existing.role_enum = role_enum
-        existing.accept()
         existing.inviter_id = g.user.id
+        if existing.status_enum in {ScopeShareStatus.REJECTED, ScopeShareStatus.REVOKED}:
+            existing.mark_pending()
+            db.session.flush()
+            create_scope_share_invite_notification(existing, resend=True)
+            notification_created = True
+            message = f"Invitation resent to {target.username}."
+        elif existing.status_enum == ScopeShareStatus.PENDING:
+            message = f"Updated invitation for {target.username}."
+        else:
+            message = f"Updated access for {target.username}."
         share = existing
     else:
         share = ScopeShare(
@@ -312,16 +327,22 @@ def share_scope(scope_id: int):
             inviter=g.user,
         )
         share.role_enum = role_enum
-        share.accept()
+        share.mark_pending()
         db.session.add(share)
+        db.session.flush()
+        create_scope_share_invite_notification(share)
+        notification_created = True
+        message = f"Invitation sent to {target.username}."
 
     try:
+        if not notification_created:
+            db.session.flush()
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
         return _share_error_response("Unable to update sharing settings. Please try again.", status=500)
 
-    return _share_success_response(scope, f"Scope shared with {target.username}.")
+    return _share_success_response(scope, message)
 
 
 @scopes_bp.route("/<int:scope_id>/share/<int:share_id>", methods=["DELETE"])
@@ -344,6 +365,7 @@ def revoke_scope_share(scope_id: int, share_id: int):
         return _share_success_response(scope, "Share already revoked.")
 
     share.mark_revoked()
+    resolve_invite_notifications(share, NotificationStatus.REJECTED)
 
     try:
         db.session.commit()
@@ -352,6 +374,40 @@ def revoke_scope_share(scope_id: int, share_id: int):
         return _share_error_response("Unable to revoke access. Please try again.", status=500)
 
     return _share_success_response(scope, "Access revoked.")
+
+
+@scopes_bp.route("/<int:scope_id>/share/<int:share_id>/resend", methods=["POST"])
+def resend_scope_share(scope_id: int, share_id: int):
+    """Resend an invitation to a collaborator."""
+
+    scope = Scope.query.get_or_404(scope_id)
+    if not user_owns_scope(g.user, scope):
+        return _share_error_response("You do not have permission to manage sharing for this scope.", status=403)
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _share_error_response(csrf_message or "Invalid CSRF token.")
+
+    share = ScopeShare.query.get_or_404(share_id)
+    if share.scope_id != scope.id:
+        return _share_error_response("That share entry does not belong to this scope.", status=404)
+    if share.status_enum == ScopeShareStatus.ACCEPTED:
+        return _share_error_response("That collaborator already has access to this scope.")
+
+    share.mark_pending()
+    share.inviter_id = g.user.id
+    db.session.flush()
+    create_scope_share_invite_notification(share, resend=True)
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _share_error_response("Unable to resend the invitation. Please try again.", status=500)
+
+    collaborator_name = share.user.username if share.user else "collaborator"
+    return _share_success_response(scope, f"Invitation resent to {collaborator_name}.")
 
 
 @scopes_bp.route("/<int:scope_id>/share/self", methods=["DELETE"])
@@ -374,6 +430,8 @@ def reject_scope_share(scope_id: int):
         return _share_error_response("You do not have access to this scope.", status=404)
 
     share.mark_rejected()
+    resolve_invite_notifications(share, NotificationStatus.REJECTED)
+    create_scope_share_response_notification(share, status=NotificationStatus.REJECTED, actor=g.user)
 
     try:
         db.session.commit()

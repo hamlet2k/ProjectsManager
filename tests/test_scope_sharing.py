@@ -7,6 +7,7 @@ from app import app, db
 from models.scope import Scope
 from models.user import User
 from models.scope_share import ScopeShare, ScopeShareStatus
+from models.notification import Notification, NotificationStatus, NotificationType
 from services.scope_service import get_user_scopes, user_can_access_scope
 
 
@@ -85,17 +86,57 @@ class ScopeSharingTestCase(unittest.TestCase):
         with app.app_context():
             shares = ScopeShare.query.filter_by(scope_id=self.scope_id).all()
             self.assertEqual(len(shares), 1)
-            self.assertEqual(shares[0].user_id, self.collaborator_id)
-            self.assertEqual(shares[0].status_enum, ScopeShareStatus.ACCEPTED)
+            share = shares[0]
+            self.assertEqual(share.user_id, self.collaborator_id)
+            self.assertEqual(share.status_enum, ScopeShareStatus.PENDING)
+
+            collaborator = User.query.get(self.collaborator_id)
+            scopes = get_user_scopes(collaborator)
+            self.assertFalse(scopes)
+
+            notifications = Notification.query.filter_by(user_id=self.collaborator_id).all()
+            self.assertEqual(len(notifications), 1)
+            invite_notification = notifications[0]
+            self.assertTrue(invite_notification.requires_action)
+            self.assertEqual(invite_notification.status_enum, NotificationStatus.PENDING)
+
+        # Collaborator accepts the invitation via notifications
+        self._login(self.collaborator_id)
+        collaborator_token = self._fetch_csrf_token()
+
+        accept_response = self.client.post(
+            f"/notifications/{invite_notification.id}/accept",
+            json={"csrf_token": collaborator_token},
+        )
+        self.assertEqual(accept_response.status_code, 200)
+        accept_payload = accept_response.get_json()
+        self.assertTrue(accept_payload["success"])
+
+        with app.app_context():
+            share = ScopeShare.query.filter_by(scope_id=self.scope_id, user_id=self.collaborator_id).first()
+            self.assertIsNotNone(share)
+            self.assertEqual(share.status_enum, ScopeShareStatus.ACCEPTED)
 
             collaborator = User.query.get(self.collaborator_id)
             scopes = get_user_scopes(collaborator)
             self.assertEqual(len(scopes), 1)
             self.assertEqual(scopes[0].id, self.scope_id)
 
+            refreshed_notification = Notification.query.get(invite_notification.id)
+            self.assertIsNotNone(refreshed_notification)
+            self.assertEqual(refreshed_notification.status_enum, NotificationStatus.ACCEPTED)
+
+            owner_notifications = Notification.query.filter_by(user_id=self.owner_id).all()
+            self.assertTrue(
+                any(
+                    note.notification_type == NotificationType.SCOPE_SHARE_RESPONSE.value
+                    and note.status_enum == NotificationStatus.ACCEPTED
+                    for note in owner_notifications
+                )
+            )
+
         # Collaborator leaves the scope
         self._login(self.collaborator_id)
-        collaborator_token = self._fetch_csrf_token()
 
         leave_response = self.client.delete(
             f"/scope/{self.scope_id}/share/self",
@@ -117,3 +158,12 @@ class ScopeSharingTestCase(unittest.TestCase):
 
             scope = Scope.query.get(self.scope_id)
             self.assertFalse(user_can_access_scope(collaborator, scope))
+
+            owner_notifications = Notification.query.filter_by(user_id=self.owner_id).all()
+            self.assertTrue(
+                any(
+                    note.notification_type == NotificationType.SCOPE_SHARE_RESPONSE.value
+                    and note.status_enum == NotificationStatus.REJECTED
+                    for note in owner_notifications
+                )
+            )

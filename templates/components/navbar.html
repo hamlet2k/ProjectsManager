@@ -27,6 +27,57 @@
       #}
 
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
+        {% if g.user %}
+        {% set summary = notification_summary or {} %}
+        <li class="nav-item dropdown" data-notifications-root>
+          <button
+            class="btn btn-link nav-link position-relative"
+            type="button"
+            id="notificationDropdown"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            data-notification-toggle
+          >
+            <i class="bi bi-bell" aria-hidden="true"></i>
+            <span class="visually-hidden">Notifications</span>
+            {% if summary.pending_count %}
+            <span
+              class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger"
+              data-notification-count
+            >
+              {{ summary.pending_count }}
+            </span>
+            {% endif %}
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-0 shadow" aria-labelledby="notificationDropdown">
+            <div class="list-group list-group-flush" data-notification-list>
+              {% set pending = summary.pending or [] %}
+              {% set pending_ids = pending | map(attribute='id') | list %}
+              {% set recent = summary.recent or [] %}
+              {% if pending or recent %}
+                {% for note in pending %}
+                  {% with notification=note, compact=True %}
+                    {% include 'partials/notification_item.html' %}
+                  {% endwith %}
+                {% endfor %}
+                {% for note in recent %}
+                  {% if note.id not in pending_ids %}
+                    {% with notification=note, compact=True %}
+                      {% include 'partials/notification_item.html' %}
+                    {% endwith %}
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <div class="p-3 text-muted small" data-notification-empty>No notifications yet.</div>
+              {% endif %}
+            </div>
+            <div class="border-top text-center">
+              <a class="dropdown-item" href="{{ url_for('notifications.list_notifications') }}">View all notifications</a>
+            </div>
+          </div>
+          <input type="hidden" data-notification-csrf value="{{ summary.csrf_token or '' }}">
+        </li>
+        {% endif %}
         {% if g.scope and g.user and g.scope.owner_id == g.user.id %}
         {% set share_summary = g.scope.share_summary if g.scope.share_summary is defined else None %}
         {% set share_count = share_summary.accepted if share_summary else 0 %}

@@ -63,6 +63,12 @@
             handleRemoveShare(removeButton);
             return;
         }
+        const resendButton = event.target.closest('[data-share-resend]');
+        if (resendButton) {
+            event.preventDefault();
+            handleResendShare(resendButton);
+            return;
+        }
         const leaveButton = event.target.closest('.scope-leave-btn');
         if (leaveButton) {
             event.preventDefault();
@@ -228,6 +234,52 @@
             });
     }
 
+    function handleResendShare(button) {
+        const shareId = button.dataset.shareResend;
+        const scopeId = button.dataset.scopeId;
+        if (!shareId || !scopeId) {
+            return;
+        }
+        disableShareAction(button, true);
+        fetch(`/scope/${scopeId}/share/${shareId}/resend`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ csrf_token: readCsrfToken() }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                if (data && data.csrf_token) {
+                    updateCsrfToken(data.csrf_token);
+                }
+                if (!data) {
+                    throw new Error('Invalid response payload.');
+                }
+                if (!ok || data.success !== true) {
+                    showError(data.message || 'Unable to resend the invitation.');
+                    return;
+                }
+                renderShareModal(data.scope || {}, data.shares || []);
+                showSuccess(data.message || 'Invitation resent.');
+                updateScopeShareUI(data.scope || {});
+            })
+            .catch((error) => {
+                console.error('Unable to resend invitation.', error);
+                showError('Unable to resend the invitation. Please try again.');
+            })
+            .finally(() => {
+                disableShareAction(button, false);
+            });
+    }
+
     function handleLeaveScope(button) {
         const scopeId = button.dataset.scopeId;
         if (!scopeId) {
@@ -350,16 +402,24 @@
                 meta.textContent = `@${username}`;
                 details.appendChild(meta);
             }
-            if (share.status === 'pending') {
-                const pending = document.createElement('div');
-                pending.className = 'text-warning small';
-                pending.textContent = 'Pending acceptance';
-                details.appendChild(pending);
+            if (share.status_label) {
+                const statusLine = document.createElement('div');
+                statusLine.className = 'small text-muted';
+                statusLine.textContent = `Status: ${share.status_label}`;
+                details.appendChild(statusLine);
             }
             item.appendChild(details);
 
             const actions = document.createElement('div');
             actions.className = 'd-flex align-items-center gap-2';
+            if (share.status_label) {
+                const statusBadge = document.createElement('span');
+                statusBadge.className = `badge ${share.status_badge || 'text-bg-secondary'}`;
+                statusBadge.textContent = share.status_label;
+                statusBadge.setAttribute('data-share-status', share.status || '');
+                actions.appendChild(statusBadge);
+            }
+
             const roleBadge = document.createElement('span');
             roleBadge.className = 'badge text-bg-secondary text-capitalize';
             roleBadge.textContent = share.role === 'viewer' ? 'Viewer' : 'Editor';
@@ -370,6 +430,18 @@
                 selfBadge.className = 'badge text-bg-info';
                 selfBadge.textContent = 'You';
                 actions.appendChild(selfBadge);
+            }
+
+            if (share.can_resend) {
+                const resendButton = document.createElement('button');
+                resendButton.type = 'button';
+                resendButton.className = 'btn btn-outline-primary btn-sm';
+                resendButton.setAttribute('data-share-resend', share.id);
+                resendButton.setAttribute('data-scope-id', state.currentScopeId || '');
+                resendButton.innerHTML = '<i class="bi bi-arrow-clockwise" aria-hidden="true"></i>'; // icon
+                resendButton.setAttribute('aria-label', `Resend invitation to ${displayName || username}`);
+                resendButton.title = 'Resend invitation';
+                actions.appendChild(resendButton);
             }
 
             if (share.can_remove && !share.is_self) {

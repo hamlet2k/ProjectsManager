@@ -77,7 +77,9 @@ from services.scope_service import (
     user_owns_scope,
     user_scope_role,
 )
+from services.notification_service import build_notifications_summary
 from routes.scopes import scopes_bp
+from routes.notifications import notifications_bp
 
 LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
@@ -93,6 +95,7 @@ GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
 # > flask db upgrade
 migrate = Migrate(app, db)
 app.register_blueprint(scopes_bp)
+app.register_blueprint(notifications_bp)
 
 # User Authentication
 # ------------------------------
@@ -113,8 +116,13 @@ def require_login():
     user_id = session.get("user_id")
     if user_id:
         g.user = User.query.get(user_id)
+        if g.user is not None:
+            g.notification_summary = build_notifications_summary(g.user)
+        else:
+            g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
     else:
         g.user = None
+        g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
         if request.endpoint and request.endpoint not in login_exempt_routes:
             flash("Please login", "info")
             return redirect(url_for("login", next=request.url))
@@ -159,6 +167,7 @@ def inject_forms():
         "login_form": LoginForm(),
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
+        "notification_summary": getattr(g, "notification_summary", None),
     }
 
 
