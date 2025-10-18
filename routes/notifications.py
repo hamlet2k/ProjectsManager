@@ -1,11 +1,10 @@
 """Notification management routes."""
 from __future__ import annotations
 
-from flask import Blueprint, abort, g, jsonify, render_template, request
 import logging
-from flask_wtf.csrf import generate_csrf, validate_csrf
+from flask import Blueprint, abort, g, jsonify, render_template, request
+from flask_wtf.csrf import generate_csrf
 from sqlalchemy.exc import SQLAlchemyError
-from wtforms.validators import ValidationError
 
 from database import db
 from services.notification_service import (
@@ -18,22 +17,9 @@ from services.notification_service import (
     serialize_notification,
     share_payload_for_user,
 )
+from routes import validate_request_csrf
 
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/notifications")
-
-
-def _validate_request_csrf(token: str | None) -> tuple[bool, str | None]:
-    """Validate CSRF tokens supplied with JSON payloads."""
-
-    if not token:
-        return False, "The CSRF token is missing."
-    try:
-        validate_csrf(token)
-    except ValidationError:
-        return False, "The CSRF token is invalid or has expired. Please refresh and try again."
-    except Exception:
-        return False, "The CSRF token is invalid."
-    return True, None
 
 
 def _json_error(message: str, *, status: int = 400):
@@ -104,7 +90,7 @@ def _handle_notification_action(notification_id: int, action):
         return _json_error("Authentication required.", status=401)
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _json_error(csrf_message or "Invalid CSRF token.")
 
@@ -162,7 +148,7 @@ def mark_notifications():
         return _json_error("Authentication required.", status=401)
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _json_error(csrf_message or "Invalid CSRF token.")
 

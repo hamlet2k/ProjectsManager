@@ -20,7 +20,7 @@ from flask_wtf.csrf import generate_csrf, validate_csrf
 from sqlalchemy.exc import SQLAlchemyError
 from wtforms.validators import ValidationError
 
-from routes import safe_redirect
+from routes import safe_redirect, validate_request_csrf
 
 from database import db
 from forms import ScopeForm
@@ -122,20 +122,6 @@ def _validate_csrf_token(form: ScopeForm, token: str | None) -> bool:
 def _csrf_token_value() -> str:
     """Return a fresh CSRF token for subsequent submissions."""
     return generate_csrf()
-
-
-def _validate_request_csrf(token: str | None) -> tuple[bool, str | None]:
-    """Validate CSRF tokens supplied with JSON payloads."""
-
-    if not token:
-        return False, "The CSRF token is missing."
-    try:
-        validate_csrf(token)
-    except ValidationError:
-        return False, "The CSRF token is invalid or has expired. Please refresh and try again."
-    except Exception:
-        return False, "The CSRF token is invalid."
-    return True, None
 
 
 def _scope_payload(scope: Scope) -> Dict[str, Any]:
@@ -271,7 +257,7 @@ def share_scope(scope_id: int):
         return _share_error_response("Only the scope owner can share it with others.", status=403)
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
 
@@ -346,7 +332,7 @@ def revoke_scope_share(scope_id: int, share_id: int):
         return _share_error_response("You do not have permission to revoke sharing for this scope.", status=403)
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
 
@@ -377,7 +363,7 @@ def resend_scope_share(scope_id: int, share_id: int):
         return _share_error_response("You do not have permission to manage sharing for this scope.", status=403)
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _share_error_response(csrf_message or "Invalid CSRF token.")
 
@@ -413,7 +399,7 @@ def reject_scope_share(scope_id: int):
         return _share_error_response("Scope owners cannot leave their own scopes.")
 
     payload = request.get_json(silent=True) or {}
-    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
     if not csrf_valid:
         return _share_error_response(csrf_message or "Invalid CSRF token.", status=400)
 
