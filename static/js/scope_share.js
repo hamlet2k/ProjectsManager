@@ -605,7 +605,7 @@
         if (!card || !card.parentElement) {
             return;
         }
-        card.parentElement.removeChild(card);
+        card.remove();
         const scopeList = document.querySelector('[data-scope-list]');
         const emptyState = document.querySelector('[data-scope-empty]');
         if (scopeList && scopeList.children.length === 0 && emptyState) {
