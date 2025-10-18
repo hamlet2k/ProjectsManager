@@ -1,6 +1,7 @@
 """Utilities for creating and presenting user notifications."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Iterable
 
 from flask_wtf.csrf import generate_csrf
@@ -125,11 +126,25 @@ def get_recent_notifications(user: User | None, *, limit: int = 10) -> list[Noti
     )
 
 
+def _format_notification_timestamp(value: datetime | None) -> str | None:
+    """Return a human-friendly timestamp for notification display."""
+
+    if value is None:
+        return None
+    month = value.strftime("%b")
+    day = value.day
+    year = value.year
+    hour = value.hour % 12 or 12
+    minute = value.minute
+    meridiem = "AM" if value.hour < 12 else "PM"
+    return f"{month} {day}, {year} at {hour}:{minute:02d} {meridiem}"
+
+
 def serialize_notification(notification: Notification) -> dict[str, object]:
     """Serialize a notification for API responses."""
 
     payload = notification.to_dict()
-    payload["created_display"] = notification.created_at.isoformat() if notification.created_at else None
+    payload["created_display"] = _format_notification_timestamp(notification.created_at)
     payload["status_label"] = notification.status.replace("_", " ").title()
     payload["action_required"] = notification.requires_action and notification.status_enum == NotificationStatus.PENDING
     badge_map = {
@@ -152,7 +167,14 @@ def build_notifications_summary(user: User | None) -> dict[str, object]:
     """Return aggregated notification data for template rendering."""
 
     pending = get_pending_notifications(user)
-    recent = get_recent_notifications(user)
+    pending_ids = {note.id for note in pending}
+    recent_candidates = get_recent_notifications(user)
+    recent = [
+        note
+        for note in recent_candidates
+        if note.id not in pending_ids
+        and not (note.requires_action and note.status_enum == NotificationStatus.PENDING)
+    ]
     return {
         "pending": serialize_notifications(pending),
         "recent": serialize_notifications(recent),

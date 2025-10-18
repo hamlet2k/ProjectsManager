@@ -46,17 +46,6 @@
                                         GitHub
                                     </span>
                                 {% endif %}
-                                {% if scope.owner_id == g.user.id %}
-                                    <span
-                                        class="badge text-bg-light text-muted{% if not scope.share_summary.accepted %} d-none{% endif %}"
-                                        data-share-indicator
-                                        data-scope-id="{{ scope.id }}"
-                                    >
-                                        Shared
-                                    </span>
-                                {% else %}
-                                    <span class="badge text-bg-light text-muted">Shared</span>
-                                {% endif %}
                             </div>
                             <div class="btn-group btn-group-sm" role="group" aria-label="Scope actions">
                                 <button

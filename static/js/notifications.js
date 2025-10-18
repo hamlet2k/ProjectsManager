@@ -3,6 +3,7 @@
 
     const state = {
         root: null,
+        dropdownMenu: null,
         dropdownList: null,
         countBadge: null,
         pagePending: null,
@@ -27,6 +28,9 @@
         }
 
         document.addEventListener('click', handleNotificationClick, true);
+        state.dropdownMenu = state.root ? state.root.querySelector('.notification-dropdown-menu') : null;
+        configureDropdownWidth();
+        window.addEventListener('resize', configureDropdownWidth);
     }
 
     function handleNotificationClick(event) {
@@ -122,12 +126,13 @@
         });
         if (!added) {
             const empty = document.createElement('div');
-            empty.className = 'p-3 text-muted small';
+            empty.className = 'notification-empty text-muted small';
             empty.textContent = 'No notifications yet.';
             empty.setAttribute('data-notification-empty', '');
             fragment.appendChild(empty);
         }
         state.dropdownList.appendChild(fragment);
+        configureDropdownWidth();
     }
 
     function renderPageLists(pending, recent) {
@@ -135,26 +140,20 @@
             return;
         }
         if (state.pagePending) {
-            renderList(
-                state.pagePending,
-                pending,
-                {
-                    emptyClass: 'p-4 text-muted text-center',
-                    emptyText: 'No pending notifications.',
-                    compact: false,
-                }
-            );
+            renderList(state.pagePending, pending, {
+                emptyClass: 'notification-empty text-muted text-center',
+                emptyText: 'No pending notifications.',
+                compact: false,
+                showActions: true,
+            });
         }
         if (state.pageHistory) {
-            renderList(
-                state.pageHistory,
-                recent,
-                {
-                    emptyClass: 'p-4 text-muted text-center',
-                    emptyText: 'No notifications yet.',
-                    compact: false,
-                }
-            );
+            renderList(state.pageHistory, recent, {
+                emptyClass: 'notification-empty text-muted text-center',
+                emptyText: 'No notifications yet.',
+                compact: false,
+                showActions: false,
+            });
         }
         const pagePendingBadge = document.querySelector('[data-notification-page-pending-count]');
         if (pagePendingBadge) {
@@ -177,57 +176,59 @@
             return;
         }
         const fragment = document.createDocumentFragment();
+        const showActions = options.showActions !== undefined ? Boolean(options.showActions) : true;
         items.forEach((item) => {
-            fragment.appendChild(buildNotificationElement(item, { compact: options.compact }));
+            fragment.appendChild(buildNotificationElement(item, { compact: options.compact, showActions }));
         });
         container.appendChild(fragment);
     }
 
     function buildNotificationElement(notification, options) {
         const compact = Boolean(options && options.compact);
+        const showActions = options && options.showActions !== undefined ? Boolean(options.showActions) : true;
         const item = document.createElement('div');
-        item.className = 'list-group-item';
+        item.className = 'notification-item';
         if (compact) {
-            item.classList.add('py-3');
+            item.classList.add('notification-item--compact');
         }
         item.dataset.notificationItem = String(notification.id);
         item.dataset.notificationStatus = notification.status || '';
 
         const row = document.createElement('div');
-        row.className = 'd-flex justify-content-between align-items-start gap-3';
+        row.className = 'notification-item__header d-flex justify-content-between align-items-start gap-3';
 
         const details = document.createElement('div');
-        details.className = 'flex-grow-1';
+        details.className = 'notification-item__details flex-grow-1';
         const title = document.createElement('div');
-        title.className = 'fw-semibold';
+        title.className = 'notification-item__title fw-semibold';
         title.textContent = notification.title || 'Notification';
         details.appendChild(title);
 
         if (notification.message) {
             const message = document.createElement('div');
-            message.className = 'small text-muted';
+            message.className = 'notification-item__message small text-muted';
             message.textContent = notification.message;
             details.appendChild(message);
         }
 
         if (!compact && notification.created_display) {
             const timestamp = document.createElement('div');
-            timestamp.className = 'small text-muted';
+            timestamp.className = 'notification-item__timestamp small text-muted';
             timestamp.textContent = formatTimestamp(notification.created_display);
             details.appendChild(timestamp);
         }
 
         const badge = document.createElement('span');
-        badge.className = `badge ${notification.status_badge || 'text-bg-secondary'}`;
+        badge.className = `notification-item__status badge ${notification.status_badge || 'text-bg-secondary'}`;
         badge.textContent = notification.status_label || 'Pending';
 
         row.appendChild(details);
         row.appendChild(badge);
         item.appendChild(row);
 
-        if (notification.action_required) {
+        if (showActions && notification.action_required) {
             const actions = document.createElement('div');
-            actions.className = 'mt-2 d-flex flex-wrap gap-2';
+            actions.className = 'notification-item__actions mt-2 d-flex flex-wrap gap-2';
 
             const acceptButton = document.createElement('button');
             acceptButton.type = 'button';
@@ -257,7 +258,7 @@
         if (count > 0) {
             if (!badge) {
                 badge = document.createElement('span');
-                badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger';
+                badge.className = 'position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge';
                 badge.setAttribute('data-notification-count', '');
                 state.root.querySelector('[data-notification-toggle]')?.appendChild(badge);
             }
@@ -298,6 +299,33 @@
             return value;
         }
         return date.toLocaleString();
+    }
+
+    function configureDropdownWidth() {
+        if (!state.root) {
+            return;
+        }
+        if (!state.dropdownMenu) {
+            state.dropdownMenu = state.root.querySelector('.notification-dropdown-menu');
+        }
+        const dropdownMenu = state.dropdownMenu;
+        if (!dropdownMenu) {
+            return;
+        }
+        const taskContainer =
+            document.querySelector('[data-task-list]') ||
+            document.querySelector('[data-task-board]') ||
+            document.querySelector('[data-task-groups]') ||
+            document.querySelector('#task-columns') ||
+            document.querySelector('#task-list') ||
+            null;
+        const mainContainer = document.querySelector('main.container');
+        const referenceWidth = taskContainer?.clientWidth || mainContainer?.clientWidth || window.innerWidth;
+        const minWidth = 260;
+        const maxWidth = Math.max(minWidth, Math.floor(referenceWidth * 0.8));
+        dropdownMenu.style.setProperty('--notifications-overlay-max-width', `${maxWidth}px`);
+        dropdownMenu.style.maxWidth = `${maxWidth}px`;
+        dropdownMenu.style.width = 'auto';
     }
 
     function notifySuccess(message) {

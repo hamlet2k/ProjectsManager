@@ -29,7 +29,7 @@
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
         {% if g.user %}
         {% set summary = notification_summary or {} %}
-        <li class="nav-item dropdown" data-notifications-root>
+        <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
           <button
             class="btn btn-link nav-link position-relative"
             type="button"
@@ -42,15 +42,15 @@
             <span class="visually-hidden">Notifications</span>
             {% if summary.pending_count %}
             <span
-              class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger"
+              class="position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge"
               data-notification-count
             >
               {{ summary.pending_count }}
             </span>
             {% endif %}
           </button>
-          <div class="dropdown-menu dropdown-menu-end p-0 shadow" aria-labelledby="notificationDropdown">
-            <div class="list-group list-group-flush" data-notification-list>
+          <div class="dropdown-menu dropdown-menu-end p-0 shadow notification-dropdown-menu" aria-labelledby="notificationDropdown">
+            <div class="notification-list" data-notification-list>
               {% set pending = summary.pending or [] %}
               {% set pending_ids = pending | map(attribute='id') | list %}
               {% set recent = summary.recent or [] %}
@@ -68,10 +68,10 @@
                   {% endif %}
                 {% endfor %}
               {% else %}
-                <div class="p-3 text-muted small" data-notification-empty>No notifications yet.</div>
+                <div class="notification-empty text-muted small" data-notification-empty>No notifications yet.</div>
               {% endif %}
             </div>
-            <div class="border-top text-center">
+            <div class="notification-dropdown-footer text-center">
               <a class="dropdown-item" href="{{ url_for('notifications.list_notifications') }}">View all notifications</a>
             </div>
           </div>
