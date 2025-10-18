@@ -5,10 +5,13 @@
         root: null,
         dropdownMenu: null,
         dropdownList: null,
+        dropdownToggle: null,
         countBadge: null,
         pagePending: null,
         pageHistory: null,
         csrfInputs: [],
+        dropdownOpen: false,
+        markingRead: false,
     };
 
     document.addEventListener('DOMContentLoaded', initializeNotifications);
@@ -28,9 +31,22 @@
         }
 
         document.addEventListener('click', handleNotificationClick, true);
-        state.dropdownMenu = state.root ? state.root.querySelector('.notification-dropdown-menu') : null;
+        if (state.root) {
+            state.dropdownMenu = state.root.querySelector('.notification-dropdown-menu');
+            state.dropdownToggle = state.root.querySelector('[data-notification-toggle]');
+            if (state.dropdownToggle) {
+                state.dropdownToggle.addEventListener('shown.bs.dropdown', handleDropdownShown);
+                state.dropdownToggle.addEventListener('hidden.bs.dropdown', handleDropdownHidden);
+            }
+        }
         configureDropdownWidth();
         window.addEventListener('resize', configureDropdownWidth);
+        if (state.pagePending || state.pageHistory) {
+            const ids = collectNotificationIds(state.pagePending, state.pageHistory);
+            if (ids.length) {
+                markNotificationsAsRead(ids);
+            }
+        }
     }
 
     function handleNotificationClick(event) {
@@ -44,6 +60,24 @@
         if (rejectButton) {
             event.preventDefault();
             handleNotificationAction(rejectButton, 'reject');
+        }
+    }
+
+    function handleDropdownShown() {
+        state.dropdownOpen = true;
+        requestAnimationFrame(() => {
+            configureDropdownWidth();
+            const ids = collectNotificationIds(state.dropdownList);
+            if (ids.length) {
+                markNotificationsAsRead(ids);
+            }
+        });
+    }
+
+    function handleDropdownHidden() {
+        state.dropdownOpen = false;
+        if (state.dropdownMenu) {
+            state.dropdownMenu.style.width = '';
         }
     }
 
@@ -95,7 +129,9 @@
         renderDropdown(data.pending || [], data.recent || []);
         renderPageLists(data.pending || [], data.recent || []);
         const badgeCount =
-            typeof data.new_count === 'number'
+            typeof data.badge_count === 'number'
+                ? data.badge_count
+                : typeof data.new_count === 'number'
                 ? data.new_count
                 : typeof data.pending_count === 'number'
                 ? data.pending_count
@@ -199,6 +235,7 @@
         }
         item.dataset.notificationItem = String(notification.id);
         item.dataset.notificationStatus = notification.status || '';
+        item.dataset.notificationRead = notification.is_read ? 'true' : 'false';
 
         const row = document.createElement('div');
         row.className = 'notification-item__header d-flex justify-content-between align-items-start gap-3';
@@ -336,7 +373,13 @@
         dropdownMenu.style.setProperty('--notifications-overlay-max-width', `${maxWidth}px`);
         dropdownMenu.style.maxWidth = `${maxWidth}px`;
         dropdownMenu.style.minWidth = `${effectiveMinWidth}px`;
-        dropdownMenu.style.width = 'max-content';
+        if (state.dropdownOpen) {
+            const contentWidth = Math.ceil(dropdownMenu.scrollWidth || 0);
+            const targetWidth = Math.min(maxWidth, Math.max(effectiveMinWidth, contentWidth));
+            dropdownMenu.style.width = `${targetWidth}px`;
+        } else {
+            dropdownMenu.style.width = '';
+        }
     }
 
     function notifySuccess(message) {
@@ -349,5 +392,76 @@
         if (typeof displayFlashMessage === 'function') {
             displayFlashMessage(message, 'danger');
         }
+    }
+
+    function collectNotificationIds(...containers) {
+        const ids = new Set();
+        containers.forEach((container) => {
+            if (!container) {
+                return;
+            }
+            container.querySelectorAll('[data-notification-item]').forEach((element) => {
+                if (element.dataset.notificationRead === 'true') {
+                    return;
+                }
+                const identifier = element.dataset.notificationItem;
+                if (identifier) {
+                    const parsed = Number.parseInt(identifier, 10);
+                    if (!Number.isNaN(parsed)) {
+                        ids.add(parsed);
+                    }
+                }
+            });
+        });
+        return Array.from(ids.values());
+    }
+
+    function markNotificationsAsRead(notificationIds) {
+        if (!notificationIds || notificationIds.length === 0) {
+            return;
+        }
+        if (state.markingRead) {
+            return;
+        }
+        const csrfToken = readCsrfToken();
+        if (!csrfToken) {
+            return;
+        }
+        state.markingRead = true;
+        fetch('/notifications/mark-read', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({
+                csrf_token: csrfToken,
+                notification_ids: notificationIds,
+            }),
+        })
+            .then((response) =>
+                response
+                    .json()
+                    .catch(() => ({}))
+                    .then((data) => ({ ok: response.ok, data }))
+            )
+            .then(({ ok, data }) => {
+                if (!ok || !data) {
+                    throw new Error('Unable to mark notifications.');
+                }
+                if (data.csrf_token) {
+                    updateCsrfToken(data.csrf_token);
+                }
+                if (data.success) {
+                    applyNotificationUpdate(data);
+                }
+            })
+            .catch((error) => {
+                console.error('Failed to mark notifications as read.', error);
+            })
+            .finally(() => {
+                state.markingRead = false;
+            });
     }
 })();

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from flask_wtf.csrf import generate_csrf
 
@@ -147,6 +147,7 @@ def serialize_notification(notification: Notification) -> dict[str, object]:
     payload["created_display"] = _format_notification_timestamp(notification.created_at)
     payload["status_label"] = notification.status.replace("_", " ").title()
     payload["action_required"] = notification.requires_action and notification.status_enum == NotificationStatus.PENDING
+    payload["is_read"] = notification.read_at is not None
     badge_map = {
         NotificationStatus.PENDING.value: "text-bg-warning",
         NotificationStatus.ACCEPTED.value: "text-bg-success",
@@ -175,19 +176,48 @@ def build_notifications_summary(user: User | None) -> dict[str, object]:
         if note.id not in pending_ids
         and not (note.requires_action and note.status_enum == NotificationStatus.PENDING)
     ]
-    new_ids = {note.id for note in pending if note.read_at is None}
-    for note in recent_candidates:
-        if note.read_at is None:
-            new_ids.add(note.id)
+    unread_non_pending = {
+        note.id
+        for note in recent_candidates
+        if note.read_at is None
+    }
+    # Avoid double-counting pending items in the unread pool when computing the badge count.
+    unread_non_pending.difference_update(pending_ids)
     serialized_pending = serialize_notifications(pending)
     serialized_recent = serialize_notifications(recent)
+    badge_count = len(serialized_pending) + len(unread_non_pending)
     return {
         "pending": serialized_pending,
         "recent": serialized_recent,
         "pending_count": len(serialized_pending),
-        "new_count": len(new_ids),
+        "unread_count": len(unread_non_pending),
+        "new_count": badge_count,
+        "badge_count": badge_count,
         "csrf_token": generate_csrf() if user else None,
     }
+
+
+def mark_notifications_read(
+    user: User | None,
+    notification_ids: Sequence[int] | None = None,
+) -> int:
+    """Mark the provided notifications as read for the given user."""
+
+    if user is None:
+        return 0
+
+    query = Notification.query.filter_by(user_id=user.id, read_at=None)
+    if notification_ids is not None:
+        ids = [int(identifier) for identifier in notification_ids if identifier is not None]
+        if not ids:
+            return 0
+        query = query.filter(Notification.id.in_(ids))
+
+    updated = 0
+    for notification in query:
+        notification.mark_read()
+        updated += 1
+    return updated
 
 
 def accept_share_invitation(notification: Notification, acting_user: User) -> ScopeShare:

@@ -1,7 +1,7 @@
 {% set notif = notification %}
 {% if notif %}
 {% set allow_actions = allow_actions if allow_actions is defined else True %}
-<div class="notification-item{% if compact %} notification-item--compact{% endif %}" data-notification-item="{{ notif.id }}" data-notification-status="{{ notif.status }}">
+<div class="notification-item{% if compact %} notification-item--compact{% endif %}" data-notification-item="{{ notif.id }}" data-notification-status="{{ notif.status }}" data-notification-read="{{ 'true' if notif.is_read else 'false' }}">
     <div class="notification-item__header d-flex justify-content-between align-items-start gap-3">
         <div class="notification-item__details flex-grow-1">
             <div class="notification-item__title fw-semibold">{{ notif.title }}</div>

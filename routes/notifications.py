@@ -11,6 +11,7 @@ from services.notification_service import (
     accept_share_invitation,
     build_notifications_summary,
     load_notification,
+    mark_notifications_read,
     reject_share_invitation,
     scope_payload_from_share,
     serialize_notification,
@@ -56,6 +57,16 @@ def list_notifications():
     if g.user is None:
         abort(401)
     summary = build_notifications_summary(g.user)
+    ids_to_mark = [note.get("id") for note in summary.get("pending", [])]
+    ids_to_mark.extend(note.get("id") for note in summary.get("recent", []))
+    try:
+        updated = mark_notifications_read(g.user, ids_to_mark)
+        if updated:
+            db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+    summary = build_notifications_summary(g.user)
+    g.notification_summary = summary
     return render_template(
         "notifications.html",
         notifications=summary.get("recent", []),
@@ -73,6 +84,7 @@ def list_notifications_json():
     if g.user is None:
         return _json_error("Authentication required.", status=401)
     summary = build_notifications_summary(g.user)
+    g.notification_summary = summary
     return jsonify(
         {
             "success": True,
@@ -80,6 +92,7 @@ def list_notifications_json():
             "recent": summary.get("recent", []),
             "pending_count": summary.get("pending_count", 0),
             "new_count": summary.get("new_count", 0),
+            "badge_count": summary.get("badge_count", summary.get("new_count", 0)),
             "csrf_token": summary.get("csrf_token"),
         }
     )
@@ -120,6 +133,7 @@ def _handle_notification_action(notification_id: int, action):
         return _json_error("Unable to update the notification. Please try again.", status=500)
 
     summary = build_notifications_summary(g.user)
+    g.notification_summary = summary
     response_payload = {
         "success": True,
         "message": message,
@@ -130,9 +144,57 @@ def _handle_notification_action(notification_id: int, action):
         "pending_count": summary.get("pending_count", 0),
         "recent": summary.get("recent", []),
         "new_count": summary.get("new_count", 0),
+        "badge_count": summary.get("badge_count", summary.get("new_count", 0)),
         "csrf_token": summary.get("csrf_token"),
     }
     return jsonify(response_payload)
+
+
+@notifications_bp.route("/mark-read", methods=["POST"])
+def mark_notifications():
+    """Mark the supplied notifications as read for the current user."""
+
+    if g.user is None:
+        return _json_error("Authentication required.", status=401)
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = _validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _json_error(csrf_message or "Invalid CSRF token.")
+
+    raw_ids = payload.get("notification_ids")
+    if raw_ids is None:
+        notification_ids = None
+    elif isinstance(raw_ids, list):
+        notification_ids = []
+        for identifier in raw_ids:
+            try:
+                notification_ids.append(int(identifier))
+            except (TypeError, ValueError):
+                continue
+    else:
+        return _json_error("Invalid notification payload.")
+
+    try:
+        mark_notifications_read(g.user, notification_ids)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _json_error("Unable to update notifications.", status=500)
+
+    summary = build_notifications_summary(g.user)
+    g.notification_summary = summary
+    return jsonify(
+        {
+            "success": True,
+            "pending": summary.get("pending", []),
+            "recent": summary.get("recent", []),
+            "pending_count": summary.get("pending_count", 0),
+            "new_count": summary.get("new_count", 0),
+            "badge_count": summary.get("badge_count", summary.get("new_count", 0)),
+            "csrf_token": summary.get("csrf_token"),
+        }
+    )
 
 
 @notifications_bp.route("/<int:notification_id>/accept", methods=["POST"])

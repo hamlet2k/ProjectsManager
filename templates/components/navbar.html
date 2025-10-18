@@ -29,7 +29,7 @@
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
         {% if g.user %}
         {% set summary = notification_summary or {} %}
-        {% set notification_count = summary.new_count if summary.new_count is defined else summary.pending_count %}
+        {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
         <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
           <button
             class="btn btn-link nav-link position-relative"
