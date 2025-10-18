@@ -175,10 +175,17 @@ def build_notifications_summary(user: User | None) -> dict[str, object]:
         if note.id not in pending_ids
         and not (note.requires_action and note.status_enum == NotificationStatus.PENDING)
     ]
+    new_ids = {note.id for note in pending if note.read_at is None}
+    for note in recent_candidates:
+        if note.read_at is None:
+            new_ids.add(note.id)
+    serialized_pending = serialize_notifications(pending)
+    serialized_recent = serialize_notifications(recent)
     return {
-        "pending": serialize_notifications(pending),
-        "recent": serialize_notifications(recent),
-        "pending_count": len(pending),
+        "pending": serialized_pending,
+        "recent": serialized_recent,
+        "pending_count": len(serialized_pending),
+        "new_count": len(new_ids),
         "csrf_token": generate_csrf() if user else None,
     }
 

@@ -119,10 +119,22 @@ def require_login():
         if g.user is not None:
             g.notification_summary = build_notifications_summary(g.user)
         else:
-            g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
+            g.notification_summary = {
+                "pending": [],
+                "recent": [],
+                "pending_count": 0,
+                "new_count": 0,
+                "csrf_token": None,
+            }
     else:
         g.user = None
-        g.notification_summary = {"pending": [], "recent": [], "pending_count": 0, "csrf_token": None}
+        g.notification_summary = {
+            "pending": [],
+            "recent": [],
+            "pending_count": 0,
+            "new_count": 0,
+            "csrf_token": None,
+        }
         if request.endpoint and request.endpoint not in login_exempt_routes:
             flash("Please login", "info")
             return redirect(url_for("login", next=request.url))

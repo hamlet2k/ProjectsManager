@@ -29,6 +29,7 @@
       <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
         {% if g.user %}
         {% set summary = notification_summary or {} %}
+        {% set notification_count = summary.new_count if summary.new_count is defined else summary.pending_count %}
         <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
           <button
             class="btn btn-link nav-link position-relative"
@@ -38,14 +39,14 @@
             aria-expanded="false"
             data-notification-toggle
           >
-            <i class="bi bi-bell" aria-hidden="true"></i>
+            <i class="bi bi-bell fs-5" aria-hidden="true"></i>
             <span class="visually-hidden">Notifications</span>
-            {% if summary.pending_count %}
+            {% if notification_count %}
             <span
               class="position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge"
               data-notification-count
             >
-              {{ summary.pending_count }}
+              {{ notification_count }}
             </span>
             {% endif %}
           </button>

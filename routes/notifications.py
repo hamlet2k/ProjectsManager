@@ -61,6 +61,7 @@ def list_notifications():
         notifications=summary.get("recent", []),
         pending=summary.get("pending", []),
         pending_count=summary.get("pending_count", 0),
+        new_count=summary.get("new_count", 0),
         csrf_token=summary.get("csrf_token"),
     )
 
@@ -78,6 +79,7 @@ def list_notifications_json():
             "pending": summary.get("pending", []),
             "recent": summary.get("recent", []),
             "pending_count": summary.get("pending_count", 0),
+            "new_count": summary.get("new_count", 0),
             "csrf_token": summary.get("csrf_token"),
         }
     )
@@ -127,6 +129,7 @@ def _handle_notification_action(notification_id: int, action):
         "pending": summary.get("pending", []),
         "pending_count": summary.get("pending_count", 0),
         "recent": summary.get("recent", []),
+        "new_count": summary.get("new_count", 0),
         "csrf_token": summary.get("csrf_token"),
     }
     return jsonify(response_payload)

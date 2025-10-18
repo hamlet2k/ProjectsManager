@@ -94,7 +94,13 @@
     function applyNotificationUpdate(data) {
         renderDropdown(data.pending || [], data.recent || []);
         renderPageLists(data.pending || [], data.recent || []);
-        updateCountBadges(data.pending_count || 0);
+        const badgeCount =
+            typeof data.new_count === 'number'
+                ? data.new_count
+                : typeof data.pending_count === 'number'
+                ? data.pending_count
+                : 0;
+        updateCountBadges(badgeCount);
         if (data.scope) {
             document.dispatchEvent(
                 new CustomEvent('scope:updated', {
@@ -264,8 +270,11 @@
             }
             badge.textContent = String(count);
             state.countBadge = badge;
-        } else if (badge && badge.parentElement) {
-            badge.parentElement.removeChild(badge);
+        } else {
+            state.countBadge = badge || state.countBadge;
+            if (state.countBadge && state.countBadge.parentElement) {
+                state.countBadge.parentElement.removeChild(state.countBadge);
+            }
             state.countBadge = null;
         }
     }
@@ -323,9 +332,11 @@
         const referenceWidth = taskContainer?.clientWidth || mainContainer?.clientWidth || window.innerWidth;
         const minWidth = 260;
         const maxWidth = Math.max(minWidth, Math.floor(referenceWidth * 0.8));
+        const effectiveMinWidth = Math.min(maxWidth, Math.max(minWidth, 320));
         dropdownMenu.style.setProperty('--notifications-overlay-max-width', `${maxWidth}px`);
         dropdownMenu.style.maxWidth = `${maxWidth}px`;
-        dropdownMenu.style.width = 'auto';
+        dropdownMenu.style.minWidth = `${effectiveMinWidth}px`;
+        dropdownMenu.style.width = 'max-content';
     }
 
     function notifySuccess(message) {
