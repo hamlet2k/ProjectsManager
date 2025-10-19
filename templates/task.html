@@ -64,6 +64,36 @@
         gap: 0.25rem;
     }
 
+    .task-filter-collapse .form-check.form-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding-left: 0;
+        flex-wrap: wrap;
+    }
+
+    @media (min-width: 768px) {
+        .task-filter-collapse .form-check.form-switch {
+            flex-wrap: nowrap;
+        }
+    }
+
+    .task-filter-collapse .form-check.form-switch .form-check-input {
+        margin-left: 0;
+        margin-top: 0;
+        flex-shrink: 0;
+        float: none;
+        align-self: center;
+        vertical-align: middle;
+        height: 15px;
+        min-height: 15px;
+    }
+
+    .task-filter-collapse .form-check.form-switch .form-check-label {
+        margin-bottom: 0;
+        min-width: 0;
+    }
+
     .quick-task-input {
         height: 2.75rem;
         min-height: 2.75rem;
