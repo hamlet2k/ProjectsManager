@@ -2368,89 +2368,95 @@ def edit_task(id):
 
 @app.route("/<string:item_type>/delete/<int:id>", methods=["POST"])
 def delete_item(item_type, id):
-    if item_type == "scope" or item_type == "task":
-        try:
-            # TODO: This may need to be adjusted for CamelCase
-            item_class = globals().get(item_type.capitalize())
-            item = item_class.query.get_or_404(id)
+    accept = request.accept_mimetypes
+    wants_json = (
+        request.is_json
+        or request.headers.get("X-Requested-With", "").lower() == "xmlhttprequest"
+        or accept.best == "application/json"
+        or accept["application/json"] >= accept["text/html"]
+    )
 
-            if item_type == "scope":
-                if not user_owns_scope(g.user, item):
-                    return (
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "You do not have permission to delete this scope.",
-                            }
-                        ),
-                        403,
-                    )
-            elif item_type == "task":
-                if (
-                    item.scope is None
-                    or not user_can_access_scope(g.user, item.scope)
-                    or not user_can_edit_task(g.user, item)
-                ):
-                    return (
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "You do not have permission to delete this task.",
-                            }
-                        ),
-                        403,
-                    )
-                if item.github_issue_is_open:
-                    return (
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "Task cannot be deleted until its linked GitHub issue is closed.",
-                            }
-                        ),
-                        400,
-                    )
-                github_context = (
-                    _task_github_context(item, g.user) if item.github_issue_number else None
+    if item_type not in {"scope", "task"}:
+        return "Invalid item type", 404
+
+    fallback_endpoint = "scopes.list_scopes" if item_type == "scope" else "task"
+
+    def respond(success: bool, message: str, *, status: int = 200, category: str | None = None):
+        if wants_json:
+            payload = {"success": success, "message": message}
+            if category and not success:
+                payload["category"] = category
+            response = jsonify(payload)
+            return (response, status) if status != 200 else response
+        flash(message, category or ("success" if success else "danger"))
+        return safe_redirect(request.referrer, fallback_endpoint)
+
+    try:
+        # TODO: This may need to be adjusted for CamelCase
+        item_class = globals().get(item_type.capitalize())
+        item = item_class.query.get_or_404(id)
+
+        if item_type == "scope":
+            if not user_owns_scope(g.user, item):
+                return respond(
+                    False,
+                    "You do not have permission to delete this scope.",
+                    status=403,
+                    category="danger",
                 )
-                if github_context and item.github_issue_number:
-                    try:
-                        remove_label_from_issue(
-                            github_context["token"],
-                            github_context["owner"],
-                            github_context["name"],
-                            item.github_issue_number,
-                            GITHUB_APP_LABEL,
-                        )
-                    except GitHubError as error:
-                        if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
-                            pass
-                        else:
-                            message, status = _github_error_response(error)
-                            if error.status_code in (401, 403):
-                                _invalidate_github(g.user)
-                                try:
-                                    db.session.commit()
-                                except SQLAlchemyError:
-                                    db.session.rollback()
-                            return jsonify({"success": False, "message": message}), status
+        else:  # item_type == "task"
+            if (
+                item.scope is None
+                or not user_can_access_scope(g.user, item.scope)
+                or not user_can_edit_task(g.user, item)
+            ):
+                return respond(
+                    False,
+                    "You do not have permission to delete this task.",
+                    status=403,
+                    category="danger",
+                )
+            if item.github_issue_is_open:
+                return respond(
+                    False,
+                    "Task cannot be deleted until its linked GitHub issue is closed.",
+                    status=400,
+                    category="warning",
+                )
+            github_context = _task_github_context(item, g.user) if item.github_issue_number else None
+            if github_context and item.github_issue_number:
+                try:
+                    remove_label_from_issue(
+                        github_context["token"],
+                        github_context["owner"],
+                        github_context["name"],
+                        item.github_issue_number,
+                        GITHUB_APP_LABEL,
+                    )
+                except GitHubError as error:
+                    if error.status_code not in GITHUB_MISSING_ISSUE_STATUS_CODES:
+                        message, status = _github_error_response(error)
+                        if error.status_code in (401, 403):
+                            _invalidate_github(g.user)
+                            try:
+                                db.session.commit()
+                            except SQLAlchemyError:
+                                db.session.rollback()
+                        return respond(False, message, status=status, category="danger")
 
-            db.session.delete(item)
-            db.session.commit()
-            if item_type == "scope" and session.get("selected_scope") == id:
-                session.pop("selected_scope", None)
-            item_label = getattr(item, "name", None)
-            message = f"{item_class.__name__} deleted!"
-            if item_label:
-                message = f"{item_class.__name__} \"{item_label}\" deleted!"
-            flash(message, "success")
-            return jsonify({'success': True, 'message': message})
-        except ValueError as e:
-            db.session.rollback()
-            flash(f"An error occurred: {str(e)}", "error")
-            return jsonify({'success': False, 'message': f"An error occurred: {str(e)}"}), 500
-        # return safe_redirect(request.referrer, item_type)
-    return "Invalid item type", 404
+        db.session.delete(item)
+        db.session.commit()
+        if item_type == "scope" and session.get("selected_scope") == id:
+            session.pop("selected_scope", None)
+        item_label = getattr(item, "name", None)
+        message = f"{item_class.__name__} deleted!"
+        if item_label:
+            message = f'{item_class.__name__} "{item_label}" deleted!'
+        return respond(True, message, category="success")
+    except ValueError as e:
+        db.session.rollback()
+        error_message = f"An error occurred: {str(e)}"
+        return respond(False, error_message, status=500, category="error")
 
 
 @app.route("/complete_task/<int:id>")
