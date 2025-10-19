@@ -99,7 +99,7 @@ class Task(db.Model):
             output_format="html5",
         )
         allowed_tags = list(bleach.sanitizer.ALLOWED_TAGS) + [
-            "p", "pre", "code", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td",
+            "p", "pre", "code", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "div", "span",
             "strong", "em", "blockquote", "br", "h1", "h2", "h3", "h4", "h5", "hr"
         ]
         allowed_attributes = {

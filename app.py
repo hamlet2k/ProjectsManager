@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+import os
 from functools import wraps
 import logging
 from typing import Optional
@@ -16,12 +17,14 @@ from flask import (
     url_for,
     g,
 )
+from flask_wtf.csrf import generate_csrf
 
 from flask_migrate import Migrate
 
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import db
+from utils.github_token import get_github_token
 
 
 # Initialize Flask app
@@ -32,6 +35,9 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///projectsmanager.db"
 app.config[
     "SECRET_KEY"
 ] = b"t\xbc5\xa6\xdb~\xc2dj~\x1e^6\xdaN\x98<\x80\xf1TI\xb0\x9c\x9f"
+app.config.setdefault(
+    "GITHUB_FEEDBACK_REPOSITORY", os.environ.get("GITHUB_FEEDBACK_REPOSITORY")
+)
 
 db.init_app(app)
 
@@ -80,7 +86,7 @@ from services.scope_service import (
 from services.notification_service import build_notifications_summary
 from routes.scopes import scopes_bp
 from routes.notifications import notifications_bp
-from routes import safe_redirect
+from routes import safe_redirect, validate_request_csrf
 
 LOCAL_GITHUB_TAG_NAME = "github"
 GITHUB_ISSUE_MISSING_MESSAGE = (
@@ -181,6 +187,7 @@ def inject_forms():
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "notification_summary": getattr(g, "notification_summary", None),
+        "feedback_csrf_token": generate_csrf(),
     }
 
 
@@ -192,6 +199,93 @@ def authenticate_user(username, password):
         session["theme"] = user.theme
         return True
     return False
+
+
+def _feedback_error(message: str, *, status: int = 400):
+    response = {
+        "success": False,
+        "message": message,
+        "csrf_token": generate_csrf(),
+    }
+    return jsonify(response), status
+
+
+@app.route("/api/feedback", methods=["POST"])
+def submit_feedback():
+    if g.user is None:
+        return _feedback_error("Authentication required.", status=401)
+
+    payload = request.get_json(silent=True) or {}
+    csrf_valid, csrf_message = validate_request_csrf(payload.get("csrf_token"))
+    if not csrf_valid:
+        return _feedback_error(csrf_message or "Invalid CSRF token.")
+
+    title = (payload.get("title") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not title or not body:
+        return _feedback_error("Both title and description are required.")
+
+    raw_labels = payload.get("labels")
+    if raw_labels is None:
+        labels: list[str] = []
+    elif isinstance(raw_labels, list):
+        labels = []
+        seen: set[str] = set()
+        for value in raw_labels:
+            label = str(value or "").strip()
+            if not label:
+                continue
+            lower = label.lower()
+            if lower in seen:
+                continue
+            seen.add(lower)
+            labels.append(label)
+    else:
+        return _feedback_error("Labels must be provided as a list.")
+
+    if not any(label.lower() == "#feedback" for label in labels):
+        labels.append("#feedback")
+
+    repo_config = app.config.get("GITHUB_FEEDBACK_REPOSITORY")
+    if not repo_config:
+        return _feedback_error("Feedback repository is not configured.", status=500)
+
+    try:
+        owner, repository = repo_config.split("/", 1)
+    except ValueError:
+        return _feedback_error("Feedback repository configuration is invalid.", status=500)
+    if not owner or not repository:
+        return _feedback_error("Feedback repository configuration is invalid.", status=500)
+
+    try:
+        token = get_github_token()
+    except Exception:
+        logging.exception("Failed to obtain GitHub App installation token for feedback submission")
+        return _feedback_error("Feedback integration could not be initialized.", status=500)
+
+    if not token:
+        logging.error("GitHub token helper returned empty token for feedback submission")
+        return _feedback_error("Feedback integration is not configured.", status=500)
+
+    try:
+        issue = create_issue(token, owner, repository, title, body, labels)
+    except GitHubError as error:
+        message, status = _github_error_response(error)
+        return _feedback_error(message, status=status)
+    except Exception:  # pragma: no cover - defensive logging for unexpected errors
+        logging.exception("Unexpected error while creating feedback issue")
+        return _feedback_error(
+            "An unexpected error occurred while submitting feedback.", status=500
+        )
+
+    response_payload = {
+        "success": True,
+        "message": "Feedback submitted successfully.",
+        "issue_url": issue.url,
+        "issue_number": issue.number,
+        "csrf_token": generate_csrf(),
+    }
+    return jsonify(response_payload), 201
 
 
 @app.route("/login", methods=["GET", "POST"])
