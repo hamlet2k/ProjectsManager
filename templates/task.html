@@ -1444,6 +1444,8 @@
         const completedDate = dataset.taskCompletedDate || '';
         const tags = parseJsonAttribute(dataset.taskTags, []);
         const subtasks = parseJsonAttribute(dataset.taskSubtasks, []);
+        const hasGithubIssue = dataset.taskHasGithub === 'true';
+        const githubIssueNumber = (dataset.taskGithubIssueNumber || '').trim();
 
         const normalizedSubtasks = Array.isArray(subtasks)
             ? subtasks
@@ -1471,6 +1473,8 @@
             completedDate,
             tags: Array.isArray(tags) ? tags : [],
             subtasks: normalizedSubtasks,
+            hasGithubIssue,
+            githubIssueNumber,
         };
     }
 

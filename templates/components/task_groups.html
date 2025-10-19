@@ -46,7 +46,8 @@
                              data-task-tags='{{ task.tags | map(attribute="name") | list | tojson | e }}'
                              data-task-subtasks='{{ subtask_ns.items | tojson | e }}'
                              data-task-has-github="{{ 'true' if task.has_github_issue else 'false' }}"
-                             data-task-github-state="{{ task.github_issue_state or '' }}">
+                             data-task-github-state="{{ task.github_issue_state or '' }}"
+                             data-task-github-issue-number="{{ task.github_issue_number or '' }}">
                             <div class="task-item-header my-1" id="heading{{ group.dom_id }}-{{ task.id }}">
                                 <div class="task-title-container d-flex align-items-start flex-grow-1">
                                     <i class="bi bi-grip-vertical text-muted {{ '' if group.sortable else 'drag-disabled' }} mt-1" id="grip" data-item-id="{{ task.id }}"></i>

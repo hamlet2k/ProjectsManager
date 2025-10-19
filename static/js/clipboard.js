@@ -103,6 +103,27 @@
         return lines;
     }
 
+    function normalizeIssueNumber(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return String(Math.trunc(value));
+        }
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) {
+                return '';
+            }
+            const normalized = trimmed.startsWith('#') ? trimmed.slice(1).trim() : trimmed;
+            if (/^\d+$/.test(normalized)) {
+                const stripped = normalized.replace(/^0+/, '');
+                return stripped || '0';
+            }
+        }
+        return '';
+    }
+
     window.formatTaskClipboardText = function formatTaskClipboardText(rawTask) {
         if (!rawTask || typeof rawTask !== 'object') {
             return '';
@@ -115,6 +136,10 @@
         const completedDateValue = pickValue(rawTask, ['completedDate', 'completed_date', 'completion_date']);
         const tags = pickValue(rawTask, ['tags', 'labels']) ?? [];
         const subtasks = pickValue(rawTask, ['subtasks', 'children']) ?? [];
+        const hasGithubIssueValue = pickValue(rawTask, ['hasGithubIssue', 'has_github_issue', 'hasGithub', 'has_github']);
+        const issueNumberValue = pickValue(rawTask, ['githubIssueNumber', 'github_issue_number', 'issueNumber', 'issue_number']);
+        const hasGithubIssue = hasGithubIssueValue !== undefined ? toBoolean(hasGithubIssueValue) : undefined;
+        const normalizedIssueNumber = normalizeIssueNumber(issueNumberValue);
 
         const lines = [];
         lines.push(name ? `Task: ${name}` : 'Task');
@@ -150,6 +175,10 @@
         if (formattedSubtasks.length > 0) {
             lines.push('Subtasks:');
             lines.push(...formattedSubtasks);
+        }
+
+        if (normalizedIssueNumber && hasGithubIssue !== false) {
+            lines.push(`Fixes #${normalizedIssueNumber}`);
         }
 
         return lines.join('\n').trim();

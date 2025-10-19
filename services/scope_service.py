@@ -165,6 +165,8 @@ def serialize_task_for_clipboard(task: Task | None) -> dict[str, Any]:
         "due_date": task.end_date.isoformat() if task.end_date else None,
         "completed": bool(task.completed),
         "completed_date": task.completed_date.isoformat() if task.completed_date else None,
+        "has_github_issue": task.has_github_issue,
+        "github_issue_number": task.github_issue_number,
         "tags": [tag.name for tag in task.tags],
         "subtasks": [_serialize_subtask(subtask) for subtask in subtasks],
     }
