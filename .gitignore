@@ -7,3 +7,6 @@ tools/
 patch/
 outputs/
 *.db
+.env
+*.sqlite3
+*.pem
