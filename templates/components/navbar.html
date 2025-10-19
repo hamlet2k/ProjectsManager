@@ -1,5 +1,21 @@
 <nav class="navbar navbar-expand-md mx-2 my-2 bg-body-tertiary border border-secondary-subtle rounded">
   <div class="container-fluid d-flex align-items-center flex-wrap">
+    {% set notifications_summary = notification_summary or {} %}
+    {% set notification_count_raw = notifications_summary.badge_count if notifications_summary.badge_count is defined else notifications_summary.new_count if notifications_summary.new_count is defined else notifications_summary.pending_count %}
+    {% if notification_count_raw is number %}
+    {% set notification_count_value = notification_count_raw %}
+    {% elif notification_count_raw is not none %}
+    {% set notification_count_value = notification_count_raw | int %}
+    {% else %}
+    {% set notification_count_value = 0 %}
+    {% endif %}
+    {% if notification_count_value > 9 %}
+    {% set notification_badge_label = '9+' %}
+    {% elif notification_count_value > 0 %}
+    {% set notification_badge_label = notification_count_value %}
+    {% else %}
+    {% set notification_badge_label = 0 %}
+    {% endif %}
     {% set on_scope_list = request.endpoint == 'scopes.list_scopes' %}
     {% if not on_scope_list %}
     <a
@@ -104,15 +120,26 @@
     {% endif %}
 
     <button
-      class="navbar-toggler ms-auto"
+      class="navbar-toggler ms-auto position-relative"
       type="button"
       data-bs-toggle="collapse"
       data-bs-target="#navbarNav"
       aria-controls="navbarNav"
       aria-expanded="false"
       aria-label="Toggle navigation"
+      data-notification-badge-target
+      data-notification-badge-class="badge rounded-pill text-bg-danger notification-count-badge notification-count-badge--menu position-absolute top-0 start-100 translate-middle"
     >
       <span class="navbar-toggler-icon"></span>
+      {% if notification_count_value %}
+      <span
+        class="badge rounded-pill text-bg-danger notification-count-badge notification-count-badge--menu position-absolute top-0 start-100 translate-middle"
+        data-notification-count
+        aria-hidden="true"
+      >
+        {{ notification_badge_label }}
+      </span>
+      {% endif %}
     </button>
 
     <div class="collapse navbar-collapse" id="navbarNav">
@@ -226,8 +253,8 @@
             </button>
           </li>
 
-          {% set summary = notification_summary or {} %}
-          {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
+          {% set summary = notifications_summary %}
+          {% set notification_count = notification_count_value %}
           <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
             <a
               class="btn btn-link nav-link nav-link-responsive position-relative d-flex d-md-none align-items-center justify-content-start gap-2 text-body"
@@ -236,6 +263,8 @@
               data-navbar-tooltip
               data-bs-placement="bottom"
               title="Notifications"
+              data-notification-badge-target
+              data-notification-badge-class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
             >
               <i class="bi bi-bell" aria-hidden="true"></i>
               <span class="flex-grow-1 text-start">Notifications</span>
@@ -243,8 +272,9 @@
               <span
                 class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
                 data-notification-count
+                aria-hidden="true"
               >
-                {{ notification_count }}
+                {{ notification_badge_label }}
               </span>
               {% endif %}
             </a>
@@ -259,14 +289,17 @@
               data-bs-placement="bottom"
               title="Notifications"
               data-notification-toggle
+              data-notification-badge-target
+              data-notification-badge-class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
             >
               <i class="bi bi-bell" aria-hidden="true"></i>
               {% if notification_count %}
               <span
                 class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
                 data-notification-count
+                aria-hidden="true"
               >
-                {{ notification_count }}
+                {{ notification_badge_label }}
               </span>
               {% endif %}
             </button>

@@ -293,26 +293,45 @@
         return item;
     }
 
-    function updateCountBadges(count) {
-        if (!state.root) {
-            return;
+    function formatBadgeDisplay(count) {
+        if (typeof count !== 'number' || Number.isNaN(count) || count <= 0) {
+            return '';
         }
-        let badge = state.root.querySelector('[data-notification-count]');
-        if (count > 0) {
-            if (!badge) {
-                badge = document.createElement('span');
-                badge.className = 'position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge';
-                badge.setAttribute('data-notification-count', '');
-                state.root.querySelector('[data-notification-toggle]')?.appendChild(badge);
+        return count > 9 ? '9+' : String(count);
+    }
+
+    function updateCountBadges(count) {
+        const displayValue = formatBadgeDisplay(count);
+        const targets = document.querySelectorAll('[data-notification-badge-target]');
+        let primaryBadge = null;
+
+        targets.forEach((target) => {
+            let badge = target.querySelector('[data-notification-count]');
+            if (displayValue) {
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.setAttribute('data-notification-count', '');
+                    badge.setAttribute('aria-hidden', 'true');
+                    const className = target.getAttribute('data-notification-badge-class');
+                    if (className) {
+                        badge.className = className;
+                    } else {
+                        badge.className =
+                            'badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle';
+                    }
+                    target.appendChild(badge);
+                }
+                badge.textContent = displayValue;
+                if (!primaryBadge && state.root && state.root.contains(badge)) {
+                    primaryBadge = badge;
+                }
+            } else if (badge) {
+                badge.remove();
             }
-            badge.textContent = String(count);
-            state.countBadge = badge;
-        } else {
-            state.countBadge = badge || state.countBadge;
-            if (state.countBadge) {
-                state.countBadge.remove();
-            }
-            state.countBadge = null;
+        });
+
+        if (state.root) {
+            state.countBadge = primaryBadge || state.root.querySelector('[data-notification-count]') || null;
         }
     }
 
