@@ -37,6 +37,45 @@
   gap: 0.25rem;
 }
 
+.feedback-modal [data-feedback-type-link] {
+  margin-left: 0.75rem;
+}
+
+.feedback-modal .feedback-type-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  text-decoration: none;
+  color: #212529;
+}
+
+.feedback-modal .feedback-type-link-text {
+  text-decoration: none;
+}
+
+.feedback-modal .feedback-type-link:hover .feedback-type-link-text,
+.feedback-modal .feedback-type-link:focus-visible .feedback-type-link-text {
+  text-decoration: underline;
+}
+
+.feedback-modal .feedback-type-link-icon {
+  font-size: 1rem;
+}
+
+[data-bs-theme="dark"] .feedback-modal .feedback-type-link {
+  color: #f8f9fa;
+}
+
+[data-bs-theme="light"] .feedback-modal .feedback-type-link {
+  color: #212529;
+}
+
+@media (max-width: 575.98px) {
+  .feedback-modal [data-feedback-type-link] {
+    margin-left: 0;
+  }
+}
+
 #feedbackModal .modal-dialog {
   max-height: 80vh;
 }

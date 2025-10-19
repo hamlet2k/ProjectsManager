@@ -26,6 +26,28 @@
     const modalHeader = modalContent ? modalContent.querySelector(".modal-header") : null;
     const modalFooter = modalContent ? modalContent.querySelector(".modal-footer") : null;
     const modalBody = modalContent ? modalContent.querySelector(".modal-body") : null;
+    const typeLinkContainer = form.querySelector("[data-feedback-type-link]");
+    const typeLinkAnchor = typeLinkContainer
+      ? typeLinkContainer.querySelector("[data-feedback-type-link-anchor]")
+      : null;
+    const typeLinkText = typeLinkContainer
+      ? typeLinkContainer.querySelector("[data-feedback-type-link-text]")
+      : null;
+
+    const TYPE_LINKS = Object.freeze({
+      bug: {
+        href: "https://github.com/hamlet2k/ProjectsManager/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug",
+        text: "Check Known Bugs",
+      },
+      enhancement: {
+        href: "https://github.com/hamlet2k/ProjectsManager/issues?q=is%3Aissue%20state%3Aopen%20label%3Aenhancement",
+        text: "Check Upcoming Enhancements",
+      },
+      question: {
+        href: "https://github.com/hamlet2k/ProjectsManager/issues?q=is%3Aissue%20label%3Aquestion",
+        text: "Check Existing Questions",
+      },
+    });
 
     const autosizeElements = Array.from(
       form.querySelectorAll("[data-feedback-autosize]")
@@ -185,8 +207,42 @@
       });
     }
 
+    function updateTypeLink({ refresh = true } = {}) {
+      if (!typeLinkContainer || !typeLinkAnchor || !typeLinkText) {
+        return;
+      }
+
+      const selectedLabel = getSelectedLabel();
+      const linkConfig = TYPE_LINKS[selectedLabel];
+      const wasHidden = typeLinkContainer.classList.contains("d-none");
+
+      if (!linkConfig) {
+        if (!wasHidden) {
+          typeLinkContainer.classList.add("d-none");
+        }
+        typeLinkContainer.setAttribute("aria-hidden", "true");
+        typeLinkAnchor.removeAttribute("href");
+        typeLinkText.textContent = "";
+        if (refresh && !wasHidden) {
+          refreshAllTextareaHeights({ immediate: true });
+        }
+        return;
+      }
+
+      const previousText = typeLinkText.textContent;
+      typeLinkAnchor.href = linkConfig.href;
+      typeLinkText.textContent = linkConfig.text;
+      typeLinkContainer.classList.remove("d-none");
+      typeLinkContainer.removeAttribute("aria-hidden");
+
+      if (refresh && (wasHidden || previousText !== linkConfig.text)) {
+        refreshAllTextareaHeights({ immediate: true });
+      }
+    }
+
     function resetTypeState() {
       setTypeInvalid(false);
+      updateTypeLink();
     }
 
     function resetAlerts() {
@@ -249,6 +305,7 @@
       const formIsValid = form.checkValidity();
       if (!selectedLabel) {
         setTypeInvalid(true);
+        updateTypeLink();
       }
       if (!formIsValid || !selectedLabel) {
         return;
@@ -371,5 +428,7 @@
         });
       });
     }
+
+    updateTypeLink({ refresh: false });
   });
 })();
