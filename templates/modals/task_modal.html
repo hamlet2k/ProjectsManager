@@ -1,5 +1,5 @@
 <div class="modal fade" id="task-modal" tabindex="-1" aria-labelledby="task-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered task-modal-dialog">
         <div class="modal-content">
 
             <div class="modal-header">
@@ -13,7 +13,18 @@
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="task-modal-description">Capture or update the essential details for this task.</p>
                 <div class="form-floating mb-3">
-                    {{ task_form.name(class_='form-control'+ (' is-invalid' if task_form.name.errors else ''), placeholder_=task_form.name.name, rows=1) }}
+                    {{ task_form.name(
+                        class_='form-control quick-task-input' + (' is-invalid' if task_form.name.errors else ''),
+                        placeholder_=task_form.name.name,
+                        rows=1,
+                        data_auto_resize="task-name",
+                        data_collapsed_height="44",
+                        data_auto_resize_max="192",
+                        data_max_container_selector=".task-modal-dialog",
+                        data_max_viewport_ratio="0.8",
+                        data_expanded_class="quick-task-input--expanded",
+                        data_overflow_class="quick-task-input--overflow"
+                    ) }}
                     {{ task_form.name.label(class="form-label") }}
                     {% if task_form.name.errors %}
                         {% for error in task_form.name.errors %}
@@ -28,6 +39,7 @@
                         rows=1,
                         data_auto_resize="task-description",
                         data_collapsed_height="88",
+                        data_max_container_selector=".task-modal-dialog",
                         data_max_viewport_ratio="0.8",
                         data_expanded_class="task-description-input--expanded",
                         data_overflow_class="task-description-input--overflow"
@@ -63,6 +75,57 @@
         </div>
     </div>
 </div>
+
+<style>
+    #task-modal .task-modal-dialog,
+    #task-modal .task-modal-dialog .modal-content {
+        max-height: min(80vh, calc(100vh - var(--bs-modal-margin, 1rem) * 2));
+    }
+
+    #task-modal .task-modal-dialog .modal-content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    #task-modal .modal-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    #task-modal .quick-task-input {
+        height: 2.75rem;
+        min-height: 2.75rem;
+        max-height: 12rem;
+        resize: none;
+        overflow: hidden;
+        transition: height 0.25s ease, min-height 0.25s ease;
+    }
+
+    #task-modal .quick-task-input.quick-task-input--expanded {
+        min-height: 3.25rem;
+    }
+
+    #task-modal .quick-task-input.quick-task-input--overflow {
+        overflow-y: auto;
+    }
+
+    #task-modal .task-description-input {
+        height: 5.5rem;
+        min-height: 5.5rem;
+        resize: none;
+        overflow: hidden;
+        transition: height 0.25s ease, min-height 0.25s ease;
+    }
+
+    #task-modal .task-description-input.task-description-input--expanded {
+        min-height: 6.25rem;
+    }
+
+    #task-modal .task-description-input.task-description-input--overflow {
+        overflow-y: auto;
+    }
+</style>
 
 <script>
     // Display the modal based on the flag.

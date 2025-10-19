@@ -114,7 +114,6 @@
     .task-description-input {
         height: 5.5rem;
         min-height: 5.5rem;
-        max-height: 80vh;
         resize: none;
         overflow: hidden;
         transition: height 0.25s ease, min-height 0.25s ease;
@@ -768,6 +767,10 @@
     margin-bottom: 1.25rem;
 }
 
+.sticky-header[data-sticky-ready="true"] .sticky-header__panel--add.is-expanded {
+    max-height: 80vh;
+}
+
 .sticky-header[data-sticky-ready="true"][data-sticky-mode="scrolled"] .sticky-header__panel.is-expanded .sticky-header__panel-body {
     padding-top: 3.5rem;
 }
@@ -881,6 +884,8 @@
                                 data_auto_resize="quick-task-input",
                                 data_collapsed_height="44",
                                 data_auto_resize_max="192",
+                                data_max_container_selector="[data-sticky-panel='add']",
+                                data_max_viewport_ratio="0.8",
                                 data_expanded_class="quick-task-input--expanded",
                                 data_overflow_class="quick-task-input--overflow"
                             ) }}
@@ -903,6 +908,7 @@
                                     placeholder_='Add more details',
                                     data_auto_resize="task-description",
                                     data_collapsed_height="88",
+                                    data_max_container_selector="[data-sticky-panel='add']",
                                     data_max_viewport_ratio="0.8",
                                     data_expanded_class="task-description-input--expanded",
                                     data_overflow_class="task-description-input--overflow"
@@ -1587,6 +1593,95 @@
             viewportRatio = null;
         }
 
+        const parseSelectorList = (value) => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return [];
+            }
+            return value
+                .split(',')
+                .map((selector) => selector.trim())
+                .filter((selector) => selector.length > 0);
+        };
+
+        const containerSelectors = parseSelectorList(dataset.maxContainerSelector);
+        const maxContainerId = typeof dataset.maxContainerId === 'string' ? dataset.maxContainerId.trim() : '';
+        let resolvedContainer = null;
+
+        const resolveContainer = () => {
+            if (resolvedContainer && document.contains(resolvedContainer)) {
+                return resolvedContainer;
+            }
+
+            let container = null;
+            for (let index = 0; index < containerSelectors.length; index += 1) {
+                const selector = containerSelectors[index];
+                if (!selector) {
+                    continue;
+                }
+                const match = textarea.closest(selector);
+                if (match) {
+                    container = match;
+                    break;
+                }
+            }
+
+            if (!container && maxContainerId) {
+                const candidate = document.getElementById(maxContainerId);
+                if (candidate && candidate.contains(textarea)) {
+                    container = candidate;
+                }
+            }
+
+            resolvedContainer = container || null;
+            return resolvedContainer;
+        };
+
+        const parseMaxHeightValue = (value) => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return Infinity;
+            }
+            const normalized = value.trim().toLowerCase();
+            if (normalized === 'none' || normalized === 'auto' || normalized === 'initial' || normalized === 'unset') {
+                return Infinity;
+            }
+            const parsed = parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : Infinity;
+        };
+
+        const computeContainerLimit = () => {
+            const container = resolveContainer();
+            const viewportLimit = viewportRatio ? Math.floor(window.innerHeight * viewportRatio) : Infinity;
+
+            if (!container) {
+                return viewportLimit;
+            }
+
+            const containerStyle = window.getComputedStyle(container);
+            const cssLimit = parseMaxHeightValue(containerStyle.maxHeight);
+            let containerLimit = cssLimit;
+
+            if (!Number.isFinite(containerLimit)) {
+                containerLimit = viewportLimit;
+            } else if (Number.isFinite(viewportLimit)) {
+                containerLimit = Math.min(containerLimit, viewportLimit);
+            }
+
+            if (!Number.isFinite(containerLimit)) {
+                return viewportLimit;
+            }
+
+            const containerScrollHeight = container.scrollHeight;
+            const textareaHeight = textarea.offsetHeight;
+            const otherContentHeight = Math.max(0, containerScrollHeight - textareaHeight);
+            const available = containerLimit - otherContentHeight;
+
+            if (!Number.isFinite(available)) {
+                return viewportLimit;
+            }
+
+            return Math.max(collapsedHeight, available);
+        };
+
         const expandedClass = dataset.expandedClass || '';
         const overflowClass = dataset.overflowClass || '';
 
@@ -1611,11 +1706,16 @@
         };
 
         const computeMaxHeight = () => {
-            const viewportLimit = viewportRatio ? Math.floor(window.innerHeight * viewportRatio) : Infinity;
-            const limit = Math.min(explicitMaxHeight, viewportLimit);
-            if (!Number.isFinite(limit)) {
+            const containerLimit = computeContainerLimit();
+            if (!Number.isFinite(containerLimit)) {
+                if (Number.isFinite(explicitMaxHeight)) {
+                    return Math.max(collapsedHeight, explicitMaxHeight);
+                }
                 return Infinity;
             }
+            const limit = Number.isFinite(explicitMaxHeight)
+                ? Math.min(explicitMaxHeight, containerLimit)
+                : containerLimit;
             return Math.max(collapsedHeight, limit);
         };
 
@@ -1674,6 +1774,7 @@
         };
 
         const refresh = () => {
+            observeContainer();
             if (document.activeElement === textarea) {
                 expand();
             } else {
@@ -1681,8 +1782,14 @@
             }
         };
 
-        const handleFocus = () => expand();
-        const handleInput = () => expand();
+        const handleFocus = () => {
+            observeContainer();
+            expand();
+        };
+        const handleInput = () => {
+            observeContainer();
+            expand();
+        };
         const handleBlur = () => collapse();
         const handleResize = () => refresh();
         const handleFormReset = () => window.requestAnimationFrame(() => collapse());
@@ -1695,6 +1802,32 @@
         textarea.addEventListener('input', handleInput);
         textarea.addEventListener('blur', handleBlur);
         window.addEventListener('resize', handleResize);
+
+        let containerObserver = null;
+        let observedContainer = null;
+
+        function observeContainer() {
+            if (typeof ResizeObserver !== 'function') {
+                return;
+            }
+            const container = resolveContainer();
+            if (!container || container === observedContainer) {
+                return;
+            }
+            if (!containerObserver) {
+                containerObserver = new ResizeObserver(() => refresh());
+            } else if (observedContainer) {
+                try {
+                    containerObserver.unobserve(observedContainer);
+                } catch (error) {
+                    // ignore unobserve errors
+                }
+            }
+            containerObserver.observe(container);
+            observedContainer = container;
+        }
+
+        observeContainer();
 
         const form = textarea.form;
         if (form) {
@@ -1710,6 +1843,16 @@
                 textarea.removeEventListener('input', handleInput);
                 textarea.removeEventListener('blur', handleBlur);
                 window.removeEventListener('resize', handleResize);
+                if (containerObserver) {
+                    if (observedContainer) {
+                        try {
+                            containerObserver.unobserve(observedContainer);
+                        } catch (error) {
+                            // ignore unobserve errors
+                        }
+                    }
+                    containerObserver.disconnect();
+                }
                 if (form) {
                     form.removeEventListener('reset', handleFormReset);
                 }
