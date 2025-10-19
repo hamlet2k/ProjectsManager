@@ -12,12 +12,60 @@ A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 
 """
 from datetime import datetime
+from typing import Optional
 
 import bleach
 from database import db
 from .tag import task_tags
 from markdown import markdown as render_markdown
 from markupsafe import Markup
+
+
+def render_task_description_html(description: Optional[str]) -> Markup:
+    """Render task description Markdown into sanitized HTML."""
+    if not description:
+        return Markup("")
+    html = render_markdown(
+        description,
+        extensions=["extra", "sane_lists", "codehilite"],
+        output_format="html5",
+        tab_length=2,
+    )
+    allowed_tags = list(bleach.sanitizer.ALLOWED_TAGS) + [
+        "p",
+        "pre",
+        "code",
+        "ul",
+        "ol",
+        "li",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "div",
+        "span",
+        "strong",
+        "em",
+        "blockquote",
+        "br",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "hr",
+    ]
+    allowed_attributes = {
+        **bleach.sanitizer.ALLOWED_ATTRIBUTES,
+        "a": ["href", "title", "target", "rel"],
+        "img": ["src", "alt", "title"],
+        "code": ["class"],
+    }
+    sanitized_html = bleach.clean(html, tags=allowed_tags, attributes=allowed_attributes)
+    return Markup(sanitized_html)
+
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -91,25 +139,7 @@ class Task(db.Model):
         return self.github_issue_state.lower() == "open"
     @property
     def description_html(self):
-        if not self.description:
-            return Markup("")
-        html = render_markdown(
-            self.description,
-            extensions=["extra", "sane_lists", "codehilite"],
-            output_format="html5",
-        )
-        allowed_tags = list(bleach.sanitizer.ALLOWED_TAGS) + [
-            "p", "pre", "code", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "div", "span",
-            "strong", "em", "blockquote", "br", "h1", "h2", "h3", "h4", "h5", "hr"
-        ]
-        allowed_attributes = {
-            **bleach.sanitizer.ALLOWED_ATTRIBUTES,
-            "a": ["href", "title", "target", "rel"],
-            "img": ["src", "alt", "title"],
-            "code": ["class"],
-        }
-        sanitized_html = bleach.clean(html, tags=allowed_tags, attributes=allowed_attributes)
-        return Markup(sanitized_html)
+        return render_task_description_html(self.description)
 
     def __repr__(self):
         return f"<Task {self.name}>"
