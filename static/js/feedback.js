@@ -12,6 +12,8 @@
 
     const titleInput = form.querySelector("#feedbackTitle");
     const descriptionInput = form.querySelector("#feedbackBody");
+    const modalDialog = modalElement.querySelector(".modal-dialog");
+    const modalContent = modalElement.querySelector(".modal-content");
     const typeInputs = Array.from(form.querySelectorAll('input[name="label"]'));
     const typeField = form.querySelector('[data-feedback-type-field]');
     const typeInvalidFeedback = form.querySelector('[data-feedback-type-invalid]');
@@ -21,13 +23,15 @@
     const submitLabel = form.querySelector("[data-feedback-submit-label]");
     const spinner = form.querySelector("[data-feedback-spinner]");
     const csrfInput = form.querySelector('input[name="csrf_token"]');
+    const modalHeader = modalContent ? modalContent.querySelector(".modal-header") : null;
+    const modalFooter = modalContent ? modalContent.querySelector(".modal-footer") : null;
+    const modalBody = modalContent ? modalContent.querySelector(".modal-body") : null;
 
-    const descriptionState = {
-      isExpanded: false,
-    };
-
-    const DESCRIPTION_COLLAPSED_LINES = 3;
-    const DESCRIPTION_TRANSITION = "height 0.2s ease";
+    const autosizeElements = Array.from(
+      form.querySelectorAll("[data-feedback-autosize]")
+    );
+    const autosizeState = new Map();
+    const AUTOSIZE_TRANSITION = "height 0.2s ease";
 
     function getComputedLineHeight(element) {
       if (!element) {
@@ -45,108 +49,114 @@
       return 20;
     }
 
-    function updateTitleHeight() {
-      if (!titleInput) {
-        return;
-      }
-      const lineHeight = getComputedLineHeight(titleInput);
-      const maxHeight = lineHeight * 2;
-      titleInput.style.maxHeight = `${maxHeight}px`;
-      titleInput.style.height = "auto";
-      const naturalHeight = titleInput.scrollHeight;
-      const targetHeight = Math.max(Math.min(naturalHeight, maxHeight), lineHeight);
-      titleInput.style.height = `${targetHeight}px`;
-      titleInput.style.overflowY = naturalHeight > maxHeight ? "auto" : "hidden";
-      const isExpanded = targetHeight > lineHeight + 1;
-      titleInput.setAttribute("aria-expanded", isExpanded ? "true" : "false");
-    }
-
-    function computeDescriptionMaxHeight() {
+    function computeModalMaxHeight() {
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
       const eightyPercent = Math.floor(viewportHeight * 0.8);
       return Math.max(eightyPercent, 240);
     }
 
-    function computeDescriptionCollapsedHeight() {
-      if (!descriptionInput) {
+    function applyModalMaxHeight() {
+      const maxHeight = computeModalMaxHeight();
+      if (modalDialog) {
+        modalDialog.style.maxHeight = `${maxHeight}px`;
+      }
+      if (modalContent) {
+        modalContent.style.maxHeight = `${maxHeight}px`;
+      }
+      if (modalBody) {
+        const headerHeight = modalHeader ? modalHeader.offsetHeight : 0;
+        const footerHeight = modalFooter ? modalFooter.offsetHeight : 0;
+        const bodyMax = Math.max(maxHeight - headerHeight - footerHeight, 0);
+        modalBody.style.maxHeight = `${bodyMax}px`;
+      }
+      return maxHeight;
+    }
+
+    function ensureTextareaState(textarea) {
+      let state = autosizeState.get(textarea);
+      if (!state) {
+        const lineHeight = getComputedLineHeight(textarea);
+        const rows = Number.parseInt(textarea.getAttribute("rows") || "1", 10);
+        const minHeight = Math.max(lineHeight * rows, lineHeight);
+        state = { minHeight };
+        autosizeState.set(textarea, state);
+        textarea.style.minHeight = `${minHeight}px`;
+        textarea.setAttribute("aria-expanded", "false");
+        textarea.style.overflowY = "hidden";
+      }
+      return state;
+    }
+
+    function getVerticalMargins(element) {
+      if (!element) {
         return 0;
       }
-      const lineHeight = getComputedLineHeight(descriptionInput);
-      const maxHeight = computeDescriptionMaxHeight();
-      const collapsedLinesHeight = lineHeight * DESCRIPTION_COLLAPSED_LINES;
-      const previousHeight = descriptionInput.style.height;
-      descriptionInput.style.height = "auto";
-      const naturalHeight = descriptionInput.scrollHeight;
-      descriptionInput.style.height = previousHeight;
-      const baseHeight = Math.max(collapsedLinesHeight, lineHeight);
-      const collapsedHeight = Math.max(Math.min(naturalHeight, maxHeight), baseHeight);
-      return Math.min(collapsedHeight, maxHeight);
+      const style = window.getComputedStyle(element);
+      const top = parseFloat(style.marginTop) || 0;
+      const bottom = parseFloat(style.marginBottom) || 0;
+      return top + bottom;
     }
 
-    function setDescriptionHeight(targetHeight, { immediate, overflowY }) {
-      if (!descriptionInput) {
+    function computeReservedHeight(textarea, currentHeight) {
+      let reserved = 0;
+      if (modalHeader) {
+        reserved += modalHeader.offsetHeight + getVerticalMargins(modalHeader);
+      }
+      if (modalFooter) {
+        reserved += modalFooter.offsetHeight + getVerticalMargins(modalFooter);
+      }
+      if (modalBody) {
+        const bodyStyle = window.getComputedStyle(modalBody);
+        const paddingTop = parseFloat(bodyStyle.paddingTop) || 0;
+        const paddingBottom = parseFloat(bodyStyle.paddingBottom) || 0;
+        reserved += paddingTop + paddingBottom;
+
+        Array.from(modalBody.children).forEach((child) => {
+          reserved += getVerticalMargins(child);
+          if (child.contains(textarea)) {
+            reserved += Math.max(child.offsetHeight - currentHeight, 0);
+          } else {
+            reserved += child.offsetHeight;
+          }
+        });
+      }
+      return reserved;
+    }
+
+    function refreshTextareaHeight(textarea, { immediate = false } = {}) {
+      if (!textarea) {
         return;
       }
-      const resolvedTarget = Math.max(targetHeight, 0);
-      const previousTransition = descriptionInput.style.transition;
-      descriptionInput.style.maxHeight = `${computeDescriptionMaxHeight()}px`;
+      const maxModalHeight = applyModalMaxHeight();
+      const { minHeight } = ensureTextareaState(textarea);
+      const currentHeight = Math.max(textarea.offsetHeight, minHeight);
+      const reservedHeight = computeReservedHeight(textarea, currentHeight);
+      const availableSpace = Math.max(maxModalHeight - reservedHeight, minHeight);
+      const previousTransition = textarea.style.transition;
       if (immediate) {
-        descriptionInput.style.transition = "none";
+        textarea.style.transition = "none";
       } else {
-        descriptionInput.style.transition = DESCRIPTION_TRANSITION;
-        const currentHeight = descriptionInput.getBoundingClientRect().height || resolvedTarget;
-        descriptionInput.style.height = `${currentHeight}px`;
-        void descriptionInput.offsetHeight;
+        textarea.style.transition = AUTOSIZE_TRANSITION;
       }
-      descriptionInput.style.height = `${resolvedTarget}px`;
-      if (typeof overflowY === "string") {
-        descriptionInput.style.overflowY = overflowY;
-      }
+      textarea.style.height = "auto";
+      const naturalHeight = textarea.scrollHeight;
+      const targetHeight = Math.min(Math.max(naturalHeight, minHeight), availableSpace);
+      textarea.style.height = `${targetHeight}px`;
+      textarea.style.maxHeight = `${availableSpace}px`;
+      textarea.style.overflowY = naturalHeight > availableSpace ? "auto" : "hidden";
+      textarea.setAttribute("aria-expanded", targetHeight > minHeight + 1 ? "true" : "false");
       if (immediate) {
-        void descriptionInput.offsetHeight;
-        descriptionInput.style.transition = previousTransition || DESCRIPTION_TRANSITION;
+        requestAnimationFrame(() => {
+          textarea.style.transition = previousTransition || AUTOSIZE_TRANSITION;
+        });
       }
     }
 
-    function expandDescription({ immediate }) {
-      if (!descriptionInput) {
-        return;
-      }
-      descriptionState.isExpanded = true;
-      const maxHeight = computeDescriptionMaxHeight();
-      descriptionInput.style.height = "auto";
-      const naturalHeight = descriptionInput.scrollHeight;
-      const lineHeight = getComputedLineHeight(descriptionInput);
-      const targetHeight = Math.max(Math.min(naturalHeight, maxHeight), lineHeight);
-      const overflow = naturalHeight > maxHeight ? "auto" : "hidden";
-      setDescriptionHeight(targetHeight, { immediate, overflowY: overflow });
-      descriptionInput.setAttribute("aria-expanded", "true");
-    }
-
-    function collapseDescription({ immediate }) {
-      if (!descriptionInput) {
-        return;
-      }
-      descriptionState.isExpanded = false;
-      const targetHeight = computeDescriptionCollapsedHeight();
-      setDescriptionHeight(targetHeight, { immediate, overflowY: "hidden" });
-      descriptionInput.setAttribute("aria-expanded", "false");
-      descriptionInput.scrollTop = 0;
-    }
-
-    function refreshDescriptionHeight({ immediate = false } = {}) {
-      if (!descriptionInput) {
-        return;
-      }
-      if (descriptionState.isExpanded) {
-        expandDescription({ immediate });
-      } else {
-        collapseDescription({ immediate });
-      }
-    }
-
-    function handleViewportResize() {
-      refreshDescriptionHeight({ immediate: true });
+    function refreshAllTextareaHeights({ immediate = false } = {}) {
+      applyModalMaxHeight();
+      autosizeElements.forEach((textarea) => {
+        refreshTextareaHeight(textarea, { immediate });
+      });
     }
 
     function getSelectedLabel() {
@@ -188,6 +198,7 @@
         errorAlert.classList.add("d-none");
         errorAlert.textContent = "";
       }
+      refreshAllTextareaHeights({ immediate: true });
     }
 
     function setSubmitting(isSubmitting) {
@@ -207,15 +218,11 @@
       resetAlerts();
       form.classList.remove("was-validated");
       resetTypeState();
-      if (titleInput) {
-        updateTitleHeight();
-      }
-      if (descriptionInput) {
-        descriptionInput.setAttribute("aria-expanded", "false");
-        refreshDescriptionHeight({ immediate: true });
-      }
+      refreshAllTextareaHeights({ immediate: true });
       if (titleInput) {
         titleInput.focus();
+      } else if (autosizeElements.length > 0) {
+        autosizeElements[0].focus();
       }
     });
 
@@ -225,13 +232,12 @@
       resetAlerts();
       setSubmitting(false);
       resetTypeState();
-      if (titleInput) {
-        updateTitleHeight();
-      }
-      if (descriptionInput) {
-        descriptionState.isExpanded = false;
-        refreshDescriptionHeight({ immediate: true });
-      }
+      autosizeElements.forEach((textarea) => {
+        const { minHeight } = ensureTextareaState(textarea);
+        textarea.style.height = `${minHeight}px`;
+        textarea.style.overflowY = "hidden";
+        textarea.setAttribute("aria-expanded", "false");
+      });
     });
 
     form.addEventListener("submit", async function (event) {
@@ -253,6 +259,7 @@
           errorAlert.textContent = "Unable to submit feedback: missing CSRF token.";
           errorAlert.classList.remove("d-none");
         }
+        refreshAllTextareaHeights({ immediate: true });
         return;
       }
 
@@ -295,19 +302,14 @@
             errorAlert.textContent = errorMessage;
             errorAlert.classList.remove("d-none");
           }
+          refreshAllTextareaHeights({ immediate: true });
           return;
         }
 
         form.reset();
         form.classList.remove("was-validated");
         resetTypeState();
-        if (titleInput) {
-          updateTitleHeight();
-        }
-        if (descriptionInput) {
-          descriptionState.isExpanded = false;
-          refreshDescriptionHeight({ immediate: true });
-        }
+        refreshAllTextareaHeights({ immediate: true });
 
         if (successAlert) {
           const issueUrl = data.issue_url;
@@ -330,41 +332,37 @@
             successAlert.appendChild(link);
           }
           successAlert.classList.remove("d-none");
+          refreshAllTextareaHeights({ immediate: true });
         }
       } catch (error) {
         if (errorAlert) {
           errorAlert.textContent = error && error.message ? error.message : "Unable to submit feedback.";
           errorAlert.classList.remove("d-none");
+          refreshAllTextareaHeights({ immediate: true });
         }
       } finally {
         setSubmitting(false);
       }
     });
 
-    if (titleInput) {
-      titleInput.setAttribute("aria-expanded", "false");
-      titleInput.style.overflowY = "hidden";
-      titleInput.addEventListener("input", updateTitleHeight);
-      titleInput.addEventListener("focus", updateTitleHeight);
-      titleInput.addEventListener("blur", updateTitleHeight);
-      updateTitleHeight();
-    }
+    autosizeElements.forEach((textarea) => {
+      ensureTextareaState(textarea);
+      textarea.addEventListener("input", function () {
+        refreshTextareaHeight(textarea);
+      });
+      textarea.addEventListener("focus", function () {
+        refreshTextareaHeight(textarea, { immediate: true });
+      });
+      textarea.addEventListener("blur", function () {
+        refreshTextareaHeight(textarea, { immediate: true });
+      });
+    });
 
-    if (descriptionInput) {
-      descriptionInput.style.overflowY = "hidden";
-      descriptionInput.setAttribute("aria-expanded", "false");
-      descriptionInput.addEventListener("focus", function () {
-        expandDescription({ immediate: false });
-      });
-      descriptionInput.addEventListener("blur", function () {
-        collapseDescription({ immediate: false });
-      });
-      descriptionInput.addEventListener("input", function () {
-        refreshDescriptionHeight({ immediate: false });
-      });
-      refreshDescriptionHeight({ immediate: true });
-      window.addEventListener("resize", handleViewportResize);
-    }
+    refreshAllTextareaHeights({ immediate: true });
+
+    window.addEventListener("resize", function () {
+      refreshAllTextareaHeights({ immediate: true });
+    });
 
     if (typeInputs.length > 0) {
       typeInputs.forEach((input) => {

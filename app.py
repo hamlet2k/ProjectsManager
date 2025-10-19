@@ -24,6 +24,7 @@ from flask_migrate import Migrate
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import db
+from utils.github_token import get_github_token
 
 
 # Initialize Flask app
@@ -36,9 +37,6 @@ app.config[
 ] = b"t\xbc5\xa6\xdb~\xc2dj~\x1e^6\xdaN\x98<\x80\xf1TI\xb0\x9c\x9f"
 app.config.setdefault(
     "GITHUB_FEEDBACK_REPOSITORY", os.environ.get("GITHUB_FEEDBACK_REPOSITORY")
-)
-app.config.setdefault(
-    "GITHUB_APP_INSTALLATION_TOKEN", os.environ.get("GITHUB_APP_INSTALLATION_TOKEN")
 )
 
 db.init_app(app)
@@ -249,9 +247,6 @@ def submit_feedback():
         labels.append("#feedback")
 
     repo_config = app.config.get("GITHUB_FEEDBACK_REPOSITORY")
-    token = app.config.get("GITHUB_APP_INSTALLATION_TOKEN")
-    if not token:
-        return _feedback_error("Feedback integration is not configured.", status=500)
     if not repo_config:
         return _feedback_error("Feedback repository is not configured.", status=500)
     if "/" not in repo_config:
@@ -260,6 +255,16 @@ def submit_feedback():
     owner, repository = repo_config.split("/", 1)
     if not owner or not repository:
         return _feedback_error("Feedback repository configuration is invalid.", status=500)
+
+    try:
+        token = get_github_token()
+    except Exception:
+        logging.exception("Failed to obtain GitHub App installation token for feedback submission")
+        return _feedback_error("Feedback integration could not be initialized.", status=500)
+
+    if not token:
+        logging.error("GitHub token helper returned empty token for feedback submission")
+        return _feedback_error("Feedback integration is not configured.", status=500)
 
     try:
         issue = create_issue(token, owner, repository, title, body, labels)
