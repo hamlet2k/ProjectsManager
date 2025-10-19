@@ -88,6 +88,92 @@
     padding: 0.1rem 0.25rem;
     border-radius: 0.25rem;
 }
+.markdown-content table {
+    --pm-table-surface: color-mix(in srgb, var(--bs-body-bg) 96%, var(--bs-body-color) 4%);
+    --pm-table-stripe: color-mix(in srgb, var(--bs-tertiary-bg) 94%, var(--bs-body-color) 6%);
+    --pm-table-hover: color-mix(in srgb, var(--bs-tertiary-bg) 90%, var(--bs-body-color) 10%);
+    --pm-table-header: color-mix(in srgb, var(--bs-secondary-bg) 88%, var(--bs-body-color) 12%);
+    --pm-table-border: var(--bs-border-color);
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0.75rem 0;
+    font-size: inherit;
+    background-color: var(--bs-body-bg);
+    background-color: var(--pm-table-surface);
+    color: var(--bs-body-color);
+    border: 1px solid var(--pm-table-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+.markdown-content thead th {
+    background-color: var(--bs-secondary-bg);
+    background-color: var(--pm-table-header);
+    color: var(--bs-body-color);
+    font-weight: 600;
+    text-align: left;
+}
+.markdown-content th,
+.markdown-content td {
+    padding: 0.5rem 0.75rem;
+    border-right: 1px solid var(--pm-table-border);
+    border-bottom: 1px solid var(--pm-table-border);
+    vertical-align: top;
+}
+.markdown-content td {
+    background-color: transparent;
+}
+.markdown-content th:last-child,
+.markdown-content td:last-child {
+    border-right: none;
+}
+.markdown-content tr:last-child td {
+    border-bottom: none;
+}
+.markdown-content tbody tr:nth-child(odd) {
+    background-color: var(--bs-body-bg);
+    background-color: var(--pm-table-surface);
+}
+.markdown-content tbody tr:nth-child(even) {
+    background-color: var(--bs-tertiary-bg);
+    background-color: var(--pm-table-stripe);
+}
+.markdown-content tbody tr:nth-child(odd) td {
+    background-color: var(--pm-table-surface);
+}
+.markdown-content tbody tr:nth-child(even) td {
+    background-color: var(--pm-table-stripe);
+}
+.markdown-content tbody tr:hover {
+    background-color: var(--bs-secondary-bg);
+    background-color: var(--pm-table-hover);
+}
+.markdown-content tbody tr:hover td {
+    background-color: var(--pm-table-hover);
+}
+[data-bs-theme="dark"] .markdown-content table {
+    --pm-table-surface: var(--bs-dark-bg-subtle, #1a1a1a);
+    --pm-table-stripe: color-mix(in srgb, var(--bs-tertiary-bg) 85%, var(--bs-dark-bg-subtle, #1a1a1a) 15%);
+    --pm-table-hover: color-mix(in srgb, var(--bs-secondary-bg) 70%, var(--bs-body-color) 30%);
+    --pm-table-header: color-mix(in srgb, var(--bs-secondary-bg) 65%, var(--bs-body-color) 35%);
+    --pm-table-border: var(--bs-dark-border-subtle, #333);
+}
+[data-bs-theme="dark"] .markdown-content tbody tr:nth-child(odd) {
+    background-color: var(--bs-dark-bg-subtle, #1a1a1a);
+    background-color: var(--pm-table-surface);
+}
+[data-bs-theme="dark"] .markdown-content tbody tr:nth-child(even) {
+    background-color: var(--bs-secondary-bg, #333);
+    background-color: var(--pm-table-stripe);
+}
+[data-bs-theme="dark"] .markdown-content tbody tr:hover {
+    background-color: var(--bs-secondary-bg, #333);
+    background-color: var(--pm-table-hover);
+}
+[data-bs-theme="dark"] .markdown-content thead th {
+    background-color: var(--bs-secondary-bg, #333);
+    background-color: var(--pm-table-header);
+}
 
 </style>
 {% endblock css %}
