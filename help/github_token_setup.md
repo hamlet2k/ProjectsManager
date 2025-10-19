@@ -44,7 +44,7 @@ When creating a **classic PAT**, enable these scopes:
 After generating your token:
 
 1. Copy it immediately (you can’t view it again).  
-2. In **ProjectsManager → Profile → GitHub Settings**, paste it into the **Token** field.  
+2. In **ProjectsManager → Settings → GitHub Integration**, paste it into the **Token** field.  
 3. Click **Test Connection** to verify integration.
 
 ---

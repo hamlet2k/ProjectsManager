@@ -1,8 +1,14 @@
     {% if 'user' in session %}
         <li class="nav-item">
             <a href="{{ url_for('user') }}" class="nav-link d-flex">
+                <i class="bi bi-person-circle"></i>
+                <span class="d-lg-none ms-2">Profile</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a href="{{ url_for('settings') }}" class="nav-link d-flex">
                 <i class="bi bi-gear"></i>
-                <span class="d-lg-none ms-2">User Settings</span>
+                <span class="d-lg-none ms-2">Settings</span>
             </a>
         </li>
         {% include "components/separator_menu.html" %}

@@ -347,12 +347,8 @@ def signup():
 
 @app.route("/user", methods=["GET", "POST"])
 def user():
-    """User settings page"""
+    """User profile page"""
     user_form = UserSettingsForm(obj=g.user)
-    github_form = GitHubSettingsForm()
-
-    if not github_form.is_submitted():
-        github_form.enabled.data = g.user.github_integration_enabled
 
     if user_form.submit.data and user_form.validate_on_submit():
         g.user.username = user_form.username.data
@@ -369,6 +365,17 @@ def user():
             db.session.rollback()  # Roll back the transaction
             flash(f"An error occurred: {str(e)}", "error")
 
+    return render_template("user.html", user_form=user_form)
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings():
+    """Application settings page for integrations"""
+    github_form = GitHubSettingsForm()
+
+    if not github_form.is_submitted():
+        github_form.enabled.data = g.user.github_integration_enabled
+
     if github_form.submit.data and github_form.validate_on_submit():
         token_input = (github_form.token.data or "").strip()
         if github_form.enabled.data:
@@ -384,7 +391,7 @@ def user():
                 try:
                     db.session.commit()
                     flash("GitHub settings saved.", "success")
-                    return redirect(url_for("user"))
+                    return redirect(url_for("settings"))
                 except SQLAlchemyError as e:
                     db.session.rollback()
                     flash(f"An error occurred: {str(e)}", "error")
@@ -394,7 +401,7 @@ def user():
             try:
                 db.session.commit()
                 flash("GitHub integration disabled.", "info")
-                return redirect(url_for("user"))
+                return redirect(url_for("settings"))
             except SQLAlchemyError as e:
                 db.session.rollback()
                 flash(f"An error occurred: {str(e)}", "error")
@@ -402,8 +409,7 @@ def user():
     token_present = bool(g.user.github_token_encrypted)
 
     return render_template(
-        "user.html",
-        user_form=user_form,
+        "settings.html",
         github_form=github_form,
         github_token_present=token_present,
     )

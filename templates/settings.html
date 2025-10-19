@@ -1,0 +1,121 @@
+{% extends 'app.html' %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="container mt-3">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title text-center">Integration Settings</h2>
+                    {% include "forms/github_settings_form.html" %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggle = document.getElementById('github-integration-toggle');
+        const section = document.querySelector('[data-github-settings-section]');
+        const tokenField = document.getElementById('github-token-field');
+        const testButton = document.getElementById('github-test-connection');
+        const tokenStatus = document.querySelector('[data-token-status]');
+
+        function getCsrfToken() {
+            const field = document.querySelector('input[name="csrf_token"]');
+            return field ? field.value : null;
+        }
+
+        function hasStoredToken() {
+            return tokenStatus ? !tokenStatus.classList.contains('d-none') : false;
+        }
+
+        function toggleSectionVisibility() {
+            if (!section) {
+                return;
+            }
+            const shouldShow = toggle ? toggle.checked : false;
+            section.style.display = shouldShow ? '' : 'none';
+        }
+
+        function setLoading(button, isLoading) {
+            if (!button) {
+                return;
+            }
+            if (isLoading) {
+                button.dataset.originalContent = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            } else {
+                button.disabled = false;
+                if (button.dataset.originalContent) {
+                    button.innerHTML = button.dataset.originalContent;
+                    delete button.dataset.originalContent;
+                }
+            }
+        }
+
+        if (tokenField && tokenStatus) {
+            tokenField.addEventListener('input', () => {
+                tokenStatus.classList.add('d-none');
+            });
+        }
+
+        if (toggle) {
+            toggle.addEventListener('change', () => {
+                if (toggle.checked && !hasStoredToken() && tokenField && !tokenField.value.trim()) {
+                    displayFlashMessage('Enter a GitHub Personal Access Token to enable integration.', 'info');
+                }
+                toggleSectionVisibility();
+            });
+        }
+
+        if (testButton) {
+            testButton.addEventListener('click', () => {
+                const tokenValue = tokenField ? tokenField.value.trim() : '';
+                if (!tokenValue) {
+                    displayFlashMessage('Enter a GitHub Personal Access Token to test.', 'warning');
+                    return;
+                }
+                const csrfToken = getCsrfToken();
+                setLoading(testButton, true);
+                fetch('/api/github/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                    },
+                    body: JSON.stringify({ token: tokenValue, test_only: true }),
+                })
+                    .then((response) =>
+                        response
+                            .json()
+                            .catch(() => ({}))
+                            .then((data) => ({ ok: response.ok, data }))
+                    )
+                    .then(({ ok, data }) => {
+                        if (!ok || !data || !data.success) {
+                            const message = (data && data.message) || 'Connection test failed.';
+                            displayFlashMessage(message, 'danger');
+                            return;
+                        }
+                        displayFlashMessage('Successfully connected to GitHub.', 'success');
+                    })
+                    .catch((error) => {
+                        console.error('Unable to test GitHub connection', error);
+                        displayFlashMessage('Unable to test GitHub connection.', 'danger');
+                    })
+                    .finally(() => setLoading(testButton, false));
+            });
+        }
+
+        toggleSectionVisibility();
+    });
+</script>
+{% endblock %}
