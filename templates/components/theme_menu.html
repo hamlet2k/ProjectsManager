@@ -1,7 +1,7 @@
 {% if session.theme == 'dark' %}
 <a
   href="{{ url_for('change_theme', theme='light') }}"
-  class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+  class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
   aria-label="Switch to light theme"
   data-navbar-tooltip
   data-bs-placement="bottom"
@@ -13,7 +13,7 @@
 {% else %}
 <a
   href="{{ url_for('change_theme', theme='dark') }}"
-  class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+  class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
   aria-label="Switch to dark theme"
   data-navbar-tooltip
   data-bs-placement="bottom"

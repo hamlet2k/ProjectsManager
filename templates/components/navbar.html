@@ -32,6 +32,14 @@
 
     {% if g.scope %}
     <a
+      class="navbar-brand d-flex d-md-none align-items-center gap-2 mb-0 text-truncate flex-grow-1"
+      href="{{ url_for('task') }}"
+      aria-label="Reload {{ g.scope.name }} tasks"
+      title="Reload project tasks"
+    >
+      <span class="fw-semibold text-truncate">{{ g.scope.name }}</span>
+    </a>
+    <a
       class="navbar-brand d-none d-md-inline-flex align-items-center gap-2 mb-0 text-truncate"
       href="{{ url_for('task') }}"
       aria-label="Reload {{ g.scope.name }} tasks"
@@ -42,6 +50,14 @@
       <span class="fw-semibold text-truncate" style="max-width: 18rem">{{ g.scope.name }}</span>
     </a>
     {% else %}
+    <a
+      class="navbar-brand d-flex d-md-none align-items-center gap-2 mb-0 text-truncate flex-grow-1"
+      href="{{ url_for('home') }}"
+      aria-label="Go to Projects Manager home"
+      title="Projects Manager"
+    >
+      <span class="fw-semibold text-truncate">Projects Manager</span>
+    </a>
     <a
       class="navbar-brand d-none d-md-inline-flex align-items-center gap-2 mb-0 text-truncate"
       href="{{ url_for('home') }}"
@@ -71,7 +87,7 @@
         <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center w-100 w-md-auto">
           <li class="nav-item d-md-none">
             <a
-              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
               aria-label="Back to project selection"
               data-navbar-tooltip
@@ -83,9 +99,9 @@
             </a>
           </li>
           {% if g.scope %}
-          <li class="nav-item">
+          <li class="nav-item d-md-none">
             <a
-              class="nav-link d-flex align-items-center w-100 gap-2 text-truncate"
+              class="btn btn-link nav-link w-100 d-flex align-items-center gap-2 text-body text-truncate"
               href="{{ url_for('task') }}"
               aria-label="Reload {{ g.scope.name }} tasks"
               data-navbar-tooltip
@@ -93,13 +109,13 @@
               title="Reload project tasks"
             >
               <i class="bi bi-kanban" aria-hidden="true"></i>
-              <span class="flex-grow-1 text-start text-md-center text-truncate">{{ g.scope.name }}</span>
+              <span class="flex-grow-1 text-start text-truncate">{{ g.scope.name }}</span>
             </a>
           </li>
           {% else %}
-          <li class="nav-item">
+          <li class="nav-item d-md-none">
             <a
-              class="nav-link d-flex align-items-center w-100 gap-2 text-truncate"
+              class="btn btn-link nav-link w-100 d-flex align-items-center gap-2 text-body text-truncate"
               href="{{ url_for('home') }}"
               aria-label="Go to Projects Manager home"
               data-navbar-tooltip
@@ -107,7 +123,7 @@
               title="Projects Manager"
             >
               <i class="bi bi-kanban" aria-hidden="true"></i>
-              <span class="flex-grow-1 text-start text-md-center text-truncate">Projects Manager</span>
+              <span class="flex-grow-1 text-start text-truncate">Projects Manager</span>
             </a>
           </li>
           {% endif %}
@@ -232,7 +248,7 @@
           <li class="nav-item w-100 w-md-auto" data-profile-menu-root>
             <a
               href="{{ url_for('user') }}"
-              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Profile"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -247,7 +263,7 @@
           <li class="nav-item w-100 w-md-auto">
             <a
               href="{{ url_for('user') }}"
-              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Settings"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -260,12 +276,12 @@
           {% endif %}
         </ul>
 
-        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-end w-100 w-md-auto">
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-center w-100 w-md-auto">
           {% if 'user' in session %}
           <li class="nav-item w-100 w-md-auto">
             <a
               href="{{ url_for('logout') }}"
-              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Logout"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -279,7 +295,7 @@
           <li class="nav-item w-100 w-md-auto">
             <a
               href="{{ url_for('login') }}"
-              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Login"
               data-navbar-tooltip
               data-bs-placement="bottom"
