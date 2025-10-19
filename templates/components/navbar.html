@@ -1,12 +1,61 @@
-<nav class="navbar navbar-expand-lg mx-2 my-2 bg-body-tertiary" style="border-color: #6b6b6b">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="{{ url_for('home') }}">
-      <img src="{{url_for('static',filename='images/fav-big.png')}}" alt="Home" width="30" height="30" class="d-inline-block align-text-middle">
-      {{ g.scope.name if g.scope else 'Projects Manager' }}
+<nav class="navbar navbar-expand-md mx-2 my-2 bg-body-tertiary border border-secondary-subtle rounded">
+  <div class="container-fluid d-flex align-items-center flex-wrap">
+    <a
+      class="btn btn-link p-0 me-2 d-inline-flex d-md-none align-items-center justify-content-center"
+      href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
+      aria-label="Back to project selection"
+      data-navbar-tooltip
+      data-bs-placement="bottom"
+      title="Back to projects"
+    >
+      <i class="bi bi-arrow-left-circle fs-4" aria-hidden="true"></i>
+      <span class="visually-hidden">Back to project selection</span>
     </a>
 
+    <a
+      class="navbar-brand d-none d-md-inline-flex align-items-center gap-2 text-truncate"
+      href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
+      aria-label="Back to project selection"
+      data-navbar-tooltip
+      data-bs-placement="bottom"
+      title="Back to projects"
+    >
+      <img
+        src="{{ url_for('static', filename='images/fav-big.png') }}"
+        alt="Projects Manager"
+        width="30"
+        height="30"
+        class="d-inline-block"
+      />
+      <span class="visually-hidden">Back to projects</span>
+    </a>
+
+    {% if g.scope %}
+    <a
+      class="navbar-brand d-none d-md-inline-flex align-items-center gap-2 mb-0 text-truncate"
+      href="{{ url_for('task') }}"
+      aria-label="Reload {{ g.scope.name }} tasks"
+      data-navbar-tooltip
+      data-bs-placement="bottom"
+      title="Reload project tasks"
+    >
+      <span class="fw-semibold text-truncate" style="max-width: 18rem">{{ g.scope.name }}</span>
+    </a>
+    {% else %}
+    <a
+      class="navbar-brand d-none d-md-inline-flex align-items-center gap-2 mb-0 text-truncate"
+      href="{{ url_for('home') }}"
+      aria-label="Go to Projects Manager home"
+      data-navbar-tooltip
+      data-bs-placement="bottom"
+      title="Projects Manager"
+    >
+      <span class="fw-semibold text-truncate" style="max-width: 18rem">Projects Manager</span>
+    </a>
+    {% endif %}
+
     <button
-      class="navbar-toggler"
+      class="navbar-toggler ms-auto"
       type="button"
       data-bs-toggle="collapse"
       data-bs-target="#navbarNav"
@@ -16,126 +65,253 @@
     >
       <span class="navbar-toggler-icon"></span>
     </button>
-    <div class="collapse navbar-collapse" id="navbarNav">
-      {# 
-      <ul class="navbar-nav">
-        <li class="nav-item">
-          <a class="nav-link{% if 'home' in request.endpoint %} active{% endif %}"
-            href="{{ url_for('home') }}">Home</a>
-        </li>
-      </ul> 
-      #}
 
-      <ul class="navbar-nav ms-md-auto me-2 align-items-center gap-2 flex-row">
-        {% if g.user %}
-        {% set summary = notification_summary or {} %}
-        {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
-        <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
-          <button
-            class="btn btn-link nav-link position-relative"
-            type="button"
-            id="notificationDropdown"
-            data-bs-toggle="dropdown"
-            aria-expanded="false"
-            data-notification-toggle
-          >
-            <i class="bi bi-bell fs-5" aria-hidden="true"></i>
-            <span class="visually-hidden">Notifications</span>
-            {% if notification_count %}
-            <span
-              class="position-absolute top-0 start-100 badge rounded-pill text-bg-danger notification-count-badge"
-              data-notification-count
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <div class="d-flex flex-column flex-md-row w-100 gap-3 py-3 py-md-0 align-items-stretch align-items-md-center justify-content-md-between">
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center w-100 w-md-auto">
+          <li class="nav-item d-md-none">
+            <a
+              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
+              aria-label="Back to project selection"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Back to projects"
             >
-              {{ notification_count }}
-            </span>
-            {% endif %}
-          </button>
-          <div class="dropdown-menu dropdown-menu-end p-0 shadow notification-dropdown-menu" aria-labelledby="notificationDropdown">
-            <div class="notification-list" data-notification-list>
-              {% set pending = summary.pending or [] %}
-              {% set pending_ids = pending | map(attribute='id') | list %}
-              {% set recent = summary.recent or [] %}
-              {% if pending or recent %}
-                {% for note in pending %}
-                  {% with notification=note, compact=True %}
-                    {% include 'partials/notification_item.html' %}
-                  {% endwith %}
-                {% endfor %}
-                {% for note in recent %}
-                  {% if note.id not in pending_ids %}
+              <i class="bi bi-arrow-left-circle" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Back to projects</span>
+            </a>
+          </li>
+          {% if g.scope %}
+          <li class="nav-item">
+            <a
+              class="nav-link d-flex align-items-center w-100 gap-2 text-truncate"
+              href="{{ url_for('task') }}"
+              aria-label="Reload {{ g.scope.name }} tasks"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Reload project tasks"
+            >
+              <i class="bi bi-kanban" aria-hidden="true"></i>
+              <span class="flex-grow-1 text-start text-md-center text-truncate">{{ g.scope.name }}</span>
+            </a>
+          </li>
+          {% else %}
+          <li class="nav-item">
+            <a
+              class="nav-link d-flex align-items-center w-100 gap-2 text-truncate"
+              href="{{ url_for('home') }}"
+              aria-label="Go to Projects Manager home"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Projects Manager"
+            >
+              <i class="bi bi-kanban" aria-hidden="true"></i>
+              <span class="flex-grow-1 text-start text-md-center text-truncate">Projects Manager</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-center flex-grow-1">
+          {% if g.user and g.user.github_integration_enabled %}
+          <li class="nav-item w-100 w-md-auto">
+            <button
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              type="button"
+              id="github-refresh-btn"
+              aria-label="Sync integrations"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Sync integrations"
+            >
+              <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Sync integrations</span>
+            </button>
+          </li>
+          {% endif %}
+
+          {% if g.scope and g.user and g.scope.owner_id == g.user.id %}
+          {% set share_summary = g.scope.share_summary if g.scope.share_summary is defined else None %}
+          {% set share_count = share_summary.accepted if share_summary else 0 %}
+          {% set has_pending = share_summary.pending if share_summary else 0 %}
+          {% set show_nav_share = request.endpoint in ['task', 'add_task', 'edit_task'] %}
+          {% if show_nav_share %}
+          <li class="nav-item w-100 w-md-auto">
+            <button
+              type="button"
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 scope-share-btn {{ 'text-primary' if share_count else 'text-body' }}"
+              data-scope-id="{{ g.scope.id }}"
+              data-share-count="{{ share_count }}"
+              data-share-pending="{{ 'true' if has_pending else 'false' }}"
+              data-share-variant="nav"
+              aria-label="Share project"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Share project"
+            >
+              <i class="bi {{ 'bi-share-fill' if share_count else 'bi-share' }}" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Share project</span>
+            </button>
+          </li>
+          {% endif %}
+          {% endif %}
+
+          {% if g.user %}
+          <li class="nav-item w-100 w-md-auto">
+            <button
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              type="button"
+              data-bs-toggle="modal"
+              data-bs-target="#feedbackModal"
+              aria-label="Share feedback"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Share feedback"
+            >
+              <i class="bi bi-chat-dots" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Feedback</span>
+            </button>
+          </li>
+
+          {% set summary = notification_summary or {} %}
+          {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
+          <li class="nav-item dropdown w-100 w-md-auto notifications-dropdown" data-notifications-root>
+            <button
+              class="btn btn-link nav-link w-100 position-relative d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              type="button"
+              id="notificationDropdown"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+              aria-label="Notifications"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Notifications"
+              data-notification-toggle
+            >
+              <i class="bi bi-bell" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Notifications</span>
+              {% if notification_count %}
+              <span
+                class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
+                data-notification-count
+              >
+                {{ notification_count }}
+              </span>
+              {% endif %}
+            </button>
+            <div class="dropdown-menu dropdown-menu-end p-0 shadow notification-dropdown-menu" aria-labelledby="notificationDropdown">
+              <div class="notification-list" data-notification-list>
+                {% set pending = summary.pending or [] %}
+                {% set pending_ids = pending | map(attribute='id') | list %}
+                {% set recent = summary.recent or [] %}
+                {% if pending or recent %}
+                  {% for note in pending %}
                     {% with notification=note, compact=True %}
                       {% include 'partials/notification_item.html' %}
                     {% endwith %}
-                  {% endif %}
-                {% endfor %}
-              {% else %}
-                <div class="notification-empty text-muted small" data-notification-empty>No notifications yet.</div>
-              {% endif %}
+                  {% endfor %}
+                  {% for note in recent %}
+                    {% if note.id not in pending_ids %}
+                      {% with notification=note, compact=True %}
+                        {% include 'partials/notification_item.html' %}
+                      {% endwith %}
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <div class="notification-empty text-muted small" data-notification-empty>No notifications yet.</div>
+                {% endif %}
+              </div>
+              <div class="notification-dropdown-footer text-center">
+                <a class="dropdown-item" href="{{ url_for('notifications.list_notifications') }}">View all notifications</a>
+              </div>
             </div>
-            <div class="notification-dropdown-footer text-center">
-              <a class="dropdown-item" href="{{ url_for('notifications.list_notifications') }}">View all notifications</a>
-            </div>
-          </div>
-          <input type="hidden" data-notification-csrf value="{{ summary.csrf_token or '' }}">
-        </li>
-        {% endif %}
-        {% if g.scope and g.user and g.scope.owner_id == g.user.id %}
-        {% set share_summary = g.scope.share_summary if g.scope.share_summary is defined else None %}
-        {% set share_count = share_summary.accepted if share_summary else 0 %}
-        {% set has_pending = share_summary.pending if share_summary else 0 %}
-        {% set show_nav_share = request.endpoint in ['task', 'add_task', 'edit_task'] %}
-        {% if show_nav_share %}
-        <li class="nav-item">
-          <button
-            type="button"
-            class="btn btn-sm {{ 'btn-primary' if share_count else 'btn-outline-secondary' }} scope-share-btn"
-            data-scope-id="{{ g.scope.id }}"
-            data-share-count="{{ share_count }}"
-            data-share-pending="{{ 'true' if has_pending else 'false' }}"
-            aria-label="Manage sharing for {{ g.scope.name }}"
-            title="Manage sharing"
-          >
-            <i class="bi {{ 'bi-share-fill' if share_count else 'bi-share' }}" aria-hidden="true"></i>
-            <span class="d-none d-lg-inline ms-1">Share</span>
-          </button>
-        </li>
-        {% endif %}
-        {% endif %}
-        {% if g.user and g.user.github_integration_enabled %}
-        <li class="nav-item">
-          <button class="btn btn-outline-secondary btn-sm" type="button" id="github-refresh-btn">
-            <i class="bi bi-arrow-repeat"></i>
-            <span class="d-none d-lg-inline">Refresh GitHub Sync</span>
-          </button>
-        </li>
-        {% endif %}
-        {% if g.user %}
-        <li class="nav-item">
-          <button
-            class="btn btn-outline-secondary btn-sm"
-            type="button"
-            data-bs-toggle="modal"
-            data-bs-target="#feedbackModal"
-          >
-            <i class="bi bi-chat-dots"></i>
-            <span class="d-none d-lg-inline ms-1">Feedback</span>
-          </button>
-        </li>
-        {% endif %}
-        {#
-        {% if g.user.role == 'admin' %}
-          <!-- Admin Menu -->
-          {% include "components/devtools.html" %}
-          {% include "components/separator_menu.html" %}
-        {% endif %} 
-        #}
-        <!-- User Menu -->
-        {% include "components/user_menu.html" %}
-        <!-- Separator -->
-        {% include "components/separator_menu.html" %}
-        <!-- Theme selector -->
-        {% include "components/theme_menu.html" %}
-      </ul>
+            <input type="hidden" data-notification-csrf value="{{ summary.csrf_token or '' }}" />
+          </li>
+
+          <li class="nav-item w-100 w-md-auto" data-profile-menu-root>
+            <a
+              href="{{ url_for('user') }}"
+              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              aria-label="Profile"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Profile"
+              data-profile-menu-trigger
+            >
+              <i class="bi bi-person-circle" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Profile</span>
+            </a>
+          </li>
+
+          <li class="nav-item w-100 w-md-auto">
+            <a
+              href="{{ url_for('user') }}"
+              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              aria-label="Settings"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Settings"
+            >
+              <i class="bi bi-gear" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Settings</span>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-end w-100 w-md-auto">
+          {% if 'user' in session %}
+          <li class="nav-item w-100 w-md-auto">
+            <a
+              href="{{ url_for('logout') }}"
+              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              aria-label="Logout"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Logout"
+            >
+              <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Logout</span>
+            </a>
+          </li>
+          {% else %}
+          <li class="nav-item w-100 w-md-auto">
+            <a
+              href="{{ url_for('login') }}"
+              class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+              aria-label="Login"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Login"
+            >
+              <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Login</span>
+            </a>
+          </li>
+          {% endif %}
+
+          <li class="nav-item w-100 w-md-auto">
+            {% include 'components/theme_menu.html' %}
+          </li>
+
+          <li class="nav-item w-100 w-md-auto">
+            <button
+              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              type="button"
+              aria-label="Help and documentation"
+              aria-disabled="true"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Help &amp; Docs (coming soon)"
+              data-placeholder-help
+            >
+              <i class="bi bi-question-circle" aria-hidden="true"></i>
+              <span class="d-md-none flex-grow-1 text-start">Help &amp; Docs</span>
+            </button>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </nav>

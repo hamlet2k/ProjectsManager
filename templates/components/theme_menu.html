@@ -1,13 +1,25 @@
-<li>
-    {% if session.theme == 'dark'%}
-        <a href="{{ url_for('change_theme',theme='light') }}" class="nav-link d-flex">
-            <i class="bi bi-sun-fill"></i><span></span>
-            <span class="d-lg-none ms-2">Light theme</span>
-        </a>
-    {% else %}
-        <a href="{{ url_for('change_theme',theme='dark') }}" class="nav-link d-flex">
-            <i class="bi bi-moon-stars-fill"></i><span></span>
-            <span class="d-lg-none ms-2">Dark Theme</span>
-        </a>
-    {% endif %}
-</li>
+{% if session.theme == 'dark' %}
+<a
+  href="{{ url_for('change_theme', theme='light') }}"
+  class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+  aria-label="Switch to light theme"
+  data-navbar-tooltip
+  data-bs-placement="bottom"
+  title="Toggle theme"
+>
+  <i class="bi bi-sun-fill" aria-hidden="true"></i>
+  <span class="d-md-none flex-grow-1 text-start">Light theme</span>
+</a>
+{% else %}
+<a
+  href="{{ url_for('change_theme', theme='dark') }}"
+  class="nav-link d-flex align-items-center justify-content-start justify-content-md-center gap-2"
+  aria-label="Switch to dark theme"
+  data-navbar-tooltip
+  data-bs-placement="bottom"
+  title="Toggle theme"
+>
+  <i class="bi bi-moon-stars-fill" aria-hidden="true"></i>
+  <span class="d-md-none flex-grow-1 text-start">Dark theme</span>
+</a>
+{% endif %}
