@@ -1,13 +1,13 @@
 <form method="post" action="{{ url_for('user') }}" id="github-settings-form">
     {{ github_form.hidden_tag() }}
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
         <div>
             <h5 class="mb-1">GitHub Integration</h5>
             <p class="text-muted small mb-0">Connect your ProjectsManager tasks with GitHub issues.</p>
         </div>
-        <div class="form-check form-switch">
+        <div class="form-check form-switch github-toggle-switch">
             {{ github_form.enabled(class="form-check-input", role="switch", id="github-integration-toggle") }}
-            <label class="form-check-label" for="github-integration-toggle">Enable</label>
+            <label class="form-check-label" for="github-integration-toggle">{{ github_form.enabled.label.text }}</label>
         </div>
     </div>
     <div class="github-settings-body" data-github-settings-section style="display: {{ 'block' if github_form.enabled.data else 'none' }};">
