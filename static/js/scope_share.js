@@ -470,19 +470,23 @@
         buttons.forEach((button) => {
             button.dataset.shareCount = String(count);
             button.dataset.sharePending = shareState.pending_count && Number(shareState.pending_count) > 0 ? 'true' : 'false';
-            if (count > 0) {
+            const variant = button.dataset.shareVariant || 'default';
+            if (variant === 'nav') {
+                button.classList.remove('btn-outline-secondary', 'btn-primary', 'text-primary', 'text-body');
+                button.classList.add(count > 0 ? 'text-primary' : 'text-body');
+            } else if (count > 0) {
                 button.classList.remove('btn-outline-secondary');
                 button.classList.add('btn-primary');
-                const icon = button.querySelector('i');
-                if (icon) {
-                    icon.classList.remove('bi-share');
-                    icon.classList.add('bi-share-fill');
-                }
             } else {
                 button.classList.remove('btn-primary');
                 button.classList.add('btn-outline-secondary');
-                const icon = button.querySelector('i');
-                if (icon) {
+            }
+            const icon = button.querySelector('i');
+            if (icon) {
+                if (count > 0) {
+                    icon.classList.remove('bi-share');
+                    icon.classList.add('bi-share-fill');
+                } else {
                     icon.classList.remove('bi-share-fill');
                     icon.classList.add('bi-share');
                 }
