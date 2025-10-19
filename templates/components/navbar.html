@@ -229,8 +229,27 @@
           {% set summary = notification_summary or {} %}
           {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
           <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
+            <a
+              class="btn btn-link nav-link nav-link-responsive position-relative d-flex d-md-none align-items-center justify-content-start gap-2 text-body"
+              href="{{ url_for('notifications.list_notifications') }}"
+              aria-label="Notifications"
+              data-navbar-tooltip
+              data-bs-placement="bottom"
+              title="Notifications"
+            >
+              <i class="bi bi-bell" aria-hidden="true"></i>
+              <span class="flex-grow-1 text-start">Notifications</span>
+              {% if notification_count %}
+              <span
+                class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
+                data-notification-count
+              >
+                {{ notification_count }}
+              </span>
+              {% endif %}
+            </a>
             <button
-              class="btn btn-link nav-link nav-link-responsive position-relative d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive position-relative d-none d-md-flex align-items-center justify-content-md-center gap-2 text-body"
               type="button"
               id="notificationDropdown"
               data-bs-toggle="dropdown"
@@ -242,7 +261,6 @@
               data-notification-toggle
             >
               <i class="bi bi-bell" aria-hidden="true"></i>
-              <span class="d-md-none flex-grow-1 text-start">Notifications</span>
               {% if notification_count %}
               <span
                 class="badge rounded-pill text-bg-danger notification-count-badge position-absolute top-0 start-100 translate-middle"
