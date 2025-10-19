@@ -30,6 +30,21 @@
       <span class="visually-hidden">Back to projects</span>
     </a>
 
+    {% set on_scope_list = request.endpoint == 'scopes.list_scopes' %}
+    {% if not on_scope_list %}
+    <a
+      class="btn btn-link p-0 me-2 d-none d-md-inline-flex align-items-center justify-content-center"
+      href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
+      aria-label="Back to project selection"
+      data-navbar-tooltip
+      data-bs-placement="bottom"
+      title="Back to projects"
+    >
+      <i class="bi bi-arrow-left-circle fs-4" aria-hidden="true"></i>
+      <span class="visually-hidden">Back to project selection</span>
+    </a>
+    {% endif %}
+
     {% if g.scope %}
     <a
       class="navbar-brand d-flex d-md-none align-items-center gap-2 mb-0 text-truncate flex-grow-1"
@@ -83,11 +98,11 @@
     </button>
 
     <div class="collapse navbar-collapse" id="navbarNav">
-      <div class="d-flex flex-column flex-md-row w-100 gap-3 py-3 py-md-0 align-items-stretch align-items-md-center justify-content-md-between">
-        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center w-100 w-md-auto">
+      <div class="d-flex flex-column flex-md-row w-100 gap-3 gap-md-3 py-3 py-md-0 align-items-stretch align-items-md-center">
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center" data-nav-section="left">
           <li class="nav-item d-md-none">
             <a
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
               aria-label="Back to project selection"
               data-navbar-tooltip
@@ -101,7 +116,7 @@
           {% if g.scope %}
           <li class="nav-item d-md-none">
             <a
-              class="btn btn-link nav-link w-100 d-flex align-items-center gap-2 text-body text-truncate"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center gap-2 text-body text-truncate"
               href="{{ url_for('task') }}"
               aria-label="Reload {{ g.scope.name }} tasks"
               data-navbar-tooltip
@@ -115,7 +130,7 @@
           {% else %}
           <li class="nav-item d-md-none">
             <a
-              class="btn btn-link nav-link w-100 d-flex align-items-center gap-2 text-body text-truncate"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center gap-2 text-body text-truncate"
               href="{{ url_for('home') }}"
               aria-label="Go to Projects Manager home"
               data-navbar-tooltip
@@ -129,11 +144,14 @@
           {% endif %}
         </ul>
 
-        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-center flex-grow-1">
+        <ul
+          class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-start justify-content-md-end flex-grow-1"
+          data-nav-section="center"
+        >
           {% if g.user and g.user.github_integration_enabled %}
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <button
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               type="button"
               id="github-refresh-btn"
               aria-label="Sync integrations"
@@ -153,10 +171,10 @@
           {% set has_pending = share_summary.pending if share_summary else 0 %}
           {% set show_nav_share = request.endpoint in ['task', 'add_task', 'edit_task'] %}
           {% if show_nav_share %}
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <button
               type="button"
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 scope-share-btn {{ 'text-primary' if share_count else 'text-body' }}"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 scope-share-btn {{ 'text-primary' if share_count else 'text-body' }}"
               data-scope-id="{{ g.scope.id }}"
               data-share-count="{{ share_count }}"
               data-share-pending="{{ 'true' if has_pending else 'false' }}"
@@ -174,9 +192,9 @@
           {% endif %}
 
           {% if g.user %}
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <button
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               type="button"
               data-bs-toggle="modal"
               data-bs-target="#feedbackModal"
@@ -192,9 +210,9 @@
 
           {% set summary = notification_summary or {} %}
           {% set notification_count = summary.badge_count if summary.badge_count is defined else summary.new_count if summary.new_count is defined else summary.pending_count %}
-          <li class="nav-item dropdown w-100 w-md-auto notifications-dropdown" data-notifications-root>
+          <li class="nav-item dropdown notifications-dropdown" data-notifications-root>
             <button
-              class="btn btn-link nav-link w-100 position-relative d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive position-relative d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               type="button"
               id="notificationDropdown"
               data-bs-toggle="dropdown"
@@ -245,10 +263,10 @@
             <input type="hidden" data-notification-csrf value="{{ summary.csrf_token or '' }}" />
           </li>
 
-          <li class="nav-item w-100 w-md-auto" data-profile-menu-root>
+          <li class="nav-item" data-profile-menu-root>
             <a
               href="{{ url_for('user') }}"
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Profile"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -260,10 +278,10 @@
             </a>
           </li>
 
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <a
               href="{{ url_for('user') }}"
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Settings"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -276,12 +294,19 @@
           {% endif %}
         </ul>
 
-        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-md-center w-100 w-md-auto">
+        <div class="d-none d-md-flex align-self-stretch mx-md-1 navbar-divider-tight">
+          <div class="vr text-body-secondary opacity-50 navbar-divider-tight"></div>
+        </div>
+
+        <ul
+          class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-start justify-content-md-end flex-grow-0 flex-shrink-0"
+          data-nav-section="right"
+        >
           {% if 'user' in session %}
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <a
               href="{{ url_for('logout') }}"
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Logout"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -292,10 +317,10 @@
             </a>
           </li>
           {% else %}
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <a
               href="{{ url_for('login') }}"
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               aria-label="Login"
               data-navbar-tooltip
               data-bs-placement="bottom"
@@ -307,13 +332,13 @@
           </li>
           {% endif %}
 
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             {% include 'components/theme_menu.html' %}
           </li>
 
-          <li class="nav-item w-100 w-md-auto">
+          <li class="nav-item">
             <button
-              class="btn btn-link nav-link w-100 d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
+              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
               type="button"
               aria-label="Help and documentation"
               aria-disabled="true"

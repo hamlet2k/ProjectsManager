@@ -1,0 +1,48 @@
+/* Responsive navbar refinements */
+
+.nav-link-responsive {
+  width: 100%;
+  flex-grow: 1;
+}
+
+.navbar-nav[data-nav-section] {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .nav-link-responsive {
+    width: auto;
+    flex-grow: 0;
+  }
+
+  .navbar-nav[data-nav-section] {
+    width: auto;
+  }
+
+  .navbar-nav[data-nav-section] .nav-item {
+    flex: 0 0 auto;
+  }
+
+  .navbar-nav[data-nav-section="center"] {
+    flex-grow: 1;
+  }
+
+  .navbar-nav[data-nav-section="right"] {
+    flex-grow: 0;
+  }
+
+  .navbar-nav[data-nav-section="center"],
+  .navbar-nav[data-nav-section="right"] {
+    gap: 0.5rem;
+  }
+
+  .navbar-nav[data-nav-section="center"],
+  .navbar-nav[data-nav-section="right"] {
+    margin-left: 0.25rem;
+  }
+
+  .navbar-divider-tight {
+    margin-left: 0.25rem;
+    margin-right: 0.25rem;
+  }
+}
