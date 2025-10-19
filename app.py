@@ -249,10 +249,11 @@ def submit_feedback():
     repo_config = app.config.get("GITHUB_FEEDBACK_REPOSITORY")
     if not repo_config:
         return _feedback_error("Feedback repository is not configured.", status=500)
-    if "/" not in repo_config:
-        return _feedback_error("Feedback repository configuration is invalid.", status=500)
 
-    owner, repository = repo_config.split("/", 1)
+    try:
+        owner, repository = repo_config.split("/", 1)
+    except ValueError:
+        return _feedback_error("Feedback repository configuration is invalid.", status=500)
     if not owner or not repository:
         return _feedback_error("Feedback repository configuration is invalid.", status=500)
 
