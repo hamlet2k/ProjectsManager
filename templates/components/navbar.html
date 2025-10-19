@@ -109,6 +109,19 @@
           </button>
         </li>
         {% endif %}
+        {% if g.user %}
+        <li class="nav-item">
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            type="button"
+            data-bs-toggle="modal"
+            data-bs-target="#feedbackModal"
+          >
+            <i class="bi bi-chat-dots"></i>
+            <span class="d-none d-lg-inline ms-1">Feedback</span>
+          </button>
+        </li>
+        {% endif %}
         {#
         {% if g.user.role == 'admin' %}
           <!-- Admin Menu -->

@@ -31,7 +31,8 @@
         
     {% block modals %}
         <!-- Default Modals -->
-        <!-- Confirmation Modal --> 
+        {% include "modals/feedback_modal.html" %}
+        <!-- Confirmation Modal -->
         {% include "modals/confirmation_modal.html" %}
         <!-- Additional Modals -->
     {% endblock %}

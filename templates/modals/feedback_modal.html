@@ -1,0 +1,62 @@
+<div
+  class="modal fade"
+  id="feedbackModal"
+  tabindex="-1"
+  aria-labelledby="feedbackModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="feedbackForm" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ feedback_csrf_token }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="feedbackModalLabel">Submit Feedback</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-success d-none" role="alert" data-feedback-success></div>
+          <div class="alert alert-danger d-none" role="alert" data-feedback-error></div>
+          <div class="mb-3">
+            <label for="feedbackTitle" class="form-label">Title</label>
+            <input
+              type="text"
+              id="feedbackTitle"
+              name="title"
+              class="form-control"
+              maxlength="255"
+              required
+            >
+            <div class="invalid-feedback">Please provide a title.</div>
+          </div>
+          <div class="mb-3">
+            <label for="feedbackBody" class="form-label">Description</label>
+            <textarea
+              id="feedbackBody"
+              name="body"
+              class="form-control"
+              rows="4"
+              required
+            ></textarea>
+            <div class="invalid-feedback">Please describe your feedback.</div>
+          </div>
+          <div class="mb-3">
+            <label for="feedbackLabel" class="form-label">Type</label>
+            <select id="feedbackLabel" name="label" class="form-select" required>
+              <option value="question">Question</option>
+              <option value="enhancement">Enhancement</option>
+              <option value="bug">Bug</option>
+            </select>
+            <div class="invalid-feedback">Select the option that best fits your feedback.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-feedback-submit>
+            <span class="spinner-border spinner-border-sm align-middle d-none" aria-hidden="true" data-feedback-spinner></span>
+            <span class="align-middle" data-feedback-submit-label>Submit Feedback</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
