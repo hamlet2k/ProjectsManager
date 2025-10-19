@@ -1,0 +1,56 @@
+.feedback-modal textarea[data-feedback-autosize] {
+  resize: none;
+  transition: height 0.2s ease;
+  min-height: calc(1.5em + 0.75rem + 2px);
+}
+
+.feedback-modal textarea[data-feedback-autosize="title"] {
+  overflow-y: hidden;
+}
+
+.feedback-modal textarea[data-feedback-autosize="description"] {
+  overflow-y: hidden;
+}
+
+.feedback-modal .feedback-type-options {
+  gap: 0.5rem;
+}
+
+.feedback-modal .feedback-type-option {
+  min-width: 0;
+}
+
+.feedback-modal [data-feedback-type-field].is-invalid .feedback-type-option {
+  border-color: var(--bs-danger);
+  color: var(--bs-danger);
+  box-shadow: none;
+}
+
+.feedback-modal [data-feedback-type-field].is-invalid .feedback-type-option:hover,
+.feedback-modal [data-feedback-type-field].is-invalid .feedback-type-option:focus {
+  color: var(--bs-danger);
+}
+
+.feedback-modal [data-feedback-type-field].is-invalid .feedback-type-option:focus-visible {
+  box-shadow: 0 0 0 0.25rem rgba(var(--bs-danger-rgb), 0.25);
+}
+
+.feedback-modal [data-feedback-type-invalid] {
+  margin-top: 0.5rem;
+}
+
+.feedback-modal [data-feedback-success] .feedback-success-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+@media (max-width: 575.98px) {
+  .feedback-modal .feedback-type-options {
+    flex-direction: column;
+  }
+
+  .feedback-modal .feedback-type-option {
+    width: 100%;
+  }
+}

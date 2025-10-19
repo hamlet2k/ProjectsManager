@@ -6,7 +6,7 @@
   aria-hidden="true"
 >
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
+    <div class="modal-content feedback-modal">
       <form id="feedbackForm" novalidate>
         <input type="hidden" name="csrf_token" value="{{ feedback_csrf_token }}">
         <div class="modal-header">
@@ -16,16 +16,58 @@
         <div class="modal-body">
           <div class="alert alert-success d-none" role="alert" data-feedback-success></div>
           <div class="alert alert-danger d-none" role="alert" data-feedback-error></div>
+          <div class="mb-3" data-feedback-type-field>
+            <span class="form-label d-block">Type</span>
+            <div class="feedback-type-options d-flex flex-wrap gap-2" role="radiogroup" aria-label="Feedback type">
+              <input
+                type="radio"
+                class="btn-check"
+                name="label"
+                id="feedbackTypeQuestion"
+                value="question"
+                autocomplete="off"
+                required
+                checked
+              >
+              <label class="btn btn-outline-secondary feedback-type-option" for="feedbackTypeQuestion">Question</label>
+
+              <input
+                type="radio"
+                class="btn-check"
+                name="label"
+                id="feedbackTypeEnhancement"
+                value="enhancement"
+                autocomplete="off"
+                required
+              >
+              <label class="btn btn-outline-secondary feedback-type-option" for="feedbackTypeEnhancement">Enhancement</label>
+
+              <input
+                type="radio"
+                class="btn-check"
+                name="label"
+                id="feedbackTypeBug"
+                value="bug"
+                autocomplete="off"
+                required
+              >
+              <label class="btn btn-outline-secondary feedback-type-option" for="feedbackTypeBug">Bug</label>
+            </div>
+            <div class="invalid-feedback d-block d-none" data-feedback-type-invalid>
+              Select the option that best fits your feedback.
+            </div>
+          </div>
           <div class="mb-3">
             <label for="feedbackTitle" class="form-label">Title</label>
-            <input
-              type="text"
+            <textarea
               id="feedbackTitle"
               name="title"
               class="form-control"
+              rows="1"
               maxlength="255"
               required
-            >
+              data-feedback-autosize="title"
+            ></textarea>
             <div class="invalid-feedback">Please provide a title.</div>
           </div>
           <div class="mb-3">
@@ -34,19 +76,11 @@
               id="feedbackBody"
               name="body"
               class="form-control"
-              rows="4"
+              rows="3"
               required
+              data-feedback-autosize="description"
             ></textarea>
             <div class="invalid-feedback">Please describe your feedback.</div>
-          </div>
-          <div class="mb-3">
-            <label for="feedbackLabel" class="form-label">Type</label>
-            <select id="feedbackLabel" name="label" class="form-select" required>
-              <option value="question">Question</option>
-              <option value="enhancement">Enhancement</option>
-              <option value="bug">Bug</option>
-            </select>
-            <div class="invalid-feedback">Select the option that best fits your feedback.</div>
           </div>
         </div>
         <div class="modal-footer">
