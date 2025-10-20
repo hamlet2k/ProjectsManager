@@ -38,6 +38,8 @@ app.config[
 app.config.setdefault(
     "GITHUB_FEEDBACK_REPOSITORY", os.environ.get("GITHUB_FEEDBACK_REPOSITORY")
 )
+app.config.setdefault("APP_DISPLAY_NAME", "ProjectsManager")
+app.config.setdefault("APP_VERSION", os.environ.get("APP_VERSION"))
 
 db.init_app(app)
 
@@ -188,6 +190,16 @@ def inject_forms():
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "notification_summary": getattr(g, "notification_summary", None),
         "feedback_csrf_token": generate_csrf(),
+    }
+
+
+@app.context_processor
+def inject_footer_metadata():
+    """Provide footer metadata for all templates."""
+    return {
+        "app_name": app.config.get("APP_DISPLAY_NAME", "ProjectsManager"),
+        "app_version": app.config.get("APP_VERSION"),
+        "current_year": datetime.now(timezone.utc).year,
     }
 
 

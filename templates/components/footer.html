@@ -1,5 +1,28 @@
-<footer class="footer mt-auto py-3">
+<footer class="footer mt-auto py-3 bg-body-tertiary border-top">
     <div class="container">
-        <span class="text-muted">Place sticky footer content here.</span>
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 small text-body-secondary">
+            <div class="d-flex flex-column gap-1">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="fw-semibold text-body">{{ app_name }}</span>
+                    {% if app_version %}
+                    <span class="text-body-secondary">v{{ app_version }}</span>
+                    {% endif %}
+                </div>
+                <span>&copy; {{ current_year }} {{ app_name }}. All rights reserved.</span>
+            </div>
+            <nav class="d-flex flex-wrap gap-3" aria-label="Footer navigation">
+                <a class="text-body-secondary text-decoration-none" href="{{ url_for('home') }}">Home</a>
+                <a class="text-body-secondary text-decoration-none" href="{{ url_for('user') }}">Profile</a>
+                <a class="text-body-secondary text-decoration-none" href="{{ url_for('settings') }}">Settings</a>
+                <a
+                    class="text-body-secondary text-decoration-none"
+                    href="#"
+                    role="button"
+                    aria-disabled="true"
+                    data-placeholder-help
+                >Help</a>
+                <a class="text-body-secondary text-decoration-none" href="#" data-bs-toggle="modal" data-bs-target="#feedbackModal">Feedback</a>
+            </nav>
+        </div>
     </div>
 </footer>

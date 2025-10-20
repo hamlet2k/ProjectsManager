@@ -14,7 +14,7 @@
     <link rel="icon" href="{{ url_for('static', filename='images/fav-big.ico') }}" type="image/x-icon">
 </head>
 
-<body data-bs-theme="{{ session.theme }}">
+<body class="d-flex flex-column min-vh-100" data-bs-theme="{{ session.theme }}">
     <!-- Navigation Bar -->
     {% block navbar %}
         {% include 'components/navbar.html' %}
@@ -24,7 +24,7 @@
     {% include "components/flash.html" %}
 
     <!-- Main Content -->
-    <main role="main" class="container">
+    <main role="main" class="container flex-grow-1">
         {% block content %}
         {% endblock %}
     </main>
