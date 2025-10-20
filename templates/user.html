@@ -1,17 +1,92 @@
 {% extends 'app.html' %}
-{% block title %}User Profile{%endblock %}
+{% block title %}User Profile{% endblock %}
+
+{% block css %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css') }}">
+{% endblock %}
 
 {% block content %}
-<div class="container mt-3">
-    <div class="row">
-        <div class="col-md-6 offset-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h2 class="card-title text-center">User Profile</h2>
-                    {% include "forms/user_form.html" %}
+<div class="container py-4 py-lg-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-7">
+            <section class="card shadow-sm border-0 profile-card">
+                <div class="card-body p-4 p-lg-5">
+                    <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
+                        <div>
+                            <h1 class="h4 mb-1">Profile Settings</h1>
+                            <p class="text-body-secondary mb-0">Manage your identity, contact details, and theme preferences.</p>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        {% include "forms/user_form.html" %}
+                    </div>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 </div>
-{% endblock content %}
+
+<div class="modal fade" id="password-modal" tabindex="-1" aria-labelledby="password-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="password-modal-title">Change Password</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="{{ url_for('user') }}" id="password-change-form" class="needs-validation" novalidate>
+                <div class="modal-body">
+                    {{ password_form.hidden_tag() }}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="{{ password_form.current_password.id }}">Current Password</label>
+                        {{ password_form.current_password(
+                            class="form-control" + (" is-invalid" if password_form.current_password.errors else ""),
+                            autocomplete="current-password",
+                            required=True
+                        ) }}
+                        {% for error in password_form.current_password.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="{{ password_form.new_password.id }}">New Password</label>
+                        {{ password_form.new_password(
+                            class="form-control" + (" is-invalid" if password_form.new_password.errors else ""),
+                            placeholder="At least 8 characters with a number",
+                            autocomplete="new-password",
+                            required=True
+                        ) }}
+                        <div class="form-text">Password must be at least 8 characters and include one number.</div>
+                        {% for error in password_form.new_password.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold" for="{{ password_form.confirm_password.id }}">Confirm New Password</label>
+                        {{ password_form.confirm_password(
+                            class="form-control" + (" is-invalid" if password_form.confirm_password.errors else ""),
+                            autocomplete="new-password",
+                            required=True
+                        ) }}
+                        {% for error in password_form.confirm_password.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    {{ password_form.submit(class="btn btn-primary", id="password-submit-button", disabled=True) }}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    window.__passwordFormHasErrors = {{ (password_form.errors|length > 0)|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/user_profile.js') }}"></script>
+{% endblock %}

@@ -1,48 +1,102 @@
-<form method="post" action="{{ url_for('user')}}" class="form-floating mt-4">
+<form method="post" action="{{ url_for('user') }}" id="profile-form" class="needs-validation" novalidate>
     {{ user_form.hidden_tag() }}
-    <div class="form-floating mb-3">
-        {{ user_form.username(class="form-control"+ (" is-invalid" if user_form.username.errors else ""), placeholder="Username") }}
-        {{ user_form.username.label(class="form-label") }}
-        {% for error in user_form.username.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
-        {% endfor %}
+    <div class="row g-3">
+        <div class="col-12 col-md-6">
+            <label class="form-label fw-semibold" for="{{ user_form.username.id }}">
+                Username <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ user_form.username(
+                class="form-control" + (" is-invalid" if user_form.username.errors else ""),
+                placeholder="your.username",
+                autocomplete="username",
+                inputmode="text",
+                pattern="^[A-Za-z0-9_.-]+$",
+                spellcheck="false",
+                required=True
+            ) }}
+            {% if user_form.username.errors %}
+                {% for error in user_form.username.errors %}
+                    <div class="invalid-feedback d-block">{{ error }}</div>
+                {% endfor %}
+            {% else %}
+                <div class="form-text">Letters, numbers, dots, hyphens, and underscores only.</div>
+            {% endif %}
+        </div>
+        <div class="col-12 col-md-6">
+            <label class="form-label fw-semibold" for="{{ user_form.name.id }}">
+                Name <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ user_form.name(
+                class="form-control" + (" is-invalid" if user_form.name.errors else ""),
+                placeholder="Your full name",
+                autocomplete="name",
+                required=True
+            ) }}
+            {% for error in user_form.name.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+        </div>
+        <div class="col-12">
+            <label class="form-label fw-semibold" for="{{ user_form.email.id }}">
+                Email <span class="text-danger" aria-hidden="true">*</span>
+            </label>
+            {{ user_form.email(
+                class="form-control" + (" is-invalid" if user_form.email.errors else ""),
+                placeholder="you@example.com",
+                type="email",
+                autocomplete="email",
+                required=True
+            ) }}
+            {% for error in user_form.email.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+        </div>
     </div>
-    <div class="form-floating mb-3">
-        {{ user_form.name(class="form-control"+ (" is-invalid" if user_form.name.errors else ""), placeholder="Name") }}
-        {{ user_form.name.label(class="form-label") }}
-        {% for error in user_form.name.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
-        {% endfor %}
-    </div>
-    <div class="form-floating mb-3">
-        {{ user_form.email(class="form-control"+ (" is-invalid" if user_form.email.errors else ""), placeholder="Email") }}
-        {{ user_form.email.label(class="form-label") }}
-        {% for error in user_form.email.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
-        {% endfor %}
-    </div>
-    <div class="form-floating mb-3">
-        {{ user_form.password(class="form-control"+ (" is-invalid" if user_form.password.errors else ""), placeholder="Password") }}
-        {{ user_form.password.label(class="form-label") }}
-        {% for error in user_form.password.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
-        {% endfor %}
-    </div>
-    <div class="form-floating mb-3">
-        {{ user_form.theme(class="form-control"+ (" is-invalid" if user_form.theme.errors else ""), placeholder="Theme") }}
-        {{ user_form.theme.label(class="form-label") }}
+
+    <div class="mt-4">
+        <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+            <label class="form-label fw-semibold mb-0">Theme</label>
+            <span class="text-body-secondary small">Preview applies instantly. Save to keep it.</span>
+        </div>
+        <div class="row g-3 g-md-4 theme-selector mt-0" data-theme-selector>
+            {% for subfield in user_form.theme %}
+                {% set value = subfield._value() %}
+                <div class="col-12 col-md-6">
+                    <input
+                        class="btn-check"
+                        type="radio"
+                        name="{{ user_form.theme.name }}"
+                        id="{{ subfield.id }}"
+                        value="{{ value }}"
+                        autocomplete="off"
+                        {% if subfield.checked %}checked{% endif %}
+                    >
+                    <label class="theme-option" for="{{ subfield.id }}" data-theme-option="{{ value }}">
+                        <div class="theme-option-preview" aria-hidden="true" data-theme-preview="{{ value }}"></div>
+                        <div class="theme-option-body">
+                            <span class="theme-option-name">{{ subfield.label.text }}</span>
+                            <span class="theme-option-hint">Balanced contrast and accessibility</span>
+                        </div>
+                    </label>
+                </div>
+            {% endfor %}
+        </div>
         {% for error in user_form.theme.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
+            <div class="invalid-feedback d-block">{{ error }}</div>
         {% endfor %}
     </div>
-    <div class="form-floating mb-3">
-        {{ user_form.role(class="form-control"+ (" is-invalid" if user_form.role.errors else ""), placeholder="Role") }}
-        {{ user_form.role.label(class="form-label") }}
-        {% for error in user_form.role.errors %}
-            <div class="invalid-feedback" style="display:block">{{ error }}</div>
-        {% endfor %}
-    </div>
-    <div class="d-grid">
-        {{ user_form.submit(class="btn btn-primary") }}
+
+    <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-3 mt-4">
+        <button
+            type="button"
+            class="btn btn-outline-secondary"
+            data-bs-toggle="modal"
+            data-bs-target="#password-modal"
+        >
+            Change Password
+        </button>
+        <div class="ms-md-auto">
+            {{ user_form.submit(class="btn btn-primary px-4", id="profile-save-button", disabled=True) }}
+        </div>
     </div>
 </form>

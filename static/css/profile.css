@@ -1,0 +1,115 @@
+/* Styles for the refreshed profile experience */
+.profile-card {
+    border-radius: 1.25rem;
+    background: var(--bs-body-bg);
+}
+
+.profile-card .card-body {
+    background: transparent;
+}
+
+.profile-card .form-label {
+    margin-bottom: 0.35rem;
+}
+
+.theme-selector {
+    margin-top: 1rem;
+}
+
+.theme-selector .theme-option {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    padding: 1rem 1.25rem;
+    border-radius: 1rem;
+    border: 1px solid var(--bs-border-color);
+    background: var(--bs-body-bg);
+    box-shadow: 0 0.25rem 1.5rem rgba(33, 37, 41, 0.08);
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.theme-selector .theme-option:hover {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0.5rem 1.5rem rgba(13, 110, 253, 0.2);
+    transform: translateY(-2px);
+}
+
+.theme-selector .btn-check:checked + .theme-option {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0.65rem 1.8rem rgba(13, 110, 253, 0.35);
+}
+
+.theme-selector .btn-check:focus + .theme-option,
+.theme-selector .btn-check:focus-visible + .theme-option {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: 3px;
+}
+
+.theme-option-preview {
+    flex: 0 0 auto;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--bs-border-color-translucent, rgba(0, 0, 0, 0.07));
+    overflow: hidden;
+    position: relative;
+}
+
+.theme-option-preview::before,
+.theme-option-preview::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transition: opacity 0.2s ease;
+}
+
+.theme-option-preview[data-theme-preview="light"]::before {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 60%, #e9ecef 100%);
+}
+
+.theme-option-preview[data-theme-preview="light"]::after {
+    background: linear-gradient(135deg, rgba(13, 110, 253, 0.18), transparent);
+    opacity: 0.2;
+}
+
+.theme-option-preview[data-theme-preview="dark"]::before {
+    background: linear-gradient(135deg, #212529 0%, #343a40 60%, #495057 100%);
+}
+
+.theme-option-preview[data-theme-preview="dark"]::after {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent);
+    opacity: 0.2;
+}
+
+.theme-option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.theme-option-name {
+    font-weight: 600;
+    color: var(--bs-body-color);
+}
+
+.theme-option-hint {
+    font-size: 0.85rem;
+    color: var(--bs-body-secondary);
+}
+
+@media (max-width: 575.98px) {
+    .profile-card {
+        border-radius: 1rem;
+    }
+
+    .theme-selector .theme-option {
+        padding: 0.9rem 1rem;
+    }
+
+    .theme-option-preview {
+        width: 3rem;
+        height: 3rem;
+    }
+}

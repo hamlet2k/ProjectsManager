@@ -55,6 +55,7 @@ from forms import (
     SignupForm,
     LoginForm,
     UserSettingsForm,
+    PasswordChangeForm,
     GitHubSettingsForm,
     THEME_CHOICES,
 )
@@ -360,24 +361,33 @@ def signup():
 @app.route("/user", methods=["GET", "POST"])
 def user():
     """User profile page"""
-    user_form = UserSettingsForm(obj=g.user)
+    user_form = UserSettingsForm(prefix="profile", user=g.user, obj=g.user)
+    password_form = PasswordChangeForm(prefix="password", user=g.user)
 
-    if user_form.submit.data and user_form.validate_on_submit():
-        g.user.username = user_form.username.data
-        g.user.name = user_form.name.data
-        g.user.email = user_form.email.data
+    if user_form.submit.data and user_form.validate():
+        g.user.username = user_form.username.data.strip()
+        g.user.name = user_form.name.data.strip()
+        g.user.email = user_form.email.data.strip()
         g.user.theme = user_form.theme.data
-        g.user.role = user_form.role.data
-        g.user.set_password(user_form.password.data)
+        session["theme"] = g.user.theme
         try:
             db.session.commit()
-            flash("Information Updated", "success")
-            return redirect(url_for("home"))
+            flash("Profile updated successfully.", "success")
+            return redirect(url_for("user"))
         except SQLAlchemyError as e:
             db.session.rollback()  # Roll back the transaction
-            flash(f"An error occurred: {str(e)}", "error")
+            flash(f"An error occurred while saving your profile: {str(e)}", "error")
+    elif password_form.submit.data and password_form.validate():
+        g.user.set_password(password_form.new_password.data)
+        try:
+            db.session.commit()
+            flash("Password updated successfully.", "success")
+            return redirect(url_for("user"))
+        except SQLAlchemyError as e:
+            db.session.rollback()  # Roll back the transaction
+            flash(f"An error occurred while updating the password: {str(e)}", "error")
 
-    return render_template("user.html", user_form=user_form)
+    return render_template("user.html", user_form=user_form, password_form=password_form)
 
 
 @app.route("/settings", methods=["GET", "POST"])
