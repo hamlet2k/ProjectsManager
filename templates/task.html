@@ -818,7 +818,7 @@
                         <form action="{{ url_for('task') }}" method="get" class="row g-3 align-items-end" id="task-filter-form">
                         <div class="col-12 col-md-4">
                             <label for="search" class="form-label">Search tasks</label>
-                            <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description" autocomplete="off">
+                            <input type="search" class="form-control form-control-sm" id="search" name="search" value="{{ search_query }}" placeholder="Search by name or description" autocomplete="off" title="Press Ctrl + Backspace or Esc to clear search.">
                         </div>
                         <div class="col-12 col-md-3">
                             <label for="sort_by" class="form-label">Sort by</label>
@@ -4765,8 +4765,96 @@
             persistTaskPreferences();
             refreshTaskList();
         }, 300);
+        const refreshSearchImmediately = () => {
+            persistTaskPreferences();
+            refreshTaskList();
+        };
+        const clearSearchInput = () => {
+            if (!searchInput.value) {
+                return false;
+            }
+            searchInput.value = '';
+            return true;
+        };
+        const focusSearchInput = () => {
+            if (typeof searchInput.focus === 'function') {
+                try {
+                    searchInput.focus({ preventScroll: true });
+                } catch (error) {
+                    searchInput.focus();
+                }
+            }
+        };
+        const nonTextInputTypes = ['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file', 'image', 'hidden', 'date', 'time', 'month', 'week', 'datetime', 'datetime-local'];
+        const isEditableTarget = (element) => {
+            if (!element) {
+                return false;
+            }
+            if (element === searchInput) {
+                return true;
+            }
+            if ('disabled' in element && element.disabled) {
+                return false;
+            }
+            if (element.isContentEditable) {
+                return true;
+            }
+            const tagName = (element.tagName || '').toLowerCase();
+            if (tagName === 'textarea') {
+                if ('readOnly' in element && element.readOnly) {
+                    return false;
+                }
+                return true;
+            }
+            if (tagName === 'input') {
+                if ('readOnly' in element && element.readOnly) {
+                    return false;
+                }
+                const type = (element.type || '').toLowerCase();
+                return !nonTextInputTypes.includes(type);
+            }
+            return false;
+        };
         searchInput.addEventListener('input', () => {
             debouncedSearch();
+        });
+        searchInput.addEventListener('keydown', (event) => {
+            const key = (event.key || '').toLowerCase();
+            if (key !== 'escape') {
+                return;
+            }
+            if (!clearSearchInput()) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            refreshSearchImmediately();
+            focusSearchInput();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.defaultPrevented) {
+                return;
+            }
+            if (!(event.ctrlKey || event.metaKey)) {
+                return;
+            }
+            const key = (event.key || '').toLowerCase();
+            if (key !== 'backspace') {
+                return;
+            }
+            if (!searchInput.value) {
+                return;
+            }
+            const target = event.target;
+            const targetIsSearch = target === searchInput;
+            const targetIsEditable = isEditableTarget(target);
+            clearSearchInput();
+            refreshSearchImmediately();
+            if (targetIsSearch || !targetIsEditable) {
+                event.preventDefault();
+                event.stopPropagation();
+                focusSearchInput();
+            }
         });
     }
 </script>
