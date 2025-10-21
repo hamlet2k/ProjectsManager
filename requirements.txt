@@ -28,8 +28,11 @@ nodeenv==1.9.1
 packaging==25.0
 platformdirs==4.4.0
 pluggy==1.6.0
+python-dotenv==1.0.1
+psycopg2-binary==2.9.11
 pycparser==2.23
 Pygments==2.19.2
+PyGithub==2.3.0
 pytest==8.4.2
 pytest-mock==3.15.1
 PyYAML==6.0.3
