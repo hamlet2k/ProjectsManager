@@ -1,6 +1,4 @@
-import os
 import re
-import tempfile
 import unittest
 
 from app import app, db
@@ -9,19 +7,31 @@ from models.user import User
 from models.scope_share import ScopeShare, ScopeShareStatus
 from models.notification import Notification, NotificationStatus, NotificationType
 from services.scope_service import get_user_scopes, user_can_access_scope
+from tests.utils.db import cleanup_test_database, provision_test_database
 
 
 class ScopeSharingTestCase(unittest.TestCase):
     csrf_pattern = re.compile(r'name="csrf_token" value="([^"]+)"')
 
     def setUp(self):
-        self.db_fd, self.db_path = tempfile.mkstemp()
         self._original_database_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+        self._original_testing = app.config.get("TESTING", False)
+        self._original_csrf_enabled = app.config.get("WTF_CSRF_ENABLED", True)
+        (
+            self._test_db_name,
+            test_database_uri,
+            self._managed_test_db,
+        ) = provision_test_database()
         app.config["TESTING"] = True
-        app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{self.db_path}"
+        app.config["SQLALCHEMY_DATABASE_URI"] = test_database_uri
+        app.config["WTF_CSRF_ENABLED"] = False
 
         with app.app_context():
             db.session.remove()
+            engine = db.engines.pop(None, None)
+            if engine is not None:
+                engine.dispose()
+            db.get_engine()
             db.drop_all()
             db.create_all()
 
@@ -54,10 +64,13 @@ class ScopeSharingTestCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
             db.engine.dispose()
-        os.close(self.db_fd)
-        os.unlink(self.db_path)
+
+        if self._managed_test_db:
+            cleanup_test_database(self._test_db_name)
         if self._original_database_uri is not None:
             app.config["SQLALCHEMY_DATABASE_URI"] = self._original_database_uri
+        app.config["TESTING"] = self._original_testing
+        app.config["WTF_CSRF_ENABLED"] = self._original_csrf_enabled
 
     def _login(self, user_id):
         with self.client.session_transaction() as client_session:

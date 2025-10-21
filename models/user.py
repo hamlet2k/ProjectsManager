@@ -18,7 +18,7 @@ from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
+    password_hash = db.Column(db.Text)
     role = db.Column(db.String(80), nullable=False, default='user')
     name = db.Column(db.String(80), nullable=False)
     email = db.Column(db.String(80), unique=True, nullable=False)

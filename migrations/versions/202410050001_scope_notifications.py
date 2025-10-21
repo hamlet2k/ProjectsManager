@@ -72,9 +72,9 @@ def upgrade():
             "notifications",
             ["user_id", "status"],
         )
-        print("✅ Created notifications table.")
+        print("[INFO] Created notifications table.")
     else:
-        print("⚠️  Skipping notifications table creation (already exists).")
+        print("[INFO] Skipping notifications table creation (already exists).")
 
     # --- Safe alter_column handling for scope_shares.status ---
     if conn.dialect.name != "sqlite":
@@ -85,9 +85,9 @@ def upgrade():
             server_default="pending",
             existing_nullable=False,
         )
-        print("✅ Updated default on scope_shares.status.")
+        print("[INFO] Updated default on scope_shares.status.")
     else:
-        print("⚠️  Skipping ALTER COLUMN on SQLite (not supported).")
+        print("[INFO] Skipping ALTER COLUMN on SQLite (not supported).")
 
 
 def downgrade():
@@ -103,14 +103,14 @@ def downgrade():
             server_default="accepted",
             existing_nullable=False,
         )
-        print("✅ Reverted default on scope_shares.status.")
+        print("[INFO] Reverted default on scope_shares.status.")
     else:
-        print("⚠️  Skipping ALTER COLUMN revert on SQLite (not supported).")
+        print("[INFO] Skipping ALTER COLUMN revert on SQLite (not supported).")
 
     # --- Drop notifications table if it exists ---
     if "notifications" in inspector.get_table_names():
         op.drop_index("ix_notifications_user_status", table_name="notifications")
         op.drop_table("notifications")
-        print("✅ Dropped notifications table.")
+        print("[INFO] Dropped notifications table.")
     else:
-        print("⚠️  Skipping drop; notifications table not found.")
+        print("[INFO] Skipping drop; notifications table not found.")

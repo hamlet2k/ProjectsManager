@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from sqlalchemy import text, inspect
 
 # Revision identifiers
-revision = "xxxxxx_remove_global_unique_tag_name"
+revision = "dacbd9e9a9fb"
 down_revision = "202409090001"
 branch_labels = None
 depends_on = None

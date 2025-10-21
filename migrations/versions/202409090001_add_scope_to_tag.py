@@ -27,14 +27,23 @@ def upgrade():
             drop_constraint_name = candidate
             break
 
-    with op.batch_alter_table("tag", recreate="always") as batch_op:
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("tag", recreate="always") as batch_op:
+            if drop_constraint_name:
+                batch_op.drop_constraint(drop_constraint_name, type_="unique")
+            batch_op.add_column(sa.Column("scope_id", sa.Integer(), nullable=True))
+            batch_op.create_foreign_key(
+                "fk_tag_scope_id", "scope", ["scope_id"], ["id"], ondelete="CASCADE"
+            )
+            batch_op.create_unique_constraint("uq_tag_scope_name", ["scope_id", "name"])
+    else:
         if drop_constraint_name:
-            batch_op.drop_constraint(drop_constraint_name, type_="unique")
-        batch_op.add_column(sa.Column("scope_id", sa.Integer(), nullable=True))
-        batch_op.create_foreign_key(
-            "fk_tag_scope_id", "scope", ["scope_id"], ["id"], ondelete="CASCADE"
+            op.drop_constraint(drop_constraint_name, "tag", type_="unique")
+        op.add_column("tag", sa.Column("scope_id", sa.Integer(), nullable=True))
+        op.create_foreign_key(
+            "fk_tag_scope_id", "tag", "scope", ["scope_id"], ["id"], ondelete="CASCADE"
         )
-        batch_op.create_unique_constraint("uq_tag_scope_name", ["scope_id", "name"])
+        op.create_unique_constraint("uq_tag_scope_name", "tag", ["scope_id", "name"])
 
     metadata = sa.MetaData()
     metadata.reflect(bind=bind, only=("tag", "task", "task_tags"))
@@ -116,8 +125,14 @@ def downgrade():
         )
         bind.execute(tag_table.delete().where(tag_table.c.id == tag_id))
 
-    with op.batch_alter_table("tag", recreate="always") as batch_op:
-        batch_op.drop_constraint("fk_tag_scope_id", type_="foreignkey")
-        batch_op.drop_constraint("uq_tag_scope_name", type_="unique")
-        batch_op.drop_column("scope_id")
-        batch_op.create_unique_constraint("uq_tag_name", ["name"])
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("tag", recreate="always") as batch_op:
+            batch_op.drop_constraint("fk_tag_scope_id", type_="foreignkey")
+            batch_op.drop_constraint("uq_tag_scope_name", type_="unique")
+            batch_op.drop_column("scope_id")
+            batch_op.create_unique_constraint("uq_tag_name", ["name"])
+    else:
+        op.drop_constraint("fk_tag_scope_id", "tag", type_="foreignkey")
+        op.drop_constraint("uq_tag_scope_name", "tag", type_="unique")
+        op.drop_column("tag", "scope_id")
+        op.create_unique_constraint("uq_tag_name", "tag", ["name"])

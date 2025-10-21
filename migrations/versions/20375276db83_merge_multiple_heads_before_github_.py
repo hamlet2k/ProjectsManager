@@ -1,7 +1,7 @@
 """Merge multiple heads before GitHub integration
 
 Revision ID: 20375276db83
-Revises: 202409150001, xxxxxx_remove_global_unique_tag_name
+Revises: 202409150001, dacbd9e9a9fb
 Create Date: 2025-10-06 00:34:49.573961
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20375276db83'
-down_revision = ('202409150001', 'xxxxxx_remove_global_unique_tag_name')
+down_revision = ('202409150001', 'dacbd9e9a9fb')
 branch_labels = None
 depends_on = None
 

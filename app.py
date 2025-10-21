@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 import json
 import os
-from functools import wraps
 import logging
+from functools import wraps
+from pathlib import Path
 from typing import Optional
 
 from flask import (
@@ -23,13 +24,22 @@ from flask_migrate import Migrate
 
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+
+from dotenv import load_dotenv
+
 from database import db
 from utils.github_token import get_github_token
 
 
 # Initialize Flask app
+load_dotenv()
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///projectsmanager.db"
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_DATABASE_URI = f"sqlite:///{(BASE_DIR / 'instance' / 'projectsmanager.db').as_posix()}"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URI)
+app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+engine_options = app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {})
+engine_options.setdefault("pool_pre_ping", True)
 # TODO: Add secret as an enviroment variable and replace
 # app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default_secret_key')
 app.config[
@@ -49,6 +59,7 @@ from models.tag import Tag
 from models.task import Task
 from models.user import User
 from models.sync_log import SyncLog
+from models.user_scope_association import user_scope_association  # noqa: F401
 
 from forms import (
     TaskForm,
@@ -670,7 +681,10 @@ def _parse_github_datetime(value: Optional[str]) -> Optional[datetime]:
     if text.endswith("Z"):
         text = f"{text[:-1]}+00:00"
     try:
-        return datetime.fromisoformat(text)
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
     except ValueError:
         logging.warning("Unable to parse GitHub datetime value: %s", value)
         return None

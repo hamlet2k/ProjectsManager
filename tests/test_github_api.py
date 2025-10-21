@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from datetime import datetime
 from unittest.mock import patch
@@ -9,17 +7,27 @@ from models.scope import Scope
 from models.task import Task
 from models.user import User
 from services.github_service import GitHubError, GitHubIssue, list_repository_projects
+from tests.utils.db import cleanup_test_database, provision_test_database
 
 
 class GitHubApiTestCase(unittest.TestCase):
     def setUp(self):
-        self.db_fd, self.db_path = tempfile.mkstemp()
         self._original_database_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+        self._original_testing = app.config.get("TESTING", False)
+        (
+            self._test_db_name,
+            test_database_uri,
+            self._managed_test_db,
+        ) = provision_test_database()
         app.config["TESTING"] = True
-        app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{self.db_path}"
+        app.config["SQLALCHEMY_DATABASE_URI"] = test_database_uri
 
         with app.app_context():
             db.session.remove()
+            engine = db.engines.pop(None, None)
+            if engine is not None:
+                engine.dispose()
+            db.get_engine()
             db.drop_all()
             db.create_all()
 
@@ -58,10 +66,11 @@ class GitHubApiTestCase(unittest.TestCase):
             db.drop_all()
             db.engine.dispose()
 
-        os.close(self.db_fd)
-        os.unlink(self.db_path)
+        if self._managed_test_db:
+            cleanup_test_database(self._test_db_name)
         if self._original_database_uri is not None:
             app.config["SQLALCHEMY_DATABASE_URI"] = self._original_database_uri
+        app.config["TESTING"] = self._original_testing
 
     def test_github_projects_endpoint_success(self):
         repository = {"owner": "octocat", "name": "hello-world"}
