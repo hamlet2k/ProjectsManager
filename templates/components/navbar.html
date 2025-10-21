@@ -144,50 +144,7 @@
 
     <div class="collapse navbar-collapse" id="navbarNav">
       <div class="d-flex flex-column flex-md-row w-100 gap-3 gap-md-3 py-3 py-md-0 align-items-stretch align-items-md-center">
-        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center" data-nav-section="left">
-          <li class="nav-item d-md-none">
-            <a
-              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center justify-content-start justify-content-md-center gap-2 text-body"
-              href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
-              aria-label="Back to project selection"
-              data-navbar-tooltip
-              data-bs-placement="bottom"
-              title="Back to projects"
-            >
-              <i class="bi bi-arrow-left-circle" aria-hidden="true"></i>
-              <span class="d-md-none flex-grow-1 text-start">Back to projects</span>
-            </a>
-          </li>
-          {% if g.scope %}
-          <li class="nav-item d-md-none">
-            <a
-              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center gap-2 text-body text-truncate"
-              href="{{ url_for('task') }}"
-              aria-label="Reload {{ g.scope.name }} tasks"
-              data-navbar-tooltip
-              data-bs-placement="bottom"
-              title="Reload project tasks"
-            >
-              <i class="bi bi-kanban" aria-hidden="true"></i>
-              <span class="flex-grow-1 text-start text-truncate">{{ g.scope.name }}</span>
-            </a>
-          </li>
-          {% else %}
-          <li class="nav-item d-md-none">
-            <a
-              class="btn btn-link nav-link nav-link-responsive d-flex align-items-center gap-2 text-body text-truncate"
-              href="{{ url_for('home') }}"
-              aria-label="Go to Projects Manager home"
-              data-navbar-tooltip
-              data-bs-placement="bottom"
-              title="Projects Manager"
-            >
-              <i class="bi bi-kanban" aria-hidden="true"></i>
-              <span class="flex-grow-1 text-start text-truncate">Projects Manager</span>
-            </a>
-          </li>
-          {% endif %}
-        </ul>
+        <ul class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center" data-nav-section="left"></ul>
 
         <ul
           class="navbar-nav flex-column flex-md-row gap-2 align-items-stretch align-items-md-center justify-content-start justify-content-md-end flex-grow-1"
