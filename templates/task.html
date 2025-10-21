@@ -4483,29 +4483,60 @@
         if (typeof window.fetch === 'function') {
             taskForm.addEventListener('submit', handleTaskFormSubmit);
         }
+        const submitTaskFormViaShortcut = () => {
+            if (!taskForm) {
+                return;
+            }
+            const submitter = quickAddBtn && !quickAddBtn.disabled ? quickAddBtn : null;
+            if (typeof taskForm.requestSubmit === 'function') {
+                if (submitter) {
+                    taskForm.requestSubmit(submitter);
+                } else {
+                    taskForm.requestSubmit();
+                }
+                return;
+            }
+            if (submitter && typeof submitter.click === 'function') {
+                submitter.click();
+                return;
+            }
+            if (typeof taskForm.submit === 'function') {
+                taskForm.submit();
+            } else {
+                handleTaskFormSubmit();
+            }
+        };
         taskForm.addEventListener('keydown', (event) => {
             if (!(event.ctrlKey || event.metaKey)) {
                 return;
             }
-            if (event.key !== 'Enter') {
+            const key = (event.key || '').toLowerCase();
+            if (key === 'enter') {
+                if (isEditingCurrentTask()) {
+                    return;
+                }
+                if (taskForm.dataset.ajaxSubmitting === 'true') {
+                    return;
+                }
+                event.preventDefault();
+                submitTaskFormViaShortcut();
                 return;
             }
-            if (isEditingCurrentTask()) {
+            if (key !== 's') {
                 return;
             }
-            if (taskForm.dataset.ajaxSubmitting === 'true') {
+            const activeElement = document.activeElement;
+            const isNameFocused = activeElement && nameField && activeElement === nameField;
+            const isDescriptionFocused = activeElement && descriptionField && activeElement === descriptionField;
+            if (!isNameFocused && !isDescriptionFocused) {
                 return;
             }
             event.preventDefault();
-            if (quickAddBtn) {
-                quickAddBtn.click();
+            event.stopPropagation();
+            if (taskForm.dataset.ajaxSubmitting === 'true') {
                 return;
             }
-            if (typeof taskForm.requestSubmit === 'function') {
-                taskForm.requestSubmit();
-            } else {
-                taskForm.submit();
-            }
+            submitTaskFormViaShortcut();
         });
     }
 
