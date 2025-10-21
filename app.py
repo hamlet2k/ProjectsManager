@@ -87,7 +87,11 @@ from services.github_service import (
     remove_label_from_issue,
 )
 from services.scope_service import (
+    apply_scope_github_state,
     compute_share_state,
+    compute_scope_github_state,
+    get_scope_github_config,
+    get_scope_owner_github_config,
     get_scope_share,
     get_user_github_token,
     user_can_access_scope,
@@ -522,6 +526,7 @@ def load_scope():
     if scope_selected and g.user:
         scope = Scope.query.get(scope_selected)
         if scope and user_can_access_scope(g.user, scope):
+            apply_scope_github_state(scope, g.user)
             g.scope = scope
             try:
                 share_state = compute_share_state(scope, g.user)
@@ -715,22 +720,25 @@ def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
 def _scope_github_context(scope: Scope | None, user: User | None):
     if scope is None or user is None:
         return None
-    if not scope.github_integration_enabled:
+    state = compute_scope_github_state(scope, user)
+    effective = state.effective_config
+    if not effective or not effective.github_integration_enabled:
         return None
     token = get_user_github_token(user)
     if not token:
         return None
-    if not scope.github_repo_owner or not scope.github_repo_name:
+    if not effective.github_repo_owner or not effective.github_repo_name:
         return None
+    milestone_source = state.user_config or effective
     return {
         "token": token,
-        "owner": scope.github_repo_owner,
-        "name": scope.github_repo_name,
-        "id": scope.github_repo_id,
-        "project_id": str(scope.github_project_id) if scope.github_project_id else None,
-        "project_name": scope.github_project_name,
-        "milestone_number": scope.github_milestone_number,
-        "milestone_title": scope.github_milestone_title,
+        "owner": effective.github_repo_owner,
+        "name": effective.github_repo_name,
+        "id": effective.github_repo_id,
+        "project_id": str(effective.github_project_id) if effective.github_project_id else None,
+        "project_name": effective.github_project_name,
+        "milestone_number": milestone_source.github_milestone_number if milestone_source else None,
+        "milestone_title": milestone_source.github_milestone_title if milestone_source else None,
     }
 
 

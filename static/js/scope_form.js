@@ -25,6 +25,12 @@
             resizeFrame: null,
             pendingCollapse: false,
         },
+        permissions: {
+            canEditMetadata: true,
+            repositoryLocked: false,
+            projectLocked: false,
+            labelLocked: false,
+        },
     };
 
     const DEFAULT_MESSAGES = {
@@ -33,11 +39,15 @@
         createSubmit: 'Create scope',
         editTitle: 'Edit scope',
         editSubmit: 'Save changes',
+        configureTitle: 'Configure GitHub',
+        configureDescription: 'Connect your GitHub account for this shared scope.',
+        configureSubmit: 'Save configuration',
     };
 
     const DESCRIPTION_TRANSITION = 'height 200ms ease, max-height 200ms ease';
     const DESCRIPTION_VIEWPORT_RATIO = 0.8;
     const DESCRIPTION_PADDING_BUFFER = 24;
+    const SHARED_REPO_TOOLTIP = 'These fields are managed by the scope owner since you share the same repository.';
 
     document.addEventListener('DOMContentLoaded', initializeScopePage);
 
@@ -135,6 +145,10 @@
             github_repository: '',
             github_project: '',
             github_milestone: '',
+            github_repository_locked: false,
+            github_project_locked: false,
+            github_label_locked: false,
+            can_edit_metadata: true,
         };
     }
 
@@ -425,6 +439,10 @@
         state.editingScopeId = null;
         state.activeTrigger = null;
         state.formValues = { ...getDefaultFormValues() };
+        state.permissions.canEditMetadata = true;
+        state.permissions.repositoryLocked = false;
+        state.permissions.projectLocked = false;
+        state.permissions.labelLocked = false;
     }
 
     function handleEditButtonClick(event) {
@@ -433,6 +451,10 @@
         state.editingScopeId = trigger.dataset.scopeId || null;
         state.activeTrigger = trigger;
         state.formValues = readScopeValuesFromTrigger(trigger);
+        state.permissions.canEditMetadata = state.formValues.can_edit_metadata !== false;
+        state.permissions.repositoryLocked = Boolean(state.formValues.github_repository_locked);
+        state.permissions.projectLocked = Boolean(state.formValues.github_project_locked);
+        state.permissions.labelLocked = Boolean(state.formValues.github_label_locked);
     }
 
     function readScopeValuesFromTrigger(trigger) {
@@ -442,6 +464,10 @@
         const repoAttribute = trigger.getAttribute('data-scope-github_repository') || '';
         const projectAttribute = trigger.getAttribute('data-scope-github_project') || '';
         const milestoneAttribute = trigger.getAttribute('data-scope-github_milestone') || '';
+        const repoLocked = (trigger.getAttribute('data-scope-github_repository_locked') || '').toLowerCase() === 'true';
+        const projectLocked = (trigger.getAttribute('data-scope-github_project_locked') || '').toLowerCase() === 'true';
+        const labelLocked = (trigger.getAttribute('data-scope-github_label_locked') || '').toLowerCase() === 'true';
+        const canEditMetadata = (trigger.getAttribute('data-scope-can-edit-metadata') || 'true').toLowerCase() === 'true';
         return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
@@ -449,6 +475,10 @@
             github_repository: repoAttribute,
             github_project: projectAttribute,
             github_milestone: milestoneAttribute,
+            github_repository_locked: repoLocked,
+            github_project_locked: projectLocked,
+            github_label_locked: labelLocked,
+            can_edit_metadata: canEditMetadata,
         };
     }
 
@@ -473,11 +503,18 @@
         if (state.formMode === 'edit') {
             applyFormValues(state.formValues || getDefaultFormValues());
             applyFormErrors(state.form, {});
-            setModalContent({
-                title: DEFAULT_MESSAGES.editTitle,
-                description: buildEditScopeDescription(state.formValues?.name || ''),
-                submitLabel: DEFAULT_MESSAGES.editSubmit,
-            });
+            const modalMessages = state.permissions.canEditMetadata
+                ? {
+                      title: DEFAULT_MESSAGES.editTitle,
+                      description: buildEditScopeDescription(state.formValues?.name || ''),
+                      submitLabel: DEFAULT_MESSAGES.editSubmit,
+                  }
+                : {
+                      title: DEFAULT_MESSAGES.configureTitle,
+                      description: DEFAULT_MESSAGES.configureDescription,
+                      submitLabel: DEFAULT_MESSAGES.configureSubmit,
+                  };
+            setModalContent(modalMessages);
             updateGithubSectionVisibility();
             ensureGithubRepositoriesLoaded({ silent: true });
             ensureGithubMetadataLoaded({ silent: true });
@@ -693,6 +730,10 @@
                 milestoneSelect.value || milestoneSelect.dataset.selectedMilestone || '';
             values.github_milestone = explicitMilestone;
         }
+        values.github_repository_locked = Boolean(state.permissions.repositoryLocked);
+        values.github_project_locked = Boolean(state.permissions.projectLocked);
+        values.github_label_locked = Boolean(state.permissions.labelLocked);
+        values.can_edit_metadata = Boolean(state.permissions.canEditMetadata);
         return values;
     }
 
@@ -738,6 +779,11 @@
         const projectSelect = state.github.projectSelect;
         const milestoneSelect = state.github.milestoneSelect;
 
+        state.permissions.canEditMetadata = data.can_edit_metadata !== false;
+        state.permissions.repositoryLocked = Boolean(data.github_repository_locked);
+        state.permissions.projectLocked = Boolean(data.github_project_locked);
+        state.permissions.labelLocked = Boolean(data.github_label_locked);
+
         if (nameField) {
             nameField.value = data.name || '';
         }
@@ -773,6 +819,7 @@
                 milestoneSelect.value = '';
             }
         }
+        applyLockIndicators();
         updateGithubSectionVisibility();
         if (githubToggle && githubToggle.checked) {
             ensureGithubRepositoriesLoaded({ silent: true });
@@ -780,6 +827,73 @@
         }
         if (state.description && state.description.field) {
             refreshDescriptionHeight({ immediate: true, preserveExpansion: true });
+        }
+    }
+
+    function applyLockIndicators() {
+        const nameField = state.form.querySelector('[data-field="name"]');
+        const descriptionField = state.form.querySelector('[data-field="description"]');
+        const repoSelect = state.github.select;
+        const projectSelect = state.github.projectSelect;
+        const sharedNotice = state.form.querySelector('[data-github-shared-notice]');
+
+        const metadataLocked = !state.permissions.canEditMetadata;
+        const nameWrapper = nameField ? nameField.closest('.form-floating') : null;
+        const descriptionWrapper = descriptionField ? descriptionField.closest('.form-floating') : null;
+
+        if (nameWrapper) {
+            nameWrapper.classList.toggle('d-none', metadataLocked);
+        }
+        if (descriptionWrapper) {
+            descriptionWrapper.classList.toggle('d-none', metadataLocked);
+        }
+
+        if (nameField) {
+            nameField.readOnly = metadataLocked;
+            nameField.classList.toggle('bg-body-tertiary', metadataLocked);
+            if (!metadataLocked) {
+                nameField.removeAttribute('aria-readonly');
+            } else {
+                nameField.setAttribute('aria-readonly', 'true');
+            }
+        }
+        if (descriptionField) {
+            descriptionField.readOnly = metadataLocked;
+            descriptionField.classList.toggle('bg-body-tertiary', metadataLocked);
+            if (!metadataLocked) {
+                descriptionField.removeAttribute('aria-readonly');
+            } else {
+                descriptionField.setAttribute('aria-readonly', 'true');
+            }
+        }
+
+        if (repoSelect) {
+            repoSelect.disabled = Boolean(state.permissions.repositoryLocked);
+            if (state.permissions.repositoryLocked) {
+                repoSelect.setAttribute('title', SHARED_REPO_TOOLTIP);
+                repoSelect.dataset.locked = 'true';
+            } else {
+                repoSelect.removeAttribute('title');
+                delete repoSelect.dataset.locked;
+            }
+        }
+
+        if (projectSelect) {
+            projectSelect.disabled = Boolean(state.permissions.projectLocked);
+            if (state.permissions.projectLocked) {
+                projectSelect.setAttribute('title', SHARED_REPO_TOOLTIP);
+                projectSelect.dataset.locked = 'true';
+            } else {
+                projectSelect.removeAttribute('title');
+                delete projectSelect.dataset.locked;
+            }
+        }
+
+        if (sharedNotice) {
+            const shouldShowNotice = Boolean(
+                state.permissions.repositoryLocked || state.permissions.projectLocked
+            );
+            sharedNotice.classList.toggle('d-none', !shouldShowNotice);
         }
     }
 
@@ -845,6 +959,7 @@
             ensureGithubRepositoriesLoaded({ silent: true });
             ensureGithubMetadataLoaded({ silent: true });
         }
+        applyLockIndicators();
         scheduleDescriptionResize({ immediate: false });
     }
 
@@ -1615,6 +1730,22 @@
             button.setAttribute('data-scope-github_repository', repoAttribute);
             button.setAttribute('data-scope-github_project', projectAttribute);
             button.setAttribute('data-scope-github_milestone', milestoneAttribute);
+            button.setAttribute(
+                'data-scope-github_repository_locked',
+                scope.github_repository_locked ? 'true' : 'false'
+            );
+            button.setAttribute(
+                'data-scope-github_project_locked',
+                scope.github_project_locked ? 'true' : 'false'
+            );
+            button.setAttribute(
+                'data-scope-github_label_locked',
+                scope.github_label_locked ? 'true' : 'false'
+            );
+            button.setAttribute(
+                'data-scope-can-edit-metadata',
+                scope.is_owner ? 'true' : 'false'
+            );
         });
     }
 
@@ -1745,6 +1876,19 @@
                 'data-scope-github_milestone',
                 scope.github_milestone ? JSON.stringify(scope.github_milestone) : ''
             );
+            editButton.setAttribute(
+                'data-scope-github_repository_locked',
+                scope.github_repository_locked ? 'true' : 'false'
+            );
+            editButton.setAttribute(
+                'data-scope-github_project_locked',
+                scope.github_project_locked ? 'true' : 'false'
+            );
+            editButton.setAttribute(
+                'data-scope-github_label_locked',
+                scope.github_label_locked ? 'true' : 'false'
+            );
+            editButton.setAttribute('data-scope-can-edit-metadata', 'true');
             editButton.setAttribute('aria-label', `Edit scope ${scope.name || ''}`.trim());
             editButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
             actions.appendChild(editButton);
@@ -1759,6 +1903,50 @@
             deleteButton.innerHTML = '<i class="bi bi-trash3" aria-hidden="true"></i>';
             actions.appendChild(deleteButton);
         } else {
+            const configureButton = document.createElement('button');
+            configureButton.type = 'button';
+            configureButton.className = 'btn btn-outline-secondary edit-scope-btn';
+            configureButton.dataset.bsToggle = 'modal';
+            configureButton.dataset.bsTarget = '#scope-modal';
+            configureButton.dataset.scopeId = String(scope.id);
+            configureButton.setAttribute('data-scope-name', scope.name || '');
+            configureButton.setAttribute('data-scope-description', scope.description || '');
+            configureButton.setAttribute(
+                'data-scope-github_enabled',
+                scope.github_integration_enabled ? 'true' : 'false'
+            );
+            configureButton.setAttribute(
+                'data-scope-github_repository',
+                scope.github_repository ? JSON.stringify(scope.github_repository) : ''
+            );
+            configureButton.setAttribute(
+                'data-scope-github_project',
+                scope.github_project ? JSON.stringify(scope.github_project) : ''
+            );
+            configureButton.setAttribute(
+                'data-scope-github_milestone',
+                scope.github_milestone ? JSON.stringify(scope.github_milestone) : ''
+            );
+            configureButton.setAttribute(
+                'data-scope-github_repository_locked',
+                scope.github_repository_locked ? 'true' : 'false'
+            );
+            configureButton.setAttribute(
+                'data-scope-github_project_locked',
+                scope.github_project_locked ? 'true' : 'false'
+            );
+            configureButton.setAttribute(
+                'data-scope-github_label_locked',
+                scope.github_label_locked ? 'true' : 'false'
+            );
+            configureButton.setAttribute('data-scope-can-edit-metadata', 'false');
+            configureButton.setAttribute(
+                'aria-label',
+                `Configure GitHub for scope ${scope.name || ''}`.trim()
+            );
+            configureButton.innerHTML = '<i class="bi bi-github" aria-hidden="true"></i>';
+            actions.appendChild(configureButton);
+
             const leaveButton = document.createElement('button');
             leaveButton.type = 'button';
             leaveButton.className = 'btn btn-outline-secondary scope-leave-btn';

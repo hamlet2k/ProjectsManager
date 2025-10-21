@@ -72,6 +72,10 @@
                                         data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
                                         data-scope-github_project='{{ {'id': scope.github_project_id, 'name': scope.github_project_name} | tojson if scope.github_project_id and scope.github_project_name else '' }}'
                                         data-scope-github_milestone='{{ {'number': scope.github_milestone_number, 'title': scope.github_milestone_title} | tojson if scope.github_milestone_number and scope.github_milestone_title else '' }}'
+                                        data-scope-github_repository_locked="{{ 'true' if scope.github_repository_locked else 'false' }}"
+                                        data-scope-github_project_locked="{{ 'true' if scope.github_project_locked else 'false' }}"
+                                        data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
+                                        data-scope-can-edit-metadata="true"
                                         aria-label="Edit scope {{ scope.name }}"
                                     >
                                         <i class="bi bi-pencil" aria-hidden="true"></i>
@@ -87,6 +91,26 @@
                                         <i class="bi bi-trash3" aria-hidden="true"></i>
                                     </button>
                                 {% else %}
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary edit-scope-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#scope-modal"
+                                        data-scope-id="{{ scope.id }}"
+                                        data-scope-name="{{ scope.name | default('') | e }}"
+                                        data-scope-description="{{ scope.description | default('') | e }}"
+                                        data-scope-github_enabled="{{ 'true' if scope.github_integration_enabled else 'false' }}"
+                                        data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
+                                        data-scope-github_project='{{ {'id': scope.github_project_id, 'name': scope.github_project_name} | tojson if scope.github_project_id and scope.github_project_name else '' }}'
+                                        data-scope-github_milestone='{{ {'number': scope.github_milestone_number, 'title': scope.github_milestone_title} | tojson if scope.github_milestone_number and scope.github_milestone_title else '' }}'
+                                        data-scope-github_repository_locked="{{ 'true' if scope.github_repository_locked else 'false' }}"
+                                        data-scope-github_project_locked="{{ 'true' if scope.github_project_locked else 'false' }}"
+                                        data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
+                                        data-scope-can-edit-metadata="false"
+                                        aria-label="Configure GitHub for scope {{ scope.name }}"
+                                    >
+                                        <i class="bi bi-github" aria-hidden="true"></i>
+                                    </button>
                                     <button
                                         type="button"
                                         class="btn btn-outline-secondary scope-leave-btn"

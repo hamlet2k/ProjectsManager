@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from models.scope import Scope
+from models.scope_github_config import ScopeGitHubConfig
 from models.task import Task
 from models.user import User
 from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
@@ -70,6 +72,153 @@ def has_user_github_token(user: User | None) -> bool:
     return bool(get_user_github_token(user))
 
 
+@dataclass
+class ScopeGitHubState:
+    """Aggregate GitHub configuration details for a scope relative to a user."""
+
+    user_config: ScopeGitHubConfig | None
+    owner_config: ScopeGitHubConfig | None
+    effective_config: ScopeGitHubConfig | None
+    linked_to_owner: bool
+
+    @property
+    def integration_enabled(self) -> bool:
+        config = self.effective_config
+        return bool(config and config.github_integration_enabled)
+
+
+def _iter_scope_configs(scope: Scope | None) -> list[ScopeGitHubConfig]:
+    if scope is None:
+        return []
+    configs = getattr(scope, "github_configs", None)
+    if configs is None:
+        return []
+    # The relationship returns an InstrumentedList which behaves like a list.
+    return list(configs)
+
+
+def _lookup_config(scope: Scope | None, user_id: int | None) -> ScopeGitHubConfig | None:
+    if scope is None or user_id is None:
+        return None
+    for config in _iter_scope_configs(scope):
+        if config.user_id == user_id:
+            return config
+    return ScopeGitHubConfig.query.filter_by(scope_id=scope.id, user_id=user_id).one_or_none()
+
+
+def get_scope_owner_github_config(scope: Scope | None) -> ScopeGitHubConfig | None:
+    if scope is None:
+        return None
+    return _lookup_config(scope, scope.owner_id)
+
+
+def ensure_scope_github_config(scope: Scope, user: User) -> ScopeGitHubConfig:
+    """Return an existing configuration or create a new one for the user."""
+
+    config = _lookup_config(scope, user.id)
+    if config:
+        return config
+    config = ScopeGitHubConfig(scope=scope, user_id=user.id)
+    scope.github_configs.append(config)
+    return config
+
+
+def get_scope_github_config(
+    scope: Scope | None,
+    user: User | None,
+    *,
+    fallback_to_owner: bool = False,
+) -> ScopeGitHubConfig | None:
+    """Return the GitHub configuration for the user and scope if available."""
+
+    if scope is None or user is None:
+        return None
+    config = _lookup_config(scope, user.id)
+    if config:
+        return config
+    if fallback_to_owner:
+        return get_scope_owner_github_config(scope)
+    return None
+
+
+def compute_scope_github_state(scope: Scope | None, user: User | None) -> ScopeGitHubState:
+    """Return GitHub configuration state for the supplied scope and user."""
+
+    if scope is None:
+        return ScopeGitHubState(None, None, None, False)
+
+    owner_config = get_scope_owner_github_config(scope)
+    user_config = None
+    if user and scope.owner_id == user.id:
+        user_config = owner_config
+    elif user:
+        user_config = _lookup_config(scope, user.id)
+    effective_config = user_config or owner_config
+    linked = False
+    if user and scope.owner_id and user.id != scope.owner_id:
+        if user_config and owner_config:
+            linked = user_config.shares_repository_with(owner_config)
+    return ScopeGitHubState(user_config, owner_config, effective_config, linked)
+
+
+def propagate_owner_github_configuration(scope: Scope, owner_config: ScopeGitHubConfig) -> None:
+    """Synchronize project and label details for configs sharing the owner's repository."""
+
+    if not owner_config.github_repo_owner or not owner_config.github_repo_name:
+        return
+    for config in _iter_scope_configs(scope):
+        if config.user_id == owner_config.user_id:
+            continue
+        if not config.shares_repository_with(owner_config):
+            continue
+        config.github_project_id = owner_config.github_project_id
+        config.github_project_name = owner_config.github_project_name
+        config.github_hidden_label = owner_config.github_hidden_label
+
+
+def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> ScopeGitHubState:
+    """Attach derived GitHub attributes to the supplied scope for presentation."""
+
+    state = compute_scope_github_state(scope, current_user)
+    if scope is None:
+        return state
+
+    effective = state.effective_config
+    user_config = state.user_config or effective
+
+    scope.github_state = state
+    scope.github_config = user_config
+    scope.github_owner_config = state.owner_config
+    scope.github_integration_enabled = state.integration_enabled
+
+    if state.integration_enabled and effective:
+        scope.github_repo_id = effective.github_repo_id
+        scope.github_repo_name = effective.github_repo_name
+        scope.github_repo_owner = effective.github_repo_owner
+        scope.github_project_id = effective.github_project_id
+        scope.github_project_name = effective.github_project_name
+    else:
+        scope.github_repo_id = None
+        scope.github_repo_name = None
+        scope.github_repo_owner = None
+        scope.github_project_id = None
+        scope.github_project_name = None
+
+    milestone_source = state.user_config or effective
+    if milestone_source and milestone_source.github_milestone_number and milestone_source.github_milestone_title:
+        scope.github_milestone_number = milestone_source.github_milestone_number
+        scope.github_milestone_title = milestone_source.github_milestone_title
+    else:
+        scope.github_milestone_number = None
+        scope.github_milestone_title = None
+
+    scope.github_repository_locked = state.linked_to_owner
+    scope.github_project_locked = state.linked_to_owner
+    scope.github_label_locked = state.linked_to_owner
+
+    return state
+
+
 def validate_github_settings(
     form: Any, *, token_available: bool
 ) -> tuple[
@@ -128,8 +277,11 @@ def build_scope_page_context(
     show_modal: str | None = None,
 ) -> dict[str, Any]:
     """Return context payload for the scope management template."""
+    scopes = get_user_scopes(user)
+    for scope in scopes:
+        apply_scope_github_state(scope, user)
     context: dict[str, Any] = {
-        "scopes": annotate_scope_sharing(get_user_scopes(user), user),
+        "scopes": annotate_scope_sharing(scopes, user),
         "scope_form": form,
         "github_token_present": bool(user.github_token_encrypted) if user else False,
         "scope_form_state": build_scope_form_initial_state(form),
@@ -191,28 +343,46 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
     if scope is None:
         return {}
 
+    state = apply_scope_github_state(scope, current_user)
     is_owner = bool(current_user and scope.owner_id == current_user.id)
     share_state = compute_share_state(scope, current_user)
+
+    form_config = state.user_config or state.effective_config
+    project_source = state.owner_config if state.linked_to_owner and state.owner_config else form_config
+    milestone_source = state.user_config or state.effective_config
+
     repo = None
-    if scope.github_repo_owner and scope.github_repo_name:
+    if form_config and form_config.github_repo_owner and form_config.github_repo_name:
         repo = {
-            "id": scope.github_repo_id,
-            "name": scope.github_repo_name,
-            "owner": scope.github_repo_owner,
-            "label": f"{scope.github_repo_owner}/{scope.github_repo_name}",
+            "id": form_config.github_repo_id,
+            "name": form_config.github_repo_name,
+            "owner": form_config.github_repo_owner,
+            "label": f"{form_config.github_repo_owner}/{form_config.github_repo_name}",
         }
+
     project = None
-    if scope.github_project_id and scope.github_project_name:
+    if project_source and project_source.github_project_id and project_source.github_project_name:
         project = {
-            "id": str(scope.github_project_id),
-            "name": scope.github_project_name,
+            "id": str(project_source.github_project_id),
+            "name": project_source.github_project_name,
         }
+
     milestone = None
-    if scope.github_milestone_number and scope.github_milestone_title:
+    if (
+        milestone_source
+        and milestone_source.github_milestone_number
+        and milestone_source.github_milestone_title
+    ):
         milestone = {
-            "number": scope.github_milestone_number,
-            "title": scope.github_milestone_title,
+            "number": milestone_source.github_milestone_number,
+            "title": milestone_source.github_milestone_title,
         }
+
+    config_source = "none"
+    if state.user_config:
+        config_source = "user"
+    elif state.effective_config:
+        config_source = "owner"
 
     return {
         "id": scope.id,
@@ -221,10 +391,16 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "owner_id": scope.owner_id,
         "is_owner": is_owner,
         "is_shared": share_state.get("shared_with_current_user", not is_owner),
-        "github_integration_enabled": bool(scope.github_integration_enabled),
+        "github_integration_enabled": state.integration_enabled,
         "github_repository": repo,
         "github_project": project,
         "github_milestone": milestone,
+        "github_repository_locked": state.linked_to_owner,
+        "github_project_locked": state.linked_to_owner,
+        "github_label_locked": state.linked_to_owner,
+        "github_config_source": config_source,
+        "github_config_user_id": state.user_config.user_id if state.user_config else None,
+        "github_config_owner_id": state.owner_config.user_id if state.owner_config else None,
         "share_state": share_state,
     }
 

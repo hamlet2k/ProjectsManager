@@ -12,14 +12,27 @@ Columns (`models/scope.py`):
 - `description` (text, optional)
 - `rank` (int, default 1) for ordering in dashboards
 - `owner_id` (FK -> `user.id`, nullable for legacy scopes)
-- GitHub toggles: `github_integration_enabled` (bool), `github_repo_id`, `github_repo_name`, `github_repo_owner`
-- GitHub project linkage: `github_project_id`, `github_project_name`
-- GitHub milestone linkage: `github_milestone_number`, `github_milestone_title`
 Relationships:
 - `tasks` 1:N Task (cascade delete-orphan)
 - `tags` 1:N Tag (cascade delete-orphan)
 - `shares` 1:N ScopeShare (cascade delete-orphan)
 - `notifications` 1:N Notification (cascade delete-orphan)
+- `github_configs` 1:N ScopeGitHubConfig (cascade delete-orphan)
+
+### ScopeGitHubConfig
+Columns (`models/scope_github_config.py`):
+- `id` (PK, int)
+- `scope_id` (FK -> `scope.id`, indexed)
+- `user_id` (FK -> `user.id`, indexed)
+- `github_integration_enabled` (bool)
+- `github_repo_id`, `github_repo_name`, `github_repo_owner`
+- `github_project_id`, `github_project_name`
+- `github_milestone_number`, `github_milestone_title`
+- `github_hidden_label` (str, optional) for shared label coordination
+Constraints & relationships:
+- Unique constraint `uq_scope_github_config_scope_user` on (`scope_id`, `user_id`)
+- Index `ix_scope_github_config_scope_user` on (`scope_id`, `user_id`)
+- Many configs per scope; each user maintains their own GitHub settings
 
 ### Task
 Columns (`models/task.py`):

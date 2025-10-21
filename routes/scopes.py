@@ -26,13 +26,20 @@ from database import db
 from forms import ScopeForm
 from models.scope import Scope
 from models.notification import NotificationStatus
+from models.scope_github_config import ScopeGitHubConfig
 from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 from models.user import User
 from services.scope_service import (
+    apply_scope_github_state,
     build_scope_page_context,
+    compute_scope_github_state,
+    ensure_scope_github_config,
     get_next_scope_rank,
+    get_scope_github_config,
+    get_scope_owner_github_config,
     get_scope_share,
     get_user_github_token,
+    propagate_owner_github_configuration,
     serialize_scope,
     serialize_shares,
     serialize_task_for_clipboard,
@@ -472,6 +479,9 @@ def add_scope():
         payload = request.get_json(silent=True) or {}
         form = ScopeForm(meta={"csrf": False})
         _populate_form_from_payload(form, payload)
+        if not is_owner:
+            form.name.data = scope.name
+            form.description.data = scope.description
         is_valid = form.validate()
         csrf_valid = _validate_csrf_token(form, payload.get("csrf_token"))
         is_valid = is_valid and csrf_valid
@@ -501,33 +511,34 @@ def add_scope():
             scope.rank = get_next_scope_rank()
             scope.name = form.name.data
             scope.description = form.description.data
-            scope.github_integration_enabled = enable_integration
+            owner_config = ensure_scope_github_config(scope, g.user)
+            owner_config.github_integration_enabled = enable_integration
 
             if enable_integration and repo_payload:
-                scope.github_repo_id = repo_payload.get("id")
-                scope.github_repo_name = repo_payload.get("name")
-                scope.github_repo_owner = repo_payload.get("owner")
+                owner_config.github_repo_id = repo_payload.get("id")
+                owner_config.github_repo_name = repo_payload.get("name")
+                owner_config.github_repo_owner = repo_payload.get("owner")
                 if project_payload:
                     project_id = project_payload.get("id")
-                    scope.github_project_id = str(project_id) if project_id else None
-                    scope.github_project_name = project_payload.get("name")
+                    owner_config.github_project_id = str(project_id) if project_id else None
+                    owner_config.github_project_name = project_payload.get("name")
                 else:
-                    scope.github_project_id = None
-                    scope.github_project_name = None
+                    owner_config.github_project_id = None
+                    owner_config.github_project_name = None
                 if milestone_payload:
-                    scope.github_milestone_number = milestone_payload.get("number")
-                    scope.github_milestone_title = milestone_payload.get("title")
+                    owner_config.github_milestone_number = milestone_payload.get("number")
+                    owner_config.github_milestone_title = milestone_payload.get("title")
                 else:
-                    scope.github_milestone_number = None
-                    scope.github_milestone_title = None
+                    owner_config.github_milestone_number = None
+                    owner_config.github_milestone_title = None
             else:
-                scope.github_repo_id = None
-                scope.github_repo_name = None
-                scope.github_repo_owner = None
-                scope.github_project_id = None
-                scope.github_project_name = None
-                scope.github_milestone_number = None
-                scope.github_milestone_title = None
+                owner_config.github_repo_id = None
+                owner_config.github_repo_name = None
+                owner_config.github_repo_owner = None
+                owner_config.github_project_id = None
+                owner_config.github_project_name = None
+                owner_config.github_milestone_number = None
+                owner_config.github_milestone_title = None
 
             try:
                 db.session.add(scope)
@@ -539,6 +550,8 @@ def add_scope():
                     return jsonify({"success": False, "message": error_message}), 500
                 flash(error_message, "error")
                 return safe_redirect(request.referrer, "scopes.list_scopes")
+
+            apply_scope_github_state(scope, g.user)
 
             success_message = "Scope added!"
             if wants_json:
@@ -560,10 +573,12 @@ def add_scope():
 def edit_scope(scope_id: int):
     scope = Scope.query.get_or_404(scope_id)
     wants_json = _wants_json_response()
-    if not user_owns_scope(g.user, scope):
+    if not user_can_access_scope(g.user, scope):
         if wants_json:
             return jsonify({"success": False, "message": "You do not have permission to edit this scope."}), 403
         abort(404)
+
+    is_owner = user_owns_scope(g.user, scope)
 
     if request.method == "POST" and request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -575,27 +590,33 @@ def edit_scope(scope_id: int):
     else:
         form = ScopeForm(obj=scope)
         if not form.is_submitted():
-            form.github_enabled.data = scope.github_integration_enabled
-            if scope.github_repo_owner and scope.github_repo_name:
+            state = compute_scope_github_state(scope, g.user)
+            form.name.data = scope.name
+            form.description.data = scope.description
+            config_for_form = state.user_config or state.effective_config
+            project_source = state.owner_config if state.linked_to_owner and state.owner_config else config_for_form
+            milestone_source = state.user_config or state.effective_config
+            form.github_enabled.data = bool(config_for_form and config_for_form.github_integration_enabled)
+            if config_for_form and config_for_form.github_repo_owner and config_for_form.github_repo_name:
                 form.github_repository.data = json.dumps(
                     {
-                        "id": scope.github_repo_id,
-                        "name": scope.github_repo_name,
-                        "owner": scope.github_repo_owner,
+                        "id": config_for_form.github_repo_id,
+                        "name": config_for_form.github_repo_name,
+                        "owner": config_for_form.github_repo_owner,
                     }
                 )
-            if scope.github_project_id and scope.github_project_name:
+            if project_source and project_source.github_project_id and project_source.github_project_name:
                 form.github_project.data = json.dumps(
                     {
-                        "id": scope.github_project_id,
-                        "name": scope.github_project_name,
+                        "id": project_source.github_project_id,
+                        "name": project_source.github_project_name,
                     }
                 )
-            if scope.github_milestone_number and scope.github_milestone_title:
+            if milestone_source and milestone_source.github_milestone_number and milestone_source.github_milestone_title:
                 form.github_milestone.data = json.dumps(
                     {
-                        "number": scope.github_milestone_number,
-                        "title": scope.github_milestone_title,
+                        "number": milestone_source.github_milestone_number,
+                        "title": milestone_source.github_milestone_title,
                     }
                 )
         is_valid = form.validate_on_submit()
@@ -617,35 +638,83 @@ def edit_scope(scope_id: int):
                 context = build_scope_page_context(g.user, form=form, show_modal="scope-modal")
                 return render_template("scope.html", **context)
 
-            scope.name = form.name.data
-            scope.description = form.description.data
-            scope.github_integration_enabled = enable_integration
+            linked_configs: list[ScopeGitHubConfig] = []
+            config = ensure_scope_github_config(scope, g.user)
+            if is_owner:
+                scope.name = form.name.data
+                scope.description = form.description.data
+                previous_repo_owner = (config.github_repo_owner or '').lower()
+                previous_repo_name = (config.github_repo_name or '').lower()
+                previous_repo_id = config.github_repo_id
+                for other in scope.github_configs:
+                    if other.user_id == g.user.id:
+                        continue
+                    if previous_repo_id and other.github_repo_id and other.github_repo_id == previous_repo_id:
+                        linked_configs.append(other)
+                        continue
+                    if (
+                        previous_repo_owner
+                        and previous_repo_name
+                        and other.github_repo_owner
+                        and other.github_repo_name
+                        and other.github_repo_owner.lower() == previous_repo_owner
+                        and other.github_repo_name.lower() == previous_repo_name
+                    ):
+                        linked_configs.append(other)
+            else:
+                # Non-owners cannot change general scope metadata.
+                form.name.data = scope.name
+                form.description.data = scope.description
+
+            config.github_integration_enabled = enable_integration
 
             if enable_integration and repo_payload:
-                scope.github_repo_id = repo_payload.get("id")
-                scope.github_repo_name = repo_payload.get("name")
-                scope.github_repo_owner = repo_payload.get("owner")
+                config.github_repo_id = repo_payload.get("id")
+                config.github_repo_name = repo_payload.get("name")
+                config.github_repo_owner = repo_payload.get("owner")
                 if project_payload:
                     project_id = project_payload.get("id")
-                    scope.github_project_id = str(project_id) if project_id else None
-                    scope.github_project_name = project_payload.get("name")
+                    config.github_project_id = str(project_id) if project_id else None
+                    config.github_project_name = project_payload.get("name")
                 else:
-                    scope.github_project_id = None
-                    scope.github_project_name = None
+                    config.github_project_id = None
+                    config.github_project_name = None
                 if milestone_payload:
-                    scope.github_milestone_number = milestone_payload.get("number")
-                    scope.github_milestone_title = milestone_payload.get("title")
+                    config.github_milestone_number = milestone_payload.get("number")
+                    config.github_milestone_title = milestone_payload.get("title")
                 else:
-                    scope.github_milestone_number = None
-                    scope.github_milestone_title = None
+                    config.github_milestone_number = None
+                    config.github_milestone_title = None
             else:
-                scope.github_repo_id = None
-                scope.github_repo_name = None
-                scope.github_repo_owner = None
-                scope.github_project_id = None
-                scope.github_project_name = None
-                scope.github_milestone_number = None
-                scope.github_milestone_title = None
+                config.github_repo_id = None
+                config.github_repo_name = None
+                config.github_repo_owner = None
+                config.github_project_id = None
+                config.github_project_name = None
+                config.github_milestone_number = None
+                config.github_milestone_title = None
+
+            owner_config = get_scope_owner_github_config(scope)
+            if is_owner and linked_configs:
+                for linked in linked_configs:
+                    linked.clone_repository_metadata_from(config)
+                    linked.github_integration_enabled = config.github_integration_enabled
+                    linked.github_project_id = config.github_project_id
+                    linked.github_project_name = config.github_project_name
+                    linked.github_hidden_label = config.github_hidden_label
+                    if not config.github_integration_enabled:
+                        linked.github_milestone_number = None
+                        linked.github_milestone_title = None
+
+            if owner_config and config.shares_repository_with(owner_config):
+                config.github_project_id = owner_config.github_project_id
+                config.github_project_name = owner_config.github_project_name
+                config.github_hidden_label = owner_config.github_hidden_label
+            elif not is_owner:
+                config.github_hidden_label = None
+
+            if is_owner:
+                propagate_owner_github_configuration(scope, owner_config or config)
 
             try:
                 db.session.commit()
@@ -656,6 +725,8 @@ def edit_scope(scope_id: int):
                     return jsonify({"success": False, "message": error_message}), 500
                 flash(error_message, "error")
                 return safe_redirect(request.referrer, "scopes.list_scopes")
+
+            apply_scope_github_state(scope, g.user)
 
             success_message = "Scope edited!"
             if wants_json:
