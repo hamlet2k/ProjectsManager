@@ -1,10 +1,10 @@
-# ProjectsManager — Project Context (for IDE agents)
-_Last updated: 2025-09-26 08:02:32_
+# ProjectsManager - Project Context (for IDE agents)
+_Last updated: 2025-10-24 10:20:00_
 
 This file gives **stable, high-signal context** for IDE-based AI agents (Copilot, KiloCode, Codex). It summarizes the app and points to deeper docs that prompts should load when designing or changing code.
 
 ## What this app is
-**ProjectsManager** is a small Flask web app to create and track projects for a family/small team. It uses SQLAlchemy models with Flask-Migrate, HTML templates, and standard Flask patterns.
+**ProjectsManager** is an authenticated Flask web app for coordinating work across shared scopes. Members organise scopes (project spaces), manage hierarchical tasks with tags, collaborate via scope sharing, sync tasks with GitHub issues, and track collaboration through in-app notifications. The stack leans on SQLAlchemy models, Flask-Migrate migrations, server-rendered templates, and JSON endpoints that support dynamic UI updates.
 
 ## Repositories & paths
 - **Remote**: https://github.com/hamlet2k/ProjectsManager
@@ -19,12 +19,13 @@ This file gives **stable, high-signal context** for IDE-based AI agents (Copilot
 - Migrations: `/migrations`
 
 ## Architecture at a glance
-- `app.py` → app factory / routes
-- `database.py` → DB init
-- `models/` → ORM classes
-- `forms.py` → WTForms-style validation
-- `templates/` → UI
-- `migrations/` → schema history
+- `app.py`: application factory, authentication/session handling, task CRUD, tag APIs, GitHub endpoints
+- `routes/`: blueprints (`scopes`, `notifications`) serving scope management and notification UX
+- `services/`: domain helpers for GitHub sync, notification assembly, scope orchestration
+- `models/`: ORM classes covering scopes, tasks, tags, scope shares, notifications, sync logs, users
+- `forms.py`: WTForms definitions shared across views and modals
+- `templates/`: HTML layouts, partials, and HTMX-friendly fragments
+- `migrations/`: Alembic migration history
 
 ## Deep context (load these too)
 - **Flows**: `docs/project-flows.md` — User & system flows (CRUD, navigation, happy/edge paths)
@@ -35,15 +36,16 @@ This file gives **stable, high-signal context** for IDE-based AI agents (Copilot
 ## Goals & Roadmap
 
 ### Short-Term (MVP)
-- Keep the ChatGPT bootstrap current (paste-ready prompts for Copilot / Kilo Code / Coding Agent).
-- Ensure core CRUD flows are clean; migrations via Flask-Migrate stay green.
-- Maintain docs hygiene across `/docs/project-context.md`, `/docs/project-flows.md`, `/docs/data-model.md`, and `/docs/ai-output-history.md`.
+- Harden scope and task collaboration flows (share invites, permission edge cases, notification read state).
+- Keep the GitHub sync happy path stable; document mismatch handling and surface actionable errors.
+- Maintain docs hygiene across `/docs/project-context.md`, `/docs/project-flows.md`, `/docs/data-model.md`.
+- Incrementally introduce automated checks (lint/tests) around the existing routes.
 
 ### Medium-Term
-- Expand entities & relationships (projects ↔ tasks/notes/flows); introduce tags/metadata/hierarchy.
-- Automate routine tasks (append AI history, generate migrations/templates).
-- Improve repo tooling (lint/tests/CI, DB reset & fixtures, simple search/filters).
-- Define early **sync model** (local-first with optional cloud upload of selected scopes/tasks); capture decisions in `/docs`.
+- Expand task metadata (statuses, scheduling, quick filters) and scope dashboards.
+- Improve repo tooling (CI, DB reset/fixtures, sample data scripts).
+- Capture AI/copilot prompts or history automatically for auditing.
+- Shape the long-term sync model (local-first with optional cloud sharing) and record decisions in `/docs`.
 
 ### Long-Term Vision
 - **Deployment flexibility:** Web app that can also run locally and be wrapped for desktop/mobile (Electron for desktop; Capacitor/Flutter options for mobile).  
