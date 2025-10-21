@@ -19,7 +19,7 @@
     {% set on_scope_list = request.endpoint == 'scopes.list_scopes' %}
     {% if not on_scope_list %}
     <a
-      class="btn btn-link p-0 me-2 d-inline-flex d-md-none align-items-center justify-content-center"
+      class="btn btn-link p-0 me-2 d-inline-flex d-md-none align-items-center justify-content-center navbar-back-button"
       href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
       aria-label="Back to project selection"
       data-navbar-tooltip
@@ -67,7 +67,7 @@
 
     {% if not on_scope_list %}
     <a
-      class="btn btn-link p-0 me-2 d-none d-md-inline-flex align-items-center justify-content-center"
+      class="btn btn-link p-0 me-2 d-none d-md-inline-flex align-items-center justify-content-center navbar-back-button"
       href="{{ url_for('scopes.list_scopes') if g.scope else url_for('home') }}"
       aria-label="Back to project selection"
       data-navbar-tooltip

@@ -15,6 +15,11 @@
   margin: 0.5rem 0;
 }
 
+.navbar-back-button > i {
+  line-height: 1;
+  transform: translateY(0.125rem); /* Nudge icon to align with text baseline */
+}
+
 @media (min-width: 768px) {
   .nav-link-responsive {
     width: auto;
