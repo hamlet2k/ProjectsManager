@@ -175,6 +175,20 @@
         text-decoration: none;
     }
 
+    .github-issue-read-only,
+    .github-milestone-read-only {
+        opacity: 0.6;
+        cursor: not-allowed;
+        text-decoration: none !important;
+    }
+
+    .github-issue-read-only:hover,
+    .github-milestone-read-only:hover {
+        opacity: 0.7 !important;
+        background-color: var(--bs-light) !important;
+        color: var(--bs-secondary) !important;
+    }
+
     .github-issue-badge i {
         font-size: 0.65rem;
     }
@@ -465,6 +479,20 @@
             opacity: 1;
             transform: scale(1);
         }
+    }
+
+    .github-readonly {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .github-readonly-message {
+        margin-bottom: 1rem;
+    }
+
+    .task-github-btn.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
     .inline-tag-chip {
@@ -927,6 +955,10 @@
                                 <label class="form-label" for="task-github-milestone-select">GitHub Milestone</label>
                                 {{ task_form.github_milestone(class_='form-select', id='task-github-milestone-select', **{'data-field': 'github_milestone'}) }}
                                 <div class="form-text">Update the milestone assigned to the linked GitHub issue.</div>
+                            </div>
+                            <div class="alert alert-warning py-2 px-3 d-none github-readonly-message" role="alert">
+                                <i class="bi bi-lock-fill me-2"></i>
+                                GitHub integration is disabled. Your existing GitHub-linked data will remain visible but read-only until integration is re-enabled.
                             </div>
                             <div class="alert alert-warning py-2 px-3 d-none" data-task-github-milestone-warning role="alert">
                                 Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
@@ -3658,6 +3690,14 @@
         if (!trigger || !milestoneModalInstance) {
             return;
         }
+        
+        // Check if GitHub integration is enabled
+        const githubEnabled = {{ 'true' if github_enabled else 'false' }};
+        if (!githubEnabled) {
+            displayFlashMessage('GitHub integration is disabled. Enable it in settings to use milestones.', 'warning');
+            return;
+        }
+        
         const taskId = Number(trigger.getAttribute('data-task-id')) || null;
         if (!taskId) {
             return;
@@ -4769,5 +4809,52 @@
             debouncedSearch();
         });
     }
+
+    // Handle GitHub integration read-only state
+    function updateGithubReadOnlyState() {
+        const githubEnabled = {{ 'true' if github_enabled else 'false' }};
+        const readonlyMessage = document.querySelector('.github-readonly-message');
+        const githubActionBtns = document.querySelectorAll('.task-github-btn');
+        const githubInteractive = document.querySelectorAll('.github-interactive');
+        
+        if (!githubEnabled) {
+            // Show read-only message
+            if (readonlyMessage) {
+                readonlyMessage.classList.remove('d-none');
+            }
+            
+            // Disable GitHub action buttons
+            githubActionBtns.forEach(btn => {
+                btn.classList.add('disabled');
+                btn.disabled = true;
+                btn.setAttribute('title', 'GitHub integration is disabled');
+            });
+            
+            // Add read-only styling to GitHub elements
+            githubInteractive.forEach(el => {
+                el.classList.add('github-readonly');
+            });
+        } else {
+            // Hide read-only message
+            if (readonlyMessage) {
+                readonlyMessage.classList.add('d-none');
+            }
+            
+            // Enable GitHub action buttons
+            githubActionBtns.forEach(btn => {
+                btn.classList.remove('disabled');
+                btn.disabled = false;
+                btn.removeAttribute('title');
+            });
+            
+            // Remove read-only styling from GitHub elements
+            githubInteractive.forEach(el => {
+                el.classList.remove('github-readonly');
+            });
+        }
+    }
+
+    // Initialize GitHub read-only state
+    updateGithubReadOnlyState();
 </script>
 {% endblock  %}

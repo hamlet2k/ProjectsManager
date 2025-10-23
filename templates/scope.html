@@ -43,15 +43,19 @@
                                 {% endif %}
                                 {% if scope.show_github_badge %}
                                     <span
-                                        class="badge text-bg-primary d-inline-flex align-items-center gap-1"
+                                        class="badge d-inline-flex align-items-center gap-1 {% if scope.github_ui_state == 'read-only' %}text-bg-secondary github-badge-read-only{% else %}text-bg-primary{% endif %}"
                                         {% if scope.github_badge_tooltip %}
                                             data-bs-toggle="tooltip"
                                             data-scope-owner-tooltip="true"
                                             title="{{ scope.github_badge_tooltip | e }}"
                                         {% endif %}
+                                        data-github-state="{{ scope.github_ui_state or 'unknown' }}"
                                     >
                                         <i class="{{ scope.github_badge_icon }}" aria-hidden="true"></i>
                                         GitHub
+                                        {% if scope.github_ui_state == 'read-only' %}
+                                            <i class="bi bi-lock-fill ms-1" title="Read-only - integration disabled"></i>
+                                        {% endif %}
                                     </span>
                                 {% endif %}
                                 {% if scope.show_shared_badge %}
@@ -179,6 +183,28 @@
         </div>
     </div>
 </div>
+
+<style>
+.github-badge-read-only {
+    opacity: 0.6;
+    border-style: dashed !important;
+}
+
+.github-badge-read-only:hover {
+    opacity: 0.7 !important;
+    cursor: not-allowed !important;
+}
+
+[data-github-state="read-only"] .github-action-btn {
+    display: none;
+}
+
+[data-github-state="read-only"] .github-interactive-element {
+    pointer-events: none;
+    opacity: 0.6;
+}
+</style>
+
 {% endblock %}
 
 {% block modals %}

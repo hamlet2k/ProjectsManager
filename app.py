@@ -416,6 +416,8 @@ def settings():
         if g.user.github_token_encrypted:
             g.user.set_github_token(None)
             g.user.github_integration_enabled = False
+            # NEW: Propagate to all scopes
+            propagate_global_github_state(g.user, False)
             try:
                 db.session.commit()
                 flash("GitHub token removed. Integration is disabled until a new token is added.", "info")
@@ -438,9 +440,9 @@ def settings():
             if not github_form.errors:
                 if token_input:
                     g.user.set_github_token(token_input)
-                # Only set the token if a new value is provided
-                # Do not set the token to None or empty if not provided
                 g.user.github_integration_enabled = True
+                # NEW: Propagate to all scopes
+                propagate_global_github_state(g.user, True)
                 try:
                     db.session.commit()
                     flash("GitHub settings saved.", "success")
@@ -449,10 +451,23 @@ def settings():
                     db.session.rollback()
                     flash(f"An error occurred: {str(e)}", "error")
         else:
+            # NEW: Add confirmation check for disabling
+            disable_confirmed = request.form.get('confirm_disable') == 'true'
+            if not disable_confirmed:
+                # Show confirmation modal instead of disabling
+                return render_template(
+                    "settings.html",
+                    github_form=github_form,
+                    github_token_present=token_present,
+                    show_disable_confirmation=True
+                )
+            
             g.user.github_integration_enabled = False
+            # NEW: Propagate to all scopes
+            propagate_global_github_state(g.user, False)
             try:
                 db.session.commit()
-                flash("GitHub integration disabled. Stored token remains available.", "info")
+                flash("GitHub integration disabled. All connected scopes are now read-only.", "info")
                 return redirect(url_for("settings"))
             except SQLAlchemyError as e:
                 db.session.rollback()
@@ -465,6 +480,27 @@ def settings():
         github_form=github_form,
         github_token_present=token_present,
     )
+
+
+def propagate_global_github_state(user: User, enabled: bool) -> None:
+    """Propagate global GitHub integration state to all user's scope configurations."""
+    from services.scope_service import get_scope_github_config
+    
+    updated_count = 0
+    for scope in user.owned_scopes:
+        config = get_scope_github_config(scope, user)
+        if config and config.github_integration_enabled != enabled:
+            config.github_integration_enabled = enabled
+            updated_count += 1
+    
+    if updated_count > 0:
+        try:
+            db.session.commit()
+            app.logger.info(f"Propagated global GitHub state to {updated_count} scopes for user {user.id}")
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            app.logger.error(f"Failed to propagate GitHub state: {e}")
+            raise
 
 
 # Custom form validators
@@ -1173,7 +1209,7 @@ def task():
         "sort_by": sort_by,
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
-        "github_enabled": bool(_scope_github_context(g.scope, g.user)),
+        "github_enabled": bool(g.user and g.user.github_integration_enabled),
         "github_label": GITHUB_APP_LABEL,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,

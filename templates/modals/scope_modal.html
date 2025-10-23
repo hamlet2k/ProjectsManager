@@ -69,6 +69,10 @@
                             Add a GitHub token in your user <a href="{{ url_for('settings') }}" class="alert-link">settings</a> to enable integration.
                         </div>
                     {% endif %}
+                    <div class="alert alert-warning py-2 px-3 d-none github-readonly-message" role="alert">
+                        <i class="bi bi-lock-fill me-2"></i>
+                        GitHub integration is disabled. Your existing GitHub-linked data will remain visible but read-only until integration is re-enabled.
+                    </div>
                     <div class="github-scope-settings" data-github-settings-section>
                         <div class="mb-3">
                             <label class="form-label" for="scope-github-repo-select">Repository</label>

@@ -198,13 +198,39 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     if scope is None:
         return state
 
+    # DEBUG LOGGING: Add logging to track GitHub state decisions
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    global_enabled = getattr(current_user, 'github_integration_enabled', False)
+    scope_enabled = bool(state.effective_config and state.effective_config.github_integration_enabled)
+    has_linked_tasks = any(getattr(task, "github_issue_number", None) for task in (getattr(scope, "tasks", None) or []))
+    owner_repo_label = None
+    if state.owner_config and state.owner_config.github_repo_owner and state.owner_config.github_repo_name:
+        owner_repo_label = f"{state.owner_config.github_repo_owner}/{state.owner_config.github_repo_name}"
+    
+    logger.debug(f"GitHub state for scope {scope.id}, user {current_user.id}: global_enabled={global_enabled}, scope_enabled={scope_enabled}, has_linked_tasks={has_linked_tasks}, owner_repo_label={owner_repo_label}")
+
     effective = state.effective_config
     user_config = state.user_config or effective
 
     scope.github_state = state
     scope.github_config = user_config
     scope.github_owner_config = state.owner_config
-    scope.github_integration_enabled = state.integration_enabled
+    
+    # NEW: Compute the effective UI state
+    if not global_enabled:
+        scope.github_integration_enabled = False
+        scope.github_ui_state = "read-only"
+        scope.github_ui_message = "GitHub integration disabled globally"
+    elif not scope_enabled:
+        scope.github_integration_enabled = False
+        scope.github_ui_state = "read-only"
+        scope.github_ui_message = "GitHub integration disabled for this scope"
+    else:
+        scope.github_integration_enabled = True
+        scope.github_ui_state = "enabled"
+        scope.github_ui_message = "GitHub integration enabled"
 
     if state.integration_enabled and effective:
         scope.github_repo_id = effective.github_repo_id
@@ -277,20 +303,35 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     if not is_owner and user_integration_enabled and user_repo_label and owner_repo_label:
         repo_differs = user_repo_label != owner_repo_label
 
-    scope.github_badge_icon = "bi bi-pencil" if repo_differs else "bi bi-github"
-    scope.show_github_badge = bool(scope.github_integration_enabled or has_linked_tasks or owner_repo_label)
-
-    badge_tooltip: str | None = None
-    if scope.show_github_badge:
-        if user_integration_enabled and user_repo_label:
-            badge_tooltip = f"Repository: {user_repo_label}"
+    # Set appropriate icon and tooltip based on state
+    if scope.github_ui_state == "read-only":
+        scope.github_badge_icon = "bi bi-eye-slash"
+        scope.github_badge_tooltip = scope.github_ui_message
+    elif scope.github_ui_state == "enabled":
+        # Existing logic for repo differentiation
+        is_owner = bool(current_user and scope.owner_id == current_user.id)
+        repo_differs = False
+        user_repo_label = None
+        if state.user_config and state.user_config.github_repo_owner and state.user_config.github_repo_name:
+            user_repo_label = f"{state.user_config.github_repo_owner}/{state.user_config.github_repo_name}"
+        
+        if not is_owner and user_repo_label and owner_repo_label:
+            repo_differs = user_repo_label != owner_repo_label
+        
+        scope.github_badge_icon = "bi bi-pencil" if repo_differs else "bi bi-github"
+        
+        if user_repo_label:
+            scope.github_badge_tooltip = f"Repository: {user_repo_label}"
         elif owner_repo_label:
-            badge_tooltip = f"Owner repository: {owner_repo_label}"
-        elif has_linked_tasks:
-            badge_tooltip = "No repository configured by the owner."
+            scope.github_badge_tooltip = f"Owner repository: {owner_repo_label}"
         else:
-            badge_tooltip = "No repository configured."
-        scope.github_badge_tooltip = badge_tooltip or ""
+            scope.github_badge_tooltip = "GitHub integration enabled"
+    else:
+        scope.github_badge_icon = "bi bi-github"
+        scope.github_badge_tooltip = "No GitHub integration"
+
+    # UI visibility logic - show if there's any GitHub context
+    scope.show_github_badge = bool(has_linked_tasks or owner_repo_label or scope.github_integration_enabled)
 
     scope.show_shared_badge = bool(not is_owner)
     shared_owner_label = owner_display_name or ""
@@ -299,6 +340,8 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     scope.shared_badge_tooltip = (
         f"Owner: {shared_owner_label}" if scope.show_shared_badge else ""
     )
+
+    logger.debug(f"Final GitHub UI state for scope {scope.id}: show_github_badge={scope.show_github_badge}, github_ui_state={scope.github_ui_state}, github_integration_enabled={scope.github_integration_enabled}")
 
     return state
 

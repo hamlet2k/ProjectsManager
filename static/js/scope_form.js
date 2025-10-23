@@ -1090,6 +1090,12 @@
             ensureGithubRepositoriesLoaded({ silent: true });
             ensureGithubMetadataLoaded({ silent: true });
         }
+        
+        // Handle read-only state for GitHub elements
+        const isReadOnly = github.toggle && github.toggle.checked && github.toggle.disabled;
+        $('.github-action-btn').toggleClass('disabled', isReadOnly).prop('disabled', isReadOnly);
+        $('.github-interactive').toggleClass('github-readonly', isReadOnly);
+        
         applyLockIndicators();
         scheduleDescriptionResize({ immediate: false });
     }
