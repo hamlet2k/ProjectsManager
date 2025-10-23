@@ -47,6 +47,12 @@ class User(db.Model):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+    scope_github_configs = db.relationship(
+        "ScopeGitHubConfig",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     ADMIN = 'admin'
     USER = 'user'

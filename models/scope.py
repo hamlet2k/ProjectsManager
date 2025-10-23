@@ -18,18 +18,16 @@ class Scope(db.Model):
     description = db.Column(db.Text, nullable=True)
     rank = db.Column(db.Integer, nullable=False, default=1)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    github_integration_enabled = db.Column(db.Boolean, nullable=False, default=False)
-    github_repo_id = db.Column(db.BigInteger, nullable=True)
-    github_repo_name = db.Column(db.String(200), nullable=True)
-    github_repo_owner = db.Column(db.String(200), nullable=True)
-    github_project_id = db.Column(db.String(100), nullable=True)
-    github_project_name = db.Column(db.String(200), nullable=True)
-    github_milestone_number = db.Column(db.Integer, nullable=True)
-    github_milestone_title = db.Column(db.String(200), nullable=True)
 
     tasks = db.relationship("Task", backref="scope", lazy=True, cascade="all, delete-orphan")
     tags = db.relationship(
         "Tag",
+        back_populates="scope",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+    github_configs = db.relationship(
+        "ScopeGitHubConfig",
         back_populates="scope",
         lazy="selectin",
         cascade="all, delete-orphan",

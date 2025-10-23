@@ -6,7 +6,11 @@ from app import app, db
 from models.notification import Notification, NotificationStatus, NotificationType
 from models.user import User
 from services.notification_service import build_notifications_summary, mark_notifications_read
-from tests.utils.db import cleanup_test_database, provision_test_database
+from tests.utils.db import (
+    cleanup_test_database,
+    provision_test_database,
+    rebuild_database_engine,
+)
 
 
 class NotificationServiceTestCase(unittest.TestCase):
@@ -23,10 +27,7 @@ class NotificationServiceTestCase(unittest.TestCase):
 
         with app.app_context():
             db.session.remove()
-            engine = db.engines.pop(None, None)
-            if engine is not None:
-                engine.dispose()
-            db.get_engine()
+            rebuild_database_engine(db, app.config["SQLALCHEMY_DATABASE_URI"])
             db.drop_all()
             db.create_all()
 

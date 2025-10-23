@@ -52,10 +52,11 @@ This document describes the current and target **flows**. Keep it terse and impl
 9. **GitHub integration**
    - POST `/api/github/connect` stores or tests an access token
    - POST `/api/github/repos`, `/api/github/projects`, `/api/github/milestones` fetch metadata for the picker widgets
-   - POST `/api/github/issue/create` creates a linked issue for a task
+   - POST `/api/github/issue/create` creates a linked issue for a task with configurable synchronization label
    - POST `/api/github/issue/sync` syncs fields for an existing link (labels, status, milestone)
    - POST `/api/github/issue/close` closes the linked GitHub issue when a task completes
    - POST `/api/github/refresh` refreshes cached GitHub data for a task
+   - GitHub label configuration per user per scope with automatic propagation to collaborators sharing the same repository
 10. **Feedback loop**
     - POST `/api/feedback` submits feedback issues to the configured GitHub repository
 

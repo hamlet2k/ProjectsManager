@@ -14,6 +14,35 @@
         </div>
     </div>
 </div>
+
+<!-- GitHub Disable Confirmation Modal -->
+<div class="modal fade" id="githubDisableConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Disable GitHub Integration?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Warning:</strong> Disabling your GitHub integration will also disable all GitHub-connected scopes.
+                </div>
+                <p>Your tasks and configuration data will remain visible but read-only. You will still see existing issue numbers, milestones, and repository information, but you won't be able to perform GitHub actions until re-enabled.</p>
+                <ul class="mb-0">
+                    <li>All scope-level GitHub integrations will be disabled</li>
+                    <li>GitHub sync buttons will be hidden</li>
+                    <li>Existing links and information will remain visible</li>
+                    <li>You can re-enable integration later to restore full functionality</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" id="confirmDisableGithub">Disable Integration</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock content %}
 
 {% block scripts %}
@@ -25,6 +54,7 @@
         const tokenField = document.getElementById('github-token-field');
         const testButton = document.getElementById('github-test-connection');
         const tokenStatus = document.querySelector('[data-token-status]');
+        const removeButton = document.getElementById('github-remove-token');
 
         function getCsrfToken() {
             const field = document.querySelector('input[name="csrf_token"]');
@@ -115,7 +145,88 @@
             });
         }
 
+        if (removeButton) {
+            removeButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                const form = removeButton.form;
+                if (!form) {
+                    return;
+                }
+                const promptPromise =
+                    typeof window.showConfirmationModal === 'function'
+                        ? window.showConfirmationModal({
+                              title: 'Remove GitHub Token',
+                              message: 'Are you sure you want to remove the stored GitHub token?',
+                              description:
+                                  'GitHub syncing will remain disabled until you provide a new token in settings.',
+                              confirmLabel: 'Remove Token',
+                              confirmVariant: 'danger',
+                          })
+                        : Promise.resolve(
+                              window.confirm(
+                                  'Remove the stored GitHub token? You will need to add a new token to resume GitHub syncing.'
+                              )
+                          );
+                Promise.resolve(promptPromise).then((confirmed) => {
+                    if (!confirmed) {
+                        return;
+                    }
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit(removeButton);
+                    } else {
+                        // Fallback for older browsers
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = removeButton.name || 'remove_token';
+                        hidden.value = removeButton.value || 'Remove Token';
+                        form.appendChild(hidden);
+                        form.submit();
+                        hidden.remove();
+                    }
+                });
+            });
+        }
+
         toggleSectionVisibility();
+        
+        // Handle GitHub disable confirmation
+        const githubForm = document.querySelector('form');
+        const disableModal = new bootstrap.Modal(document.getElementById('githubDisableConfirmModal'));
+        const confirmButton = document.getElementById('confirmDisableGithub');
+        
+        // Intercept form submission when disabling
+        if (githubForm) {
+            githubForm.addEventListener('submit', function(e) {
+                const enabledField = githubForm.querySelector('input[name="enabled"]');
+                const submitButton = githubForm.querySelector('button[type="submit"]');
+                
+                // Check if this is a disable action
+                if (enabledField && !enabledField.checked && submitButton && submitButton.name === 'submit') {
+                    e.preventDefault();
+                    
+                    // Show confirmation modal
+                    disableModal.show();
+                    
+                    // Handle confirmation
+                    confirmButton.onclick = function() {
+                        // Add hidden field to confirm disable
+                        const confirmField = document.createElement('input');
+                        confirmField.type = 'hidden';
+                        confirmField.name = 'confirm_disable';
+                        confirmField.value = 'true';
+                        githubForm.appendChild(confirmField);
+                        
+                        // Submit the form
+                        githubForm.submit();
+                    };
+                }
+            });
+        }
+        
+        // Handle disable confirmation if modal should be shown on page load
+        {% if show_disable_confirmation %}
+        disableModal.show();
+        {% endif %}
     });
 </script>
 {% endblock %}

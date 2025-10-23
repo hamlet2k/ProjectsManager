@@ -31,7 +31,11 @@ if "github" not in sys.modules:
 
 from app import app, db
 from models.user import User
-from tests.utils.db import cleanup_test_database, provision_test_database
+from tests.utils.db import (
+    cleanup_test_database,
+    provision_test_database,
+    rebuild_database_engine,
+)
 
 
 class UserProfileTestCase(unittest.TestCase):
@@ -50,10 +54,7 @@ class UserProfileTestCase(unittest.TestCase):
 
         with app.app_context():
             db.session.remove()
-            engine = db.engines.pop(None, None)
-            if engine is not None:
-                engine.dispose()
-            db.get_engine()
+            rebuild_database_engine(db, app.config["SQLALCHEMY_DATABASE_URI"])
             db.drop_all()
             db.create_all()
 

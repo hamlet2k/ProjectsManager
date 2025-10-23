@@ -78,6 +78,10 @@ class GitHubError(RuntimeError):
         self.status_code = status_code
 
 
+class IntegrationDisabledError(RuntimeError):
+    """Raised when attempting to interact with GitHub while integration is disabled."""
+
+
 @dataclass
 class GitHubRepository:
     """Simple representation of a GitHub repository."""
@@ -397,6 +401,11 @@ def list_repository_milestones(token: str, owner: str, repo: str) -> List[Dict[s
 
 
 def _ensure_label(token: str, owner: str, repo: str, label: str) -> None:
+    """Ensure a label exists in the repository, creating it if necessary."""
+    if not label or not label.strip():
+        return
+        
+    label = label.strip()
     endpoint = f"/repos/{owner}/{repo}/labels/{quote(label)}"
     status, _ = _request("GET", endpoint, token)
     if status == 404:
@@ -412,8 +421,45 @@ def _ensure_label(token: str, owner: str, repo: str, label: str) -> None:
 
 
 def ensure_labels(token: str, owner: str, repo: str, labels: Iterable[str]) -> None:
+    """Ensure all labels exist in the repository."""
     for label in {label.strip() for label in labels if label}:
         _ensure_label(token, owner, repo, label)
+
+
+def ensure_app_label(token: str, owner: str, repo: str, app_label: str) -> None:
+    """Ensure the app-specific label exists in the repository."""
+    if not app_label:
+        # Fallback to default label if none provided
+        app_label = GITHUB_APP_LABEL
+    _ensure_label(token, owner, repo, app_label)
+
+
+def update_issue_labels(
+    token: str,
+    owner: str,
+    repo: str,
+    issue_number: int,
+    old_label: str,
+    new_label: str,
+) -> None:
+    """Update labels on a GitHub issue by removing old label and adding new label."""
+    try:
+        # Remove old label if it exists
+        remove_label_from_issue(token, owner, repo, issue_number, old_label)
+    except GitHubError:
+        # If the old label doesn't exist, that's okay
+        pass
+    
+    # Add the new label
+    _ensure_label(token, owner, repo, new_label)
+    
+    # Get current issue to add the new label
+    issue = fetch_issue(token, owner, repo, issue_number)
+    current_labels = [label for label in issue.labels if label != old_label]
+    current_labels.append(new_label)
+    
+    # Update the issue with the new label set
+    update_issue(token, owner, repo, issue_number, labels=current_labels)
 
 
 def create_issue(
@@ -424,9 +470,15 @@ def create_issue(
     body: str,
     labels: Iterable[str],
     milestone: Optional[int] = None,
+    app_label: Optional[str] = None,
 ) -> GitHubIssue:
+    """Create a GitHub issue with configurable app label."""
     all_labels = set(labels)
-    all_labels.add(GITHUB_APP_LABEL)
+    
+    # Use provided app_label or fallback to default
+    effective_app_label = app_label or GITHUB_APP_LABEL
+    all_labels.add(effective_app_label)
+    
     ensure_labels(token, owner, repo, all_labels)
 
     payload: Dict[str, Any] = {
@@ -502,7 +554,9 @@ def update_issue(
     labels: Optional[Iterable[str]] = None,
     state: Optional[str] = None,
     milestone: object = UNSET,
+    app_label: Optional[str] = None,
 ) -> GitHubIssue:
+    """Update a GitHub issue with configurable app label."""
     payload: Dict[str, object] = {}
     if title is not None:
         payload["title"] = title
@@ -510,7 +564,9 @@ def update_issue(
         payload["body"] = body
     if labels is not None:
         combined_labels = set(labels)
-        combined_labels.add(GITHUB_APP_LABEL)
+        # Use provided app_label or fallback to default
+        effective_app_label = app_label or GITHUB_APP_LABEL
+        combined_labels.add(effective_app_label)
         ensure_labels(token, owner, repo, combined_labels)
         payload["labels"] = sorted(combined_labels)
     if state is not None:

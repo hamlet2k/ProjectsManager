@@ -4,10 +4,15 @@ from unittest.mock import patch
 
 from app import app, db
 from models.scope import Scope
+from models.scope_github_config import ScopeGitHubConfig
 from models.task import Task
 from models.user import User
 from services.github_service import GitHubError, GitHubIssue, list_repository_projects
-from tests.utils.db import cleanup_test_database, provision_test_database
+from tests.utils.db import (
+    cleanup_test_database,
+    provision_test_database,
+    rebuild_database_engine,
+)
 
 
 class GitHubApiTestCase(unittest.TestCase):
@@ -24,10 +29,7 @@ class GitHubApiTestCase(unittest.TestCase):
 
         with app.app_context():
             db.session.remove()
-            engine = db.engines.pop(None, None)
-            if engine is not None:
-                engine.dispose()
-            db.get_engine()
+            rebuild_database_engine(db, app.config["SQLALCHEMY_DATABASE_URI"])
             db.drop_all()
             db.create_all()
 
@@ -46,11 +48,18 @@ class GitHubApiTestCase(unittest.TestCase):
             scope = Scope(
                 name="Test Scope",
                 owner_id=user.id,
+            )
+            db.session.add(scope)
+            db.session.flush()
+
+            config = ScopeGitHubConfig(
+                scope_id=scope.id,
+                user_id=user.id,
                 github_integration_enabled=True,
                 github_repo_owner="octocat",
                 github_repo_name="hello-world",
             )
-            db.session.add(scope)
+            db.session.add(config)
             db.session.commit()
             self.scope_id = scope.id
 

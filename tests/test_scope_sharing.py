@@ -7,7 +7,11 @@ from models.user import User
 from models.scope_share import ScopeShare, ScopeShareStatus
 from models.notification import Notification, NotificationStatus, NotificationType
 from services.scope_service import get_user_scopes, user_can_access_scope
-from tests.utils.db import cleanup_test_database, provision_test_database
+from tests.utils.db import (
+    cleanup_test_database,
+    provision_test_database,
+    rebuild_database_engine,
+)
 
 
 class ScopeSharingTestCase(unittest.TestCase):
@@ -28,10 +32,7 @@ class ScopeSharingTestCase(unittest.TestCase):
 
         with app.app_context():
             db.session.remove()
-            engine = db.engines.pop(None, None)
-            if engine is not None:
-                engine.dispose()
-            db.get_engine()
+            rebuild_database_engine(db, app.config["SQLALCHEMY_DATABASE_URI"])
             db.drop_all()
             db.create_all()
 

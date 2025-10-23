@@ -74,6 +74,7 @@ from services.github_service import (
     GITHUB_APP_LABEL,
     MISSING_ISSUE_STATUS_CODES,
     GitHubError,
+    IntegrationDisabledError,
     add_issue_to_project,
     comment_on_issue,
     create_issue,
@@ -87,7 +88,11 @@ from services.github_service import (
     remove_label_from_issue,
 )
 from services.scope_service import (
+    apply_scope_github_state,
     compute_share_state,
+    compute_scope_github_state,
+    get_scope_github_config,
+    get_scope_owner_github_config,
     get_scope_share,
     get_user_github_token,
     user_can_access_scope,
@@ -107,6 +112,7 @@ GITHUB_ISSUE_MISSING_MESSAGE = (
     "Linked GitHub issue could not be found and the link has been removed."
 )
 GITHUB_MISSING_ISSUE_STATUS_CODES = frozenset(MISSING_ISSUE_STATUS_CODES)
+INTEGRATION_DISABLED_MESSAGE = "GitHub integration is currently disabled. Re-enable it in settings to continue."
 
 # Create flask command lines to update the db based on the model
 # Useage:
@@ -406,6 +412,22 @@ def settings():
     """Application settings page for integrations"""
     github_form = GitHubSettingsForm()
 
+    if github_form.remove_token.data and github_form.validate_on_submit():
+        if g.user.github_token_encrypted:
+            g.user.set_github_token(None)
+            g.user.github_integration_enabled = False
+            # NEW: Propagate to all scopes
+            propagate_global_github_state(g.user, False)
+            try:
+                db.session.commit()
+                flash("GitHub token removed. Integration is disabled until a new token is added.", "info")
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                flash(f"Unable to remove GitHub token: {str(e)}", "error")
+        else:
+            flash("No GitHub token to remove.", "warning")
+        return redirect(url_for("settings"))
+
     if not github_form.is_submitted():
         github_form.enabled.data = g.user.github_integration_enabled
 
@@ -418,9 +440,9 @@ def settings():
             if not github_form.errors:
                 if token_input:
                     g.user.set_github_token(token_input)
-                # Only set the token if a new value is provided
-                # Do not set the token to None or empty if not provided
                 g.user.github_integration_enabled = True
+                # NEW: Propagate to all scopes
+                propagate_global_github_state(g.user, True)
                 try:
                     db.session.commit()
                     flash("GitHub settings saved.", "success")
@@ -429,11 +451,23 @@ def settings():
                     db.session.rollback()
                     flash(f"An error occurred: {str(e)}", "error")
         else:
+            # NEW: Add confirmation check for disabling
+            disable_confirmed = request.form.get('confirm_disable') == 'true'
+            if not disable_confirmed:
+                # Show confirmation modal instead of disabling
+                return render_template(
+                    "settings.html",
+                    github_form=github_form,
+                    github_token_present=token_present,
+                    show_disable_confirmation=True
+                )
+            
             g.user.github_integration_enabled = False
-            g.user.set_github_token(None)
+            # NEW: Propagate to all scopes
+            propagate_global_github_state(g.user, False)
             try:
                 db.session.commit()
-                flash("GitHub integration disabled.", "info")
+                flash("GitHub integration disabled. All connected scopes are now read-only.", "info")
                 return redirect(url_for("settings"))
             except SQLAlchemyError as e:
                 db.session.rollback()
@@ -446,6 +480,27 @@ def settings():
         github_form=github_form,
         github_token_present=token_present,
     )
+
+
+def propagate_global_github_state(user: User, enabled: bool) -> None:
+    """Propagate global GitHub integration state to all user's scope configurations."""
+    from services.scope_service import get_scope_github_config
+    
+    updated_count = 0
+    for scope in user.owned_scopes:
+        config = get_scope_github_config(scope, user)
+        if config and config.github_integration_enabled != enabled:
+            config.github_integration_enabled = enabled
+            updated_count += 1
+    
+    if updated_count > 0:
+        try:
+            db.session.commit()
+            app.logger.info(f"Propagated global GitHub state to {updated_count} scopes for user {user.id}")
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            app.logger.error(f"Failed to propagate GitHub state: {e}")
+            raise
 
 
 # Custom form validators
@@ -522,6 +577,7 @@ def load_scope():
     if scope_selected and g.user:
         scope = Scope.query.get(scope_selected)
         if scope and user_can_access_scope(g.user, scope):
+            apply_scope_github_state(scope, g.user)
             g.scope = scope
             try:
                 share_state = compute_share_state(scope, g.user)
@@ -597,10 +653,19 @@ def _labels_for_github(task: Task) -> list[str]:
         if not name:
             continue
         lower = name.lower()
-        if lower in {LOCAL_GITHUB_TAG_NAME, GITHUB_APP_LABEL.lower()}:
+        # Get effective GitHub label for this task's scope and user
+        from services.scope_service import get_effective_github_label
+        effective_label = get_effective_github_label(task.scope, g.user)
+        if lower in {LOCAL_GITHUB_TAG_NAME, (effective_label or GITHUB_APP_LABEL).lower()}:
             continue
         labels.add(name)
     return sorted(labels)
+
+
+def _get_effective_github_label(scope: Scope, user: User) -> str:
+    """Get the effective GitHub label for a scope and user."""
+    from services.scope_service import get_effective_github_label
+    return get_effective_github_label(scope, user) or GITHUB_APP_LABEL
 
 
 def _get_or_create_local_github_tag(scope: Scope | None):
@@ -703,34 +768,39 @@ def _format_github_datetime(value: Optional[datetime]) -> Optional[str]:
 
 def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
     labels = _labels_for_github(task)
+    effective_label = _get_effective_github_label(task.scope, g.user)
     issue = update_issue(
         context["token"],
         context["owner"],
         context["name"],
         task.github_issue_number,
         labels=labels,
+        app_label=effective_label,
     )
     task.github_issue_state = issue.state
     _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
 def _scope_github_context(scope: Scope | None, user: User | None):
     if scope is None or user is None:
         return None
-    if not scope.github_integration_enabled:
+    state = compute_scope_github_state(scope, user)
+    effective = state.effective_config
+    if not effective or not effective.github_integration_enabled:
         return None
     token = get_user_github_token(user)
     if not token:
         return None
-    if not scope.github_repo_owner or not scope.github_repo_name:
+    if not effective.github_repo_owner or not effective.github_repo_name:
         return None
+    milestone_source = state.user_config or effective
     return {
         "token": token,
-        "owner": scope.github_repo_owner,
-        "name": scope.github_repo_name,
-        "id": scope.github_repo_id,
-        "project_id": str(scope.github_project_id) if scope.github_project_id else None,
-        "project_name": scope.github_project_name,
-        "milestone_number": scope.github_milestone_number,
-        "milestone_title": scope.github_milestone_title,
+        "owner": effective.github_repo_owner,
+        "name": effective.github_repo_name,
+        "id": effective.github_repo_id,
+        "project_id": str(effective.github_project_id) if effective.github_project_id else None,
+        "project_name": effective.github_project_name,
+        "milestone_number": milestone_source.github_milestone_number if milestone_source else None,
+        "milestone_title": milestone_source.github_milestone_title if milestone_source else None,
     }
 
 
@@ -805,13 +875,14 @@ def _record_sync(task: Task, action: str, status: str, message: str | None = Non
     db.session.add(log_entry)
 
 
-def _tags_for_labels(scope: Scope, labels: list[str]):
+def _tags_for_labels(scope: Scope, labels: list[str], effective_github_label: str = None):
+    github_label_to_filter = (effective_github_label or GITHUB_APP_LABEL).lower()
     normalized = []
     for label in labels:
         if not label:
             continue
         lower = label.lower()
-        if lower == GITHUB_APP_LABEL.lower() or lower == LOCAL_GITHUB_TAG_NAME:
+        if lower == github_label_to_filter or lower == LOCAL_GITHUB_TAG_NAME:
             continue
         normalized.append(label.strip().lstrip("#").lower())
     if not normalized:
@@ -866,25 +937,25 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
         if task.completed:
             task.uncomplete_task()
     labels = issue.labels or []
+    effective_label = _get_effective_github_label(scope, g.user)
     try:
-        tags = _tags_for_labels(scope, labels)
+        tags = _tags_for_labels(scope, labels, effective_label)
     except SQLAlchemyError as exc:
         logging.error("Unable to sync tags from GitHub issue: %s", exc, exc_info=True)
         raise
     if tags is not None:
         task.tags = tags
     _ensure_local_github_tag(task)
-
-
-def _invalidate_github(user: User):
-    user.github_integration_enabled = False
-    user.set_github_token(None)
-
-
 def _github_error_response(error: GitHubError):
     status = error.status_code or 500
-    if status in (401, 403):
-        message = "GitHub authentication failed. Please update your token."
+    if status == 401:
+        message = (
+            "GitHub request failed: Unauthorized. Please verify your token or re-enable the integration."
+        )
+    elif status == 403:
+        message = (
+            "GitHub request failed: Forbidden. Ensure your token grants the required permissions."
+        )
     elif status in GITHUB_MISSING_ISSUE_STATUS_CODES:
         message = "Requested GitHub resource was not found."
     else:
@@ -1151,8 +1222,8 @@ def task():
         "sort_by": sort_by,
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
-        "github_enabled": bool(_scope_github_context(g.scope, g.user)),
-        "github_label": GITHUB_APP_LABEL,
+        "github_enabled": bool(g.user and g.user.github_integration_enabled),
+        "github_label": _get_effective_github_label(g.scope, g.user) if g.scope else GITHUB_APP_LABEL,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
@@ -1229,6 +1300,10 @@ def github_repositories():
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
     payload = request.get_json(silent=True) or {}
+    try:
+        _ensure_integration_enabled(g.user)
+    except IntegrationDisabledError:
+        return _integration_disabled_response()
     auth_header = request.headers.get("Authorization", "").strip()
     token = ""
     if auth_header.lower().startswith("bearer "):
@@ -1244,12 +1319,6 @@ def github_repositories():
     try:
         repos = list_repositories(token)
     except GitHubError as error:
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
 
@@ -1278,6 +1347,13 @@ def _extract_repo_payload(raw_payload):
     return owner, name
 
 
+def _ensure_integration_enabled(user: User) -> None:
+    if user is None:
+        raise IntegrationDisabledError(INTEGRATION_DISABLED_MESSAGE)
+    if not getattr(user, "github_integration_enabled", False):
+        raise IntegrationDisabledError(INTEGRATION_DISABLED_MESSAGE)
+
+
 def _resolve_github_token(payload: dict[str, object]) -> str:
     auth_header = request.headers.get("Authorization", "").strip()
     token = ""
@@ -1286,8 +1362,13 @@ def _resolve_github_token(payload: dict[str, object]) -> str:
     if not token:
         token = str(payload.get("token") or "").strip()
     if not token:
+        _ensure_integration_enabled(g.user)
         token = g.user.get_github_token()
     return token or ""
+
+
+def _integration_disabled_response():
+    return jsonify({"success": False, "message": INTEGRATION_DISABLED_MESSAGE, "integration_disabled": True}), 403
 
 
 @app.route("/api/github/projects", methods=["POST"])
@@ -1296,7 +1377,14 @@ def github_projects():
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
     payload = request.get_json(silent=True) or {}
-    token = _resolve_github_token(payload)
+    try:
+        _ensure_integration_enabled(g.user)
+    except IntegrationDisabledError:
+        return _integration_disabled_response()
+    try:
+        token = _resolve_github_token(payload)
+    except IntegrationDisabledError:
+        return _integration_disabled_response()
     if not token:
         return jsonify({"success": False, "message": "Token is required."}), 400
 
@@ -1307,14 +1395,12 @@ def github_projects():
     try:
         projects = list_repository_projects(token, owner, name)
     except GitHubError as error:
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403, 410):
+        if error.status_code in (401, 403):
+            message = (
+                f"{message} Ensure your token includes project access and that GitHub Projects V2 is available for the repository owner."
+            )
+        elif error.status_code == 410:
             message = (
                 "Unable to load GitHub projects. Ensure your token includes project access "
                 "and that GitHub Projects V2 is available for the repository owner."
@@ -1334,7 +1420,14 @@ def github_milestones():
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
     payload = request.get_json(silent=True) or {}
-    token = _resolve_github_token(payload)
+    try:
+        _ensure_integration_enabled(g.user)
+    except IntegrationDisabledError:
+        return _integration_disabled_response()
+    try:
+        token = _resolve_github_token(payload)
+    except IntegrationDisabledError:
+        return _integration_disabled_response()
     if not token:
         return jsonify({"success": False, "message": "Token is required."}), 400
 
@@ -1345,14 +1438,12 @@ def github_milestones():
     try:
         milestones = list_repository_milestones(token, owner, name)
     except GitHubError as error:
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403, 410):
+        if error.status_code in (401, 403):
+            message = (
+                f"{message} Ensure your token includes milestone access and that milestones are enabled for the repository."
+            )
+        elif error.status_code == 410:
             message = (
                 "Unable to load GitHub milestones. Ensure your token includes milestone access "
                 "and that milestones are enabled for the repository."
@@ -1375,7 +1466,9 @@ def github_milestones():
 
 
 def _task_owner_guard(task: Task):
-    if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+    if task.scope_id != g.scope.id:
+        abort(403)
+    if not user_can_edit_task(g.user, task):
         abort(403)
 
 
@@ -1384,6 +1477,9 @@ def _task_owner_guard(task: Task):
 def github_issue_create():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    if not g.user.github_integration_enabled:
+        return _integration_disabled_response()
 
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
@@ -1398,6 +1494,7 @@ def github_issue_create():
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
     labels = _labels_for_github(task)
+    effective_label = _get_effective_github_label(task.scope, g.user)
     milestone_number = context.get("milestone_number")
     warnings: list[str] = []
     try:
@@ -1409,14 +1506,9 @@ def github_issue_create():
             task.description or "",
             labels,
             milestone=milestone_number,
+            app_label=effective_label,
         )
     except GitHubError as error:
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
 
@@ -1485,6 +1577,9 @@ def github_issue_sync():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
+    if not g.user.github_integration_enabled:
+        return _integration_disabled_response()
+
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
     if not task_id:
@@ -1542,12 +1637,6 @@ def github_issue_sync():
             )
 
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         return jsonify({"success": False, "message": message}), status
 
     try:
@@ -1592,6 +1681,9 @@ def github_issue_sync():
 def update_task_milestone(task_id: int):
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
+
+    if not g.user.github_integration_enabled:
+        return _integration_disabled_response()
 
     task = _get_task_in_scope_or_404(task_id)
     _task_owner_guard(task)
@@ -1659,12 +1751,14 @@ def update_task_milestone(task_id: int):
     issue = None
     try:
         if desired_number != original_number:
+            effective_label = _get_effective_github_label(task.scope, g.user)
             issue = update_issue(
                 context["token"],
                 context["owner"],
                 context["name"],
                 task.github_issue_number,
                 milestone=desired_number,
+                app_label=effective_label,
             )
             task.github_issue_state = issue.state
             task.github_milestone_number = issue.milestone_number
@@ -1694,12 +1788,6 @@ def update_task_milestone(task_id: int):
                 "task": _serialize_task_payload(task),
             }
             return jsonify(response), error.status_code or 404
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         message, status = _github_error_response(error)
         return jsonify({"success": False, "message": message}), status
     except SQLAlchemyError as exc:
@@ -1746,6 +1834,9 @@ def github_issue_close():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
+    if not g.user.github_integration_enabled:
+        return _integration_disabled_response()
+
     payload = request.get_json(silent=True) or {}
     task_id = payload.get("task_id")
     if not task_id:
@@ -1786,12 +1877,6 @@ def github_issue_close():
             issue_unlinked = True
         else:
             message, status = _github_error_response(error)
-            if error.status_code in (401, 403):
-                _invalidate_github(g.user)
-                try:
-                    db.session.commit()
-                except SQLAlchemyError:
-                    db.session.rollback()
             return jsonify({"success": False, "message": message}), status
 
     task.complete_task()
@@ -1827,6 +1912,9 @@ def github_refresh():
     if g.user is None:
         return jsonify({"success": False, "message": "Authentication required."}), 401
 
+    if not g.user.github_integration_enabled:
+        return _integration_disabled_response()
+
     tasks = (
         Task.query.filter(
             Task.owner_id == g.user.id,
@@ -1846,11 +1934,6 @@ def github_refresh():
             issue = fetch_issue(context["token"], context["owner"], context["name"], task.github_issue_number)
         except GitHubError as error:
             if error.status_code in (401, 403):
-                _invalidate_github(g.user)
-                try:
-                    db.session.commit()
-                except SQLAlchemyError:
-                    db.session.rollback()
                 message, status = _github_error_response(error)
                 return jsonify({"success": False, "message": message}), status
             if error.status_code in GITHUB_MISSING_ISSUE_STATUS_CODES:
@@ -2057,6 +2140,9 @@ def add_tag_to_task(task_id):
             400,
         )
 
+    if task.github_issue_number and not g.user.github_integration_enabled:
+        return _integration_disabled_response()
+
     assigned_now = False
     if tag not in task.tags:
         task.tags.append(tag)
@@ -2101,12 +2187,6 @@ def add_tag_to_task(task_id):
             return jsonify(response)
         db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         logging.error("Unable to sync labels after assigning tag: %s", message)
         return jsonify({"error": message}), status
     except SQLAlchemyError as e:
@@ -2136,6 +2216,9 @@ def remove_tag_from_task(task_id, tag_id):
             jsonify({"error": "This task is linked to GitHub and the github tag cannot be removed."}),
             400,
         )
+
+    if task.github_issue_number and not g.user.github_integration_enabled:
+        return _integration_disabled_response()
 
     removed = False
     if tag in task.tags:
@@ -2179,12 +2262,6 @@ def remove_tag_from_task(task_id, tag_id):
             return jsonify(response)
         db.session.rollback()
         message, status = _github_error_response(error)
-        if error.status_code in (401, 403):
-            _invalidate_github(g.user)
-            try:
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
         logging.error("Unable to sync labels after removing tag: %s", message)
         return jsonify({"error": message}), status
     except SQLAlchemyError as e:
@@ -2292,6 +2369,12 @@ def edit_task(id):
 
         tag_ids = _parse_tag_ids(form.tags.data)
         item.tags = _get_tags_for_scope(tag_ids)
+        if item.github_issue_number and not g.user.github_integration_enabled:
+            disabled_message = INTEGRATION_DISABLED_MESSAGE
+            if wants_json:
+                return jsonify({"success": False, "message": disabled_message}), 403
+            flash(disabled_message, "warning")
+            return safe_redirect(request.referrer, "task")
         try:
             _ensure_local_github_tag(item)
         except SQLAlchemyError as exc:
@@ -2327,10 +2410,12 @@ def edit_task(id):
                 milestone_number != item.github_milestone_number
             )
             try:
+                effective_label = _get_effective_github_label(item.scope, g.user)
                 update_kwargs = {
                     "title": item.name,
                     "body": item.description or "",
                     "labels": labels,
+                    "app_label": effective_label,
                 }
                 if milestone_changed:
                     update_kwargs["milestone"] = milestone_number
@@ -2354,12 +2439,6 @@ def edit_task(id):
                     issue_unlinked = True
                 else:
                     message, status = _github_error_response(error)
-                    if error.status_code in (401, 403):
-                        _invalidate_github(g.user)
-                        try:
-                            db.session.commit()
-                        except SQLAlchemyError:
-                            db.session.rollback()
                     if wants_json:
                         return jsonify({"success": False, "message": message}), status
                     flash(message, "danger")
@@ -2466,24 +2545,22 @@ def delete_item(item_type, id):
                     category="warning",
                 )
             github_context = _task_github_context(item, g.user) if item.github_issue_number else None
+            if item.github_issue_number and not g.user.github_integration_enabled:
+                disabled_message = INTEGRATION_DISABLED_MESSAGE
+                return respond(False, disabled_message, status=403, category="warning")
             if github_context and item.github_issue_number:
                 try:
+                    effective_label = _get_effective_github_label(item.scope, g.user)
                     remove_label_from_issue(
                         github_context["token"],
                         github_context["owner"],
                         github_context["name"],
                         item.github_issue_number,
-                        GITHUB_APP_LABEL,
+                        effective_label,
                     )
                 except GitHubError as error:
                     if error.status_code not in GITHUB_MISSING_ISSUE_STATUS_CODES:
                         message, status = _github_error_response(error)
-                        if error.status_code in (401, 403):
-                            _invalidate_github(g.user)
-                            try:
-                                db.session.commit()
-                            except SQLAlchemyError:
-                                db.session.rollback()
                         return respond(False, message, status=status, category="danger")
 
         db.session.delete(item)
@@ -2519,6 +2596,15 @@ def complete_task(id):
                 )
             flash(message, "danger")
             return safe_redirect(request.referrer, "task")
+        if item.github_issue_number and not g.user.github_integration_enabled:
+            disabled_message = INTEGRATION_DISABLED_MESSAGE
+            if wants_json:
+                return (
+                    jsonify({"success": False, "message": disabled_message, "category": "warning"}),
+                    403,
+                )
+            flash(disabled_message, "warning")
+            return safe_redirect(request.referrer, "task")
         context = _task_github_context(item, g.user) if item.github_issue_number else None
         issue_unlinked = False
         issue_reopened = False
@@ -2526,12 +2612,14 @@ def complete_task(id):
         if item.completed:
             if item.github_issue_number and context:
                 try:
+                    effective_label = _get_effective_github_label(item.scope, g.user)
                     issue = update_issue(
                         context["token"],
                         context["owner"],
                         context["name"],
                         item.github_issue_number,
                         state="open",
+                        app_label=effective_label,
                     )
                     item.github_issue_state = issue.state
                     _record_sync(item, "reopen_issue", "success", f"Issue #{issue.number} reopened")
@@ -2548,12 +2636,6 @@ def complete_task(id):
                         issue_unlinked = True
                     else:
                         message, status = _github_error_response(error)
-                        if error.status_code in (401, 403):
-                            _invalidate_github(g.user)
-                            try:
-                                db.session.commit()
-                            except SQLAlchemyError:
-                                db.session.rollback()
                         if wants_json:
                             return (
                                 jsonify(
@@ -2599,12 +2681,6 @@ def complete_task(id):
                         issue_unlinked = True
                     else:
                         message, status = _github_error_response(error)
-                        if error.status_code in (401, 403):
-                            _invalidate_github(g.user)
-                            try:
-                                db.session.commit()
-                            except SQLAlchemyError:
-                                db.session.rollback()
                         if wants_json:
                             return (
                                 jsonify(

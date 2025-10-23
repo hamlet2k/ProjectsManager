@@ -28,6 +28,9 @@
         <div class="d-flex flex-wrap gap-2">
             <button class="btn btn-outline-secondary" type="button" id="github-test-connection">Test connection</button>
             {{ github_form.submit(class="btn btn-primary") }}
+            {% if github_token_present %}
+                {{ github_form.remove_token() }}
+            {% endif %}
         </div>
     </div>
 </form>
