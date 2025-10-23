@@ -7,7 +7,7 @@ from sqlalchemy.sql import table, column
 
 # revision identifiers, used by Alembic.
 revision = "202410150001"
-down_revision = "202409250005"
+down_revision = "202510200001_postgres_alignment"
 branch_labels = None
 depends_on = None
 
@@ -15,6 +15,23 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     dialect = bind.dialect.name
+    if dialect in {"postgresql", "postgres"}:
+        existing_scope_columns = {
+            row.column_name
+            for row in bind.execute(
+                sa.text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'scope'
+                    """
+                )
+            )
+        }
+    else:
+        existing_scope_columns = {col["name"] for col in sa.inspect(bind).get_columns("scope")}
+    include_hidden_label = "github_hidden_label" in existing_scope_columns
 
     op.create_table(
         "scope_github_config",
@@ -56,20 +73,27 @@ def upgrade():
         column("github_project_name", sa.String()),
         column("github_milestone_number", sa.Integer()),
         column("github_milestone_title", sa.String()),
+        column("github_hidden_label", sa.String()),
     )
 
-    scope_rows = list(
-        bind.execute(
-            sa.text(
-                """
-                SELECT id, owner_id, github_integration_enabled, github_repo_id, github_repo_name,
-                       github_repo_owner, github_project_id, github_project_name,
-                       github_milestone_number, github_milestone_title
-                FROM scope
-                """
-            )
-        )
-    )
+    select_columns = [
+        "id",
+        "owner_id",
+        "github_integration_enabled",
+        "github_repo_id",
+        "github_repo_name",
+        "github_repo_owner",
+        "github_project_id",
+        "github_project_name",
+        "github_milestone_number",
+        "github_milestone_title",
+    ]
+    if include_hidden_label:
+        select_columns.append("github_hidden_label")
+    else:
+        select_columns.append("NULL AS github_hidden_label")
+
+    scope_rows = list(bind.execute(sa.text(f"SELECT {', '.join(select_columns)} FROM scope")))
 
     for row in scope_rows:
         owner_id = row.owner_id
@@ -87,6 +111,7 @@ def upgrade():
                 github_project_name=row.github_project_name,
                 github_milestone_number=row.github_milestone_number,
                 github_milestone_title=row.github_milestone_title,
+                github_hidden_label=row.github_hidden_label,
             )
         )
 
@@ -102,13 +127,20 @@ def upgrade():
         "github_integration_enabled",
     ]
 
+    columns_to_drop = [column_name for column_name in scope_columns if column_name in existing_scope_columns]
+
     if dialect == "sqlite":
-        with op.batch_alter_table("scope") as batch_op:
-            for column_name in scope_columns:
-                batch_op.drop_column(column_name)
+        if columns_to_drop:
+            with op.batch_alter_table("scope") as batch_op:
+                for column_name in columns_to_drop:
+                    batch_op.drop_column(column_name)
     else:
-        for column_name in scope_columns:
-            op.drop_column("scope", column_name)
+        if dialect in {"postgresql", "postgres"}:
+            for column_name in scope_columns:
+                op.execute(sa.text(f'ALTER TABLE scope DROP COLUMN IF EXISTS "{column_name}"'))
+        else:
+            for column_name in columns_to_drop:
+                op.drop_column("scope", column_name)
 
     op.alter_column("scope_github_config", "github_integration_enabled", server_default=None)
 

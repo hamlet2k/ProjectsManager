@@ -12,6 +12,19 @@ from models.user import User
 from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 
 
+def _scope_owner_display_name(scope: Scope | None) -> str:
+    if scope is None:
+        return ""
+    owner = getattr(scope, "owner", None)
+    if owner is None:
+        return ""
+    for attr in ("name", "username", "email"):
+        value = getattr(owner, attr, None)
+        if value:
+            return value
+    return f"User {owner.id}"
+
+
 def user_can_access_scope(user: User | None, scope: Scope | None) -> bool:
     """Return True when the given user can view the provided scope."""
 
@@ -212,9 +225,10 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
         scope.github_milestone_number = None
         scope.github_milestone_title = None
 
-    scope.github_repository_locked = state.linked_to_owner
-    scope.github_project_locked = state.linked_to_owner
-    scope.github_label_locked = state.linked_to_owner
+    scope.github_repository_locked = False
+    scope.github_project_locked = False
+    scope.github_label_locked = False
+    scope.owner_display_name = _scope_owner_display_name(scope)
 
     return state
 
@@ -348,7 +362,7 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
     share_state = compute_share_state(scope, current_user)
 
     form_config = state.user_config or state.effective_config
-    project_source = state.owner_config if state.linked_to_owner and state.owner_config else form_config
+    project_source = form_config
     milestone_source = state.user_config or state.effective_config
 
     repo = None
@@ -395,9 +409,10 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_repository": repo,
         "github_project": project,
         "github_milestone": milestone,
-        "github_repository_locked": state.linked_to_owner,
-        "github_project_locked": state.linked_to_owner,
-        "github_label_locked": state.linked_to_owner,
+        "github_repository_locked": False,
+        "github_project_locked": False,
+        "github_label_locked": False,
+        "owner_name": _scope_owner_display_name(scope),
         "github_config_source": config_source,
         "github_config_user_id": state.user_config.user_id if state.user_config else None,
         "github_config_owner_id": state.owner_config.user_id if state.owner_config else None,

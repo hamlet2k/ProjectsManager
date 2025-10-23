@@ -39,6 +39,12 @@
                         {% endfor %}
                     </div>
                 </div>
+                <p class="text-muted small mb-3 d-none" data-scope-owner-label>
+                    Scope owner: <span data-scope-owner-name></span>
+                </p>
+                <div class="alert alert-info py-2 px-3 d-none" data-scope-owner-managed role="alert">
+                    These fields are managed by the owner of the scope.
+                </div>
                 <div class="mb-3 pt-3 border-top">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <div>
@@ -75,9 +81,6 @@
                                 {% endfor %}
                             </div>
                             <div class="form-text">Automatically add new issues to this GitHub project.</div>
-                        </div>
-                        <div class="alert alert-info py-2 px-3 d-none" data-github-shared-notice role="alert">
-                            These fields are managed by the scope owner since you share the same repository.
                         </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-project-warning role="alert">
                             Unable to load projects for this repository. Ensure your GitHub token includes project access.

@@ -26,7 +26,6 @@ from database import db
 from forms import ScopeForm
 from models.scope import Scope
 from models.notification import NotificationStatus
-from models.scope_github_config import ScopeGitHubConfig
 from models.scope_share import ScopeShare, ScopeShareRole, ScopeShareStatus
 from models.user import User
 from services.scope_service import (
@@ -36,10 +35,8 @@ from services.scope_service import (
     ensure_scope_github_config,
     get_next_scope_rank,
     get_scope_github_config,
-    get_scope_owner_github_config,
     get_scope_share,
     get_user_github_token,
-    propagate_owner_github_configuration,
     serialize_scope,
     serialize_shares,
     serialize_task_for_clipboard,
@@ -638,29 +635,10 @@ def edit_scope(scope_id: int):
                 context = build_scope_page_context(g.user, form=form, show_modal="scope-modal")
                 return render_template("scope.html", **context)
 
-            linked_configs: list[ScopeGitHubConfig] = []
             config = ensure_scope_github_config(scope, g.user)
             if is_owner:
                 scope.name = form.name.data
                 scope.description = form.description.data
-                previous_repo_owner = (config.github_repo_owner or '').lower()
-                previous_repo_name = (config.github_repo_name or '').lower()
-                previous_repo_id = config.github_repo_id
-                for other in scope.github_configs:
-                    if other.user_id == g.user.id:
-                        continue
-                    if previous_repo_id and other.github_repo_id and other.github_repo_id == previous_repo_id:
-                        linked_configs.append(other)
-                        continue
-                    if (
-                        previous_repo_owner
-                        and previous_repo_name
-                        and other.github_repo_owner
-                        and other.github_repo_name
-                        and other.github_repo_owner.lower() == previous_repo_owner
-                        and other.github_repo_name.lower() == previous_repo_name
-                    ):
-                        linked_configs.append(other)
             else:
                 # Non-owners cannot change general scope metadata.
                 form.name.data = scope.name
@@ -694,27 +672,8 @@ def edit_scope(scope_id: int):
                 config.github_milestone_number = None
                 config.github_milestone_title = None
 
-            owner_config = get_scope_owner_github_config(scope)
-            if is_owner and linked_configs:
-                for linked in linked_configs:
-                    linked.clone_repository_metadata_from(config)
-                    linked.github_integration_enabled = config.github_integration_enabled
-                    linked.github_project_id = config.github_project_id
-                    linked.github_project_name = config.github_project_name
-                    linked.github_hidden_label = config.github_hidden_label
-                    if not config.github_integration_enabled:
-                        linked.github_milestone_number = None
-                        linked.github_milestone_title = None
-
-            if owner_config and config.shares_repository_with(owner_config):
-                config.github_project_id = owner_config.github_project_id
-                config.github_project_name = owner_config.github_project_name
-                config.github_hidden_label = owner_config.github_hidden_label
-            elif not is_owner:
+            if not is_owner and not enable_integration:
                 config.github_hidden_label = None
-
-            if is_owner:
-                propagate_owner_github_configuration(scope, owner_config or config)
 
             try:
                 db.session.commit()

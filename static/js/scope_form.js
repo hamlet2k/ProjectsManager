@@ -149,6 +149,7 @@
             github_project_locked: false,
             github_label_locked: false,
             can_edit_metadata: true,
+            owner_name: '',
         };
     }
 
@@ -468,6 +469,7 @@
         const projectLocked = (trigger.getAttribute('data-scope-github_project_locked') || '').toLowerCase() === 'true';
         const labelLocked = (trigger.getAttribute('data-scope-github_label_locked') || '').toLowerCase() === 'true';
         const canEditMetadata = (trigger.getAttribute('data-scope-can-edit-metadata') || 'true').toLowerCase() === 'true';
+        const ownerName = trigger.getAttribute('data-scope-owner-name') || '';
         return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
@@ -479,6 +481,7 @@
             github_project_locked: projectLocked,
             github_label_locked: labelLocked,
             can_edit_metadata: canEditMetadata,
+            owner_name: ownerName,
         };
     }
 
@@ -734,6 +737,7 @@
         values.github_project_locked = Boolean(state.permissions.projectLocked);
         values.github_label_locked = Boolean(state.permissions.labelLocked);
         values.can_edit_metadata = Boolean(state.permissions.canEditMetadata);
+        values.owner_name = state.formValues.owner_name || '';
         return values;
     }
 
@@ -779,6 +783,7 @@
         const projectSelect = state.github.projectSelect;
         const milestoneSelect = state.github.milestoneSelect;
 
+        state.formValues = { ...state.formValues, ...data };
         state.permissions.canEditMetadata = data.can_edit_metadata !== false;
         state.permissions.repositoryLocked = Boolean(data.github_repository_locked);
         state.permissions.projectLocked = Boolean(data.github_project_locked);
@@ -835,17 +840,16 @@
         const descriptionField = state.form.querySelector('[data-field="description"]');
         const repoSelect = state.github.select;
         const projectSelect = state.github.projectSelect;
-        const sharedNotice = state.form.querySelector('[data-github-shared-notice]');
 
         const metadataLocked = !state.permissions.canEditMetadata;
         const nameWrapper = nameField ? nameField.closest('.form-floating') : null;
         const descriptionWrapper = descriptionField ? descriptionField.closest('.form-floating') : null;
 
         if (nameWrapper) {
-            nameWrapper.classList.toggle('d-none', metadataLocked);
+            nameWrapper.classList.remove('d-none');
         }
         if (descriptionWrapper) {
-            descriptionWrapper.classList.toggle('d-none', metadataLocked);
+            descriptionWrapper.classList.remove('d-none');
         }
 
         if (nameField) {
@@ -889,11 +893,25 @@
             }
         }
 
-        if (sharedNotice) {
-            const shouldShowNotice = Boolean(
-                state.permissions.repositoryLocked || state.permissions.projectLocked
-            );
-            sharedNotice.classList.toggle('d-none', !shouldShowNotice);
+        updateOwnerContext();
+    }
+
+    function updateOwnerContext() {
+        const ownerLabel = state.form.querySelector('[data-scope-owner-label]');
+        const ownerNameTarget = state.form.querySelector('[data-scope-owner-name]');
+        const ownerNotice = state.form.querySelector('[data-scope-owner-managed]');
+        const ownerName = state.formValues.owner_name || '';
+        const metadataLocked = !state.permissions.canEditMetadata;
+
+        if (ownerNameTarget) {
+            ownerNameTarget.textContent = ownerName;
+        }
+        if (ownerLabel) {
+            ownerLabel.classList.toggle('d-none', !ownerName);
+        }
+        const shouldShowNotice = Boolean(ownerName && metadataLocked);
+        if (ownerNotice) {
+            ownerNotice.classList.toggle('d-none', !shouldShowNotice);
         }
     }
 
@@ -1746,6 +1764,7 @@
                 'data-scope-can-edit-metadata',
                 scope.is_owner ? 'true' : 'false'
             );
+            button.setAttribute('data-scope-owner-name', scope.owner_name || '');
         });
     }
 
@@ -1774,6 +1793,7 @@
         card.dataset.scopeId = String(scope.id);
         card.dataset.scopeUrl = scope.urls && scope.urls.set ? scope.urls.set : '';
         card.dataset.scopeIsOwner = scope.is_owner ? 'true' : 'false';
+        card.dataset.scopeOwnerName = scope.owner_name || '';
         col.appendChild(card);
 
         const header = document.createElement('div');
@@ -1804,7 +1824,7 @@
             const badge = document.createElement('span');
             badge.className = 'badge text-bg-primary d-inline-flex align-items-center gap-1';
             const icon = document.createElement('i');
-            icon.className = 'bi bi-github';
+            icon.className = scope.is_owner ? 'bi bi-github' : 'bi bi-pencil';
             icon.setAttribute('aria-hidden', 'true');
             badge.appendChild(icon);
             badge.appendChild(document.createTextNode('GitHub'));
@@ -1889,6 +1909,7 @@
                 scope.github_label_locked ? 'true' : 'false'
             );
             editButton.setAttribute('data-scope-can-edit-metadata', 'true');
+            editButton.setAttribute('data-scope-owner-name', scope.owner_name || '');
             editButton.setAttribute('aria-label', `Edit scope ${scope.name || ''}`.trim());
             editButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
             actions.appendChild(editButton);
@@ -1940,11 +1961,12 @@
                 scope.github_label_locked ? 'true' : 'false'
             );
             configureButton.setAttribute('data-scope-can-edit-metadata', 'false');
+            configureButton.setAttribute('data-scope-owner-name', scope.owner_name || '');
             configureButton.setAttribute(
                 'aria-label',
-                `Configure GitHub for scope ${scope.name || ''}`.trim()
+                `Edit scope settings for ${scope.name || ''}`.trim()
             );
-            configureButton.innerHTML = '<i class="bi bi-github" aria-hidden="true"></i>';
+            configureButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
             actions.appendChild(configureButton);
 
             const leaveButton = document.createElement('button');
@@ -1965,6 +1987,13 @@
         title.className = 'h5 text-dark mb-2';
         title.textContent = scope.name || '';
         body.appendChild(title);
+
+        if (!scope.is_owner && scope.owner_name) {
+            const ownerLine = document.createElement('p');
+            ownerLine.className = 'text-muted small mb-1';
+            ownerLine.textContent = `Owner: ${scope.owner_name}`;
+            body.appendChild(ownerLine);
+        }
 
         if (scope.description) {
             const description = document.createElement('p');

@@ -1252,7 +1252,7 @@ def github_repositories():
     try:
         repos = list_repositories(token)
     except GitHubError as error:
-        if error.status_code in (401, 403):
+        if error.status_code == 401:
             _invalidate_github(g.user)
             try:
                 db.session.commit()
@@ -1315,7 +1315,7 @@ def github_projects():
     try:
         projects = list_repository_projects(token, owner, name)
     except GitHubError as error:
-        if error.status_code in (401, 403):
+        if error.status_code == 401:
             _invalidate_github(g.user)
             try:
                 db.session.commit()
@@ -1353,7 +1353,7 @@ def github_milestones():
     try:
         milestones = list_repository_milestones(token, owner, name)
     except GitHubError as error:
-        if error.status_code in (401, 403):
+        if error.status_code == 401:
             _invalidate_github(g.user)
             try:
                 db.session.commit()
@@ -1383,7 +1383,9 @@ def github_milestones():
 
 
 def _task_owner_guard(task: Task):
-    if task.owner_id != g.user.id or task.scope_id != g.scope.id:
+    if task.scope_id != g.scope.id:
+        abort(403)
+    if not user_can_edit_task(g.user, task):
         abort(403)
 
 

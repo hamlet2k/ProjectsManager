@@ -37,7 +37,10 @@ class ScopeGitHubConfig(db.Model):
         if not other.github_repo_owner or not other.github_repo_name:
             return False
         if self.github_repo_id and other.github_repo_id:
-            return self.github_repo_id == other.github_repo_id
+            try:
+                return int(self.github_repo_id) == int(other.github_repo_id)
+            except (TypeError, ValueError):
+                return str(self.github_repo_id) == str(other.github_repo_id)
         return (
             self.github_repo_owner.lower() == other.github_repo_owner.lower()
             and self.github_repo_name.lower() == other.github_repo_name.lower()
