@@ -42,9 +42,27 @@
                                     </span>
                                 {% endif %}
                                 {% if scope.show_github_badge %}
-                                    <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
+                                    <span
+                                        class="badge text-bg-primary d-inline-flex align-items-center gap-1"
+                                        {% if scope.github_badge_tooltip %}
+                                            data-bs-toggle="tooltip"
+                                            data-scope-owner-tooltip="true"
+                                            title="{{ scope.github_badge_tooltip | e }}"
+                                        {% endif %}
+                                    >
                                         <i class="{{ scope.github_badge_icon }}" aria-hidden="true"></i>
                                         GitHub
+                                    </span>
+                                {% endif %}
+                                {% if scope.show_shared_badge %}
+                                    <span
+                                        class="badge text-bg-secondary d-inline-flex align-items-center gap-1"
+                                        data-bs-toggle="tooltip"
+                                        data-scope-owner-tooltip="true"
+                                        title="{{ scope.shared_badge_tooltip | e }}"
+                                    >
+                                        <i class="bi bi-people" aria-hidden="true"></i>
+                                        Shared
                                     </span>
                                 {% endif %}
                             </div>
@@ -78,6 +96,8 @@
                                         data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
                                         data-scope-can-edit-metadata="true"
                                         data-scope-owner-name="{{ '' if scope.owner_id == g.user.id else scope.owner_display_name | default('') | e }}"
+                                        data-scope-owner-repository="{{ scope.owner_repository_label | default('') | e }}"
+                                        data-scope-show-owner-repository="{{ 'true' if scope.show_owner_repository_line else 'false' }}"
                                         data-scope-is-owner="true"
                                         aria-label="Edit scope {{ scope.name }}"
                                     >
@@ -111,6 +131,8 @@
                                         data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
                                         data-scope-can-edit-metadata="false"
                                         data-scope-owner-name="{{ scope.owner_display_name | default('') | e }}"
+                                        data-scope-owner-repository="{{ scope.owner_repository_label | default('') | e }}"
+                                        data-scope-show-owner-repository="{{ 'true' if scope.show_owner_repository_line else 'false' }}"
                                         data-scope-is-owner="false"
                                         aria-label="Edit scope settings for {{ scope.name }}"
                                     >

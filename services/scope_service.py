@@ -290,7 +290,15 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
             badge_tooltip = "No repository configured by the owner."
         else:
             badge_tooltip = "No repository configured."
-    scope.github_badge_tooltip = badge_tooltip or ""
+        scope.github_badge_tooltip = badge_tooltip or ""
+
+    scope.show_shared_badge = bool(not is_owner)
+    shared_owner_label = owner_display_name or ""
+    if scope.show_shared_badge and not shared_owner_label:
+        shared_owner_label = "Unknown owner"
+    scope.shared_badge_tooltip = (
+        f"Owner: {shared_owner_label}" if scope.show_shared_badge else ""
+    )
 
     return state
 
@@ -482,6 +490,8 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "show_github_badge": bool(getattr(scope, "show_github_badge", False)),
         "github_badge_icon": getattr(scope, "github_badge_icon", "bi bi-github"),
         "has_github_linked_tasks": bool(getattr(scope, "has_github_linked_tasks", False)),
+        "show_shared_badge": bool(getattr(scope, "show_shared_badge", False)),
+        "shared_badge_tooltip": getattr(scope, "shared_badge_tooltip", ""),
         "github_config_source": config_source,
         "github_config_user_id": state.user_config.user_id if state.user_config else None,
         "github_config_owner_id": state.owner_config.user_id if state.owner_config else None,

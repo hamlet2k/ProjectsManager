@@ -12,7 +12,7 @@
 
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="scope-modal-description">Group related tasks by creating a new scope.</p>
-                <div class="form-floating mb-3">
+                <div class="form-floating mb-3" data-owner-field="name">
                     {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name, **{'data-field': 'name'}) }}
                     {{ scope_form.name.label(class="form-label") }}
                     <div class="invalid-feedback{% if scope_form.name.errors %} d-block{% endif %}" data-field-errors="name">
@@ -21,7 +21,11 @@
                         {% endfor %}
                     </div>
                 </div>
-                <div class="form-floating mb-3">
+                <div class="mb-3 d-none" data-collaborator-name-display>
+                    <label class="form-label fw-semibold mb-1">Scope name</label>
+                    <p class="mb-0 text-body" data-collaborator-name-value></p>
+                </div>
+                <div class="form-floating mb-3" data-owner-field="description">
                     {{ scope_form.description(
                         class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''),
                         placeholder_=scope_form.description.name,
@@ -39,8 +43,18 @@
                         {% endfor %}
                     </div>
                 </div>
-                <p class="text-muted small mb-3 d-none" data-scope-owner-label>
+                <div class="mb-3 d-none" data-collaborator-description-display>
+                    <label class="form-label fw-semibold mb-1">Description</label>
+                    <p class="mb-0 text-body" data-collaborator-description-value style="white-space: pre-line;"></p>
+                </div>
+                <p class="text-muted small mb-2 d-none" data-scope-owner-label>
                     Scope owner: <span data-scope-owner-name></span>
+                </p>
+                <p class="text-muted small mb-2 d-none" data-collaborator-owner-line>
+                    Owner: <span data-collaborator-owner-name></span>
+                </p>
+                <p class="text-muted small mb-3 d-none" data-collaborator-owner-repo-line>
+                    Owner repository: <span data-collaborator-owner-repo></span>
                 </p>
                 <div class="alert alert-info py-2 px-3 d-none" data-scope-owner-managed role="alert">
                     These fields are managed by the owner of the scope.
