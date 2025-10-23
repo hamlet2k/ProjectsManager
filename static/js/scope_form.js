@@ -209,7 +209,12 @@
                 } else {
                     hideGithubWarning();
                 }
-                updateGithubBadgeTooltips();
+                // Update the form state immediately when toggle changes
+                state.formValues.github_enabled = github.toggle.checked;
+                // Update tooltips after a short delay to ensure state is updated
+                setTimeout(() => {
+                    updateGithubBadgeTooltips();
+                }, 50);
                 scheduleDescriptionResize();
             });
         }
@@ -231,7 +236,12 @@
                     clearProjectSelect();
                     clearMilestoneSelect();
                 }
-                updateGithubBadgeTooltips();
+                // Update the form state when repository changes
+                state.formValues.github_repository = github.select.value || '';
+                // Update tooltips after a short delay to ensure state is updated
+                setTimeout(() => {
+                    updateGithubBadgeTooltips();
+                }, 50);
                 scheduleDescriptionResize();
             });
         }
@@ -680,6 +690,25 @@
 
                 if (data.scope) {
                     upsertScopeCard(data.scope);
+                    
+                    // Update the form state with the new scope data, including owner information
+                    if (data.scope.owner_name !== undefined) {
+                        state.formValues.owner_name = data.scope.owner_name;
+                    }
+                    if (data.scope.is_owner !== undefined) {
+                        state.formValues.is_owner = data.scope.is_owner;
+                    }
+                    if (data.scope.owner_repository_label !== undefined) {
+                        state.formValues.owner_repository_label = data.scope.owner_repository_label;
+                    }
+                    if (data.scope.show_owner_repository_line !== undefined) {
+                        state.formValues.show_owner_repository_line = data.scope.show_owner_repository_line;
+                    }
+                    
+                    // Update the owner context in the form if it's currently open
+                    if (state.modal && !state.modal._isHidden) {
+                        updateOwnerContext();
+                    }
                 }
 
                 const message = data.message || 'Scope saved successfully.';
@@ -958,9 +987,9 @@
         if (ownerLabel) {
             ownerLabel.classList.toggle('d-none', !ownerName);
         }
-        const shouldShowNotice = Boolean(ownerName && metadataLocked);
+        // The owner notice is no longer needed since the modal title already indicates this
         if (ownerNotice) {
-            ownerNotice.classList.toggle('d-none', !shouldShowNotice);
+            ownerNotice.classList.add('d-none');
         }
 
         // Show/hide owner fields vs collaborator text displays
@@ -1808,6 +1837,11 @@
                 detail: { scope },
             })
         );
+        
+        // Update GitHub badge tooltips after the card is updated
+        setTimeout(() => {
+            updateGithubBadgeTooltips();
+        }, 100);
     }
 
     function updateScopeEditTriggers(scope) {
@@ -2075,7 +2109,6 @@
         title.textContent = scope.name || '';
         body.appendChild(title);
 
-
         if (scope.description) {
             const description = document.createElement('p');
             description.className = 'text-muted small mb-0';
@@ -2229,24 +2262,53 @@ function updateGithubBadgeTooltips() {
         
         const scopeId = scopeCard.dataset.scopeId;
         const isOwner = scopeCard.dataset.scopeIsOwner === 'true';
-        const ownerName = scopeCard.dataset.scopeOwnerName;
         
         // Find the corresponding edit button to get current GitHub state
         const editButton = document.querySelector(`.edit-scope-btn[data-scope-id="${scopeId}"]`);
         if (!editButton) return;
         
         const githubEnabled = editButton.dataset.scopeGithub_enabled === 'true';
-        const userRepo = editButton.getAttribute('data-scope-user-repository') || '';
-        const ownerRepo = editButton.getAttribute('data-scope-owner-repository') || '';
         
+        // Get repository information from the edit button data attributes
+        let userRepo = '';
+        let ownerRepo = '';
+        
+        if (editButton.dataset.scopeGithubRepository) {
+            try {
+                const repoData = JSON.parse(editButton.dataset.scopeGithubRepository);
+                if (repoData.owner && repoData.name) {
+                    userRepo = `${repoData.owner}/${repoData.name}`;
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+        }
+        
+        // For collaborators, we need to determine if they have their own repo or should show owner's repo
         let tooltipText = '';
         if (githubEnabled) {
-            if (userRepo && !isOwner) {
+            if (!isOwner && userRepo) {
+                // Collaborator with their own repo
                 tooltipText = `Repository: ${userRepo}`;
-            } else if (ownerRepo) {
-                tooltipText = `Owner repository: ${ownerRepo}`;
             } else {
-                tooltipText = 'No repository configured.';
+                // Owner or collaborator without their own repo - show from form state if available
+                if (state.formValues && state.formValues.github_repository && state.editingScopeId === scopeId) {
+                    try {
+                        const currentRepo = JSON.parse(state.formValues.github_repository);
+                        if (currentRepo.owner && currentRepo.name) {
+                            tooltipText = `Repository: ${currentRepo.owner}/${currentRepo.name}`;
+                        }
+                    } catch (e) {
+                        // Ignore parsing errors
+                    }
+                }
+                
+                // Fallback to owner repo if we couldn't get current repo
+                if (!tooltipText && ownerRepo) {
+                    tooltipText = `Owner repository: ${ownerRepo}`;
+                } else if (!tooltipText) {
+                    tooltipText = 'No repository configured.';
+                }
             }
         }
         
@@ -2257,7 +2319,7 @@ function updateGithubBadgeTooltips() {
             // Update Bootstrap tooltip if it exists
             const tooltipInstance = bootstrap.Tooltip.getInstance(badge);
             if (tooltipInstance) {
-                tooltipInstance.setContent(tooltipText);
+                tooltipInstance.setContent({ '.tooltip-inner': tooltipText });
             }
         }
     });

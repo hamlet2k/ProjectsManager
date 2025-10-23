@@ -153,11 +153,6 @@
                     </div>
                     <div class="card-body position-relative d-flex flex-column">
                         <h2 class="h5 text-dark mb-2">{{ scope.name }}</h2>
-                        {% if scope.owner_id != g.user.id %}
-                            <p class="text-muted small mb-1">
-                                Owner: {{ scope.owner_display_name or scope.owner_name or 'Unknown owner' }}
-                            </p>
-                        {% endif %}
                         {% if scope.description %}
                             <p class="text-muted small mb-0">{{ scope.description }}</p>
                         {% endif %}

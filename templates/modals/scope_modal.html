@@ -23,7 +23,7 @@
                 </div>
                 <div class="mb-3 d-none" data-collaborator-name-display>
                     <label class="form-label fw-semibold mb-1">Scope name</label>
-                    <p class="mb-0 text-body" data-collaborator-name-value></p>
+                    <p class="mb-0 text-body-secondary fst-italic" data-collaborator-name-value></p>
                 </div>
                 <div class="form-floating mb-3" data-owner-field="description">
                     {{ scope_form.description(
@@ -45,20 +45,14 @@
                 </div>
                 <div class="mb-3 d-none" data-collaborator-description-display>
                     <label class="form-label fw-semibold mb-1">Description</label>
-                    <p class="mb-0 text-body" data-collaborator-description-value style="white-space: pre-line;"></p>
+                    <p class="mb-0 text-body-secondary fst-italic" data-collaborator-description-value style="white-space: pre-line;"></p>
                 </div>
-                <p class="text-muted small mb-2 d-none" data-scope-owner-label>
-                    Scope owner: <span data-scope-owner-name></span>
-                </p>
                 <p class="text-muted small mb-2 d-none" data-collaborator-owner-line>
-                    Owner: <span data-collaborator-owner-name></span>
+                    <span class="fw-semibold">Owner:</span> <span data-collaborator-owner-name></span>
                 </p>
                 <p class="text-muted small mb-3 d-none" data-collaborator-owner-repo-line>
-                    Owner repository: <span data-collaborator-owner-repo></span>
+                    <span class="fw-semibold">Owner repository:</span> <span data-collaborator-owner-repo></span>
                 </p>
-                <div class="alert alert-info py-2 px-3 d-none" data-scope-owner-managed role="alert">
-                    These fields are managed by the owner of the scope.
-                </div>
                 <div class="mb-3 pt-3 border-top">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <div>
