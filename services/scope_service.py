@@ -228,7 +228,62 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     scope.github_repository_locked = False
     scope.github_project_locked = False
     scope.github_label_locked = False
-    scope.owner_display_name = _scope_owner_display_name(scope)
+
+    owner_display_name = _scope_owner_display_name(scope)
+    scope.owner_display_name = owner_display_name
+
+    is_owner = bool(current_user and scope.owner_id == current_user.id)
+    scope.is_owner_current_user = is_owner
+
+    has_linked_tasks = any(getattr(task, "github_issue_number", None) for task in (getattr(scope, "tasks", None) or []))
+    scope.has_github_linked_tasks = has_linked_tasks
+
+    owner_repo_label = None
+    if state.owner_config and state.owner_config.github_repo_owner and state.owner_config.github_repo_name:
+        owner_repo_label = f"{state.owner_config.github_repo_owner}/{state.owner_config.github_repo_name}"
+
+    user_repo_label = None
+    user_integration_enabled = bool(state.user_config and state.user_config.github_integration_enabled)
+    if state.user_config and state.user_config.github_repo_owner and state.user_config.github_repo_name:
+        user_repo_label = f"{state.user_config.github_repo_owner}/{state.user_config.github_repo_name}"
+
+    scope.owner_repository_label = owner_repo_label or ""
+    scope.user_repository_label = user_repo_label or ""
+
+    if owner_repo_label:
+        owner_repo_message = f"Owner repository: {owner_repo_label}"
+    else:
+        owner_repo_message = "Owner repository: Not configured."
+    scope.owner_repository_message = owner_repo_message
+
+    show_owner_repo_line = bool(
+        not is_owner
+        and (
+            has_linked_tasks
+            or owner_repo_label
+            or user_integration_enabled
+        )
+    )
+    scope.show_owner_repository_line = show_owner_repo_line
+
+    repo_differs = False
+    if not is_owner and user_integration_enabled and user_repo_label and owner_repo_label:
+        repo_differs = user_repo_label != owner_repo_label
+
+    scope.github_badge_icon = "bi bi-pencil" if repo_differs else "bi bi-github"
+    scope.show_github_badge = bool(scope.github_integration_enabled or has_linked_tasks or owner_repo_label)
+
+    badge_tooltip: str | None = None
+    if scope.show_github_badge:
+        if user_integration_enabled and user_repo_label:
+            badge_tooltip = f"Repository: {user_repo_label}"
+        elif owner_repo_label:
+            badge_tooltip = f"Owner repository: {owner_repo_label}"
+        elif has_linked_tasks:
+            badge_tooltip = "No repository configured by the owner."
+        else:
+            badge_tooltip = "No repository configured."
+    scope.github_badge_tooltip = badge_tooltip or ""
 
     return state
 
@@ -398,6 +453,9 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
     elif state.effective_config:
         config_source = "owner"
 
+    owner_display = getattr(scope, "owner_display_name", _scope_owner_display_name(scope))
+    owner_name_value = "" if is_owner else owner_display
+
     return {
         "id": scope.id,
         "name": scope.name or "",
@@ -412,7 +470,10 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_repository_locked": False,
         "github_project_locked": False,
         "github_label_locked": False,
-        "owner_name": _scope_owner_display_name(scope),
+        "owner_name": owner_name_value,
+        "show_github_badge": bool(getattr(scope, "show_github_badge", False)),
+        "github_badge_icon": getattr(scope, "github_badge_icon", "bi bi-github"),
+        "has_github_linked_tasks": bool(getattr(scope, "has_github_linked_tasks", False)),
         "github_config_source": config_source,
         "github_config_user_id": state.user_config.user_id if state.user_config else None,
         "github_config_owner_id": state.owner_config.user_id if state.owner_config else None,

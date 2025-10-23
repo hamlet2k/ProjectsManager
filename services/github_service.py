@@ -78,6 +78,10 @@ class GitHubError(RuntimeError):
         self.status_code = status_code
 
 
+class IntegrationDisabledError(RuntimeError):
+    """Raised when attempting to interact with GitHub while integration is disabled."""
+
+
 @dataclass
 class GitHubRepository:
     """Simple representation of a GitHub repository."""

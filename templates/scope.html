@@ -41,13 +41,9 @@
                                         <i class="bi bi-grip-vertical"></i>
                                     </span>
                                 {% endif %}
-                                {% if scope.github_integration_enabled %}
+                                {% if scope.show_github_badge %}
                                     <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
-                                        {% if scope.owner_id == g.user.id %}
-                                            <i class="bi bi-github" aria-hidden="true"></i>
-                                        {% else %}
-                                            <i class="bi bi-pencil" aria-hidden="true"></i>
-                                        {% endif %}
+                                        <i class="{{ scope.github_badge_icon }}" aria-hidden="true"></i>
                                         GitHub
                                     </span>
                                 {% endif %}
@@ -81,10 +77,11 @@
                                         data-scope-github_project_locked="{{ 'true' if scope.github_project_locked else 'false' }}"
                                         data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
                                         data-scope-can-edit-metadata="true"
-                                        data-scope-owner-name="{{ scope.owner_display_name | default('') | e }}"
+                                        data-scope-owner-name="{{ '' if scope.owner_id == g.user.id else scope.owner_display_name | default('') | e }}"
+                                        data-scope-is-owner="true"
                                         aria-label="Edit scope {{ scope.name }}"
                                     >
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                        <i class="bi bi-gear" aria-hidden="true"></i>
                                     </button>
                                     <button
                                         type="button"
@@ -114,9 +111,10 @@
                                         data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
                                         data-scope-can-edit-metadata="false"
                                         data-scope-owner-name="{{ scope.owner_display_name | default('') | e }}"
+                                        data-scope-is-owner="false"
                                         aria-label="Edit scope settings for {{ scope.name }}"
                                     >
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                        <i class="bi bi-gear" aria-hidden="true"></i>
                                     </button>
                                     <button
                                         type="button"

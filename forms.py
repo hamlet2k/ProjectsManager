@@ -114,6 +114,14 @@ class GitHubSettingsForm(FlaskForm):
     enabled = BooleanField("Enable GitHub Integration")
     token = PasswordField("GitHub Personal Access Token", [Optional()])
     submit = SubmitField("Save GitHub Settings")
+    remove_token = SubmitField(
+        "Remove Token",
+        render_kw={
+            "class": "btn btn-outline-danger",
+            "id": "github-remove-token",
+            "formnovalidate": True,
+        },
+    )
 
 class ScopeForm(FlaskForm):
     name = StringField("Name", [DataRequired()])

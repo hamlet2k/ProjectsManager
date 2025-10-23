@@ -25,6 +25,7 @@
         const tokenField = document.getElementById('github-token-field');
         const testButton = document.getElementById('github-test-connection');
         const tokenStatus = document.querySelector('[data-token-status]');
+        const removeButton = document.getElementById('github-remove-token');
 
         function getCsrfToken() {
             const field = document.querySelector('input[name="csrf_token"]');
@@ -112,6 +113,48 @@
                         displayFlashMessage('Unable to test GitHub connection.', 'danger');
                     })
                     .finally(() => setLoading(testButton, false));
+            });
+        }
+
+        if (removeButton) {
+            removeButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                const form = removeButton.form;
+                if (!form) {
+                    return;
+                }
+                const promptPromise =
+                    typeof window.showConfirmationModal === 'function'
+                        ? window.showConfirmationModal({
+                              title: 'Remove GitHub Token',
+                              message: 'Are you sure you want to remove the stored GitHub token?',
+                              description:
+                                  'GitHub syncing will remain disabled until you provide a new token in settings.',
+                              confirmLabel: 'Remove Token',
+                              confirmVariant: 'danger',
+                          })
+                        : Promise.resolve(
+                              window.confirm(
+                                  'Remove the stored GitHub token? You will need to add a new token to resume GitHub syncing.'
+                              )
+                          );
+                Promise.resolve(promptPromise).then((confirmed) => {
+                    if (!confirmed) {
+                        return;
+                    }
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit(removeButton);
+                    } else {
+                        // Fallback for older browsers
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = removeButton.name || 'remove_token';
+                        hidden.value = removeButton.value || 'Remove Token';
+                        form.appendChild(hidden);
+                        form.submit();
+                        hidden.remove();
+                    }
+                });
             });
         }
 

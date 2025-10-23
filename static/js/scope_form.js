@@ -37,17 +37,36 @@
         createTitle: 'Create scope',
         createDescription: 'Provide a name and optional description to group related tasks.',
         createSubmit: 'Create scope',
-        editTitle: 'Edit scope',
-        editSubmit: 'Save changes',
-        configureTitle: 'Configure GitHub',
-        configureDescription: 'Connect your GitHub account for this shared scope.',
-        configureSubmit: 'Save configuration',
+        editTitle: 'Settings',
+        editDescription: 'Review or update the scope settings before saving your changes.',
+        editSubmit: 'Save settings',
+        configureTitle: 'Settings',
+        configureDescription: 'Review the settings managed by the scope owner.',
+        configureSubmit: 'Save settings',
     };
 
     const DESCRIPTION_TRANSITION = 'height 200ms ease, max-height 200ms ease';
     const DESCRIPTION_VIEWPORT_RATIO = 0.8;
     const DESCRIPTION_PADDING_BUFFER = 24;
     const SHARED_REPO_TOOLTIP = 'These fields are managed by the scope owner since you share the same repository.';
+    const OWNER_TOOLTIP_SELECTOR = '[data-scope-owner-tooltip]';
+
+    function initializeOwnerTooltips(root = document) {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) {
+            return;
+        }
+        const context = root || document;
+        const tooltipElements = context.querySelectorAll(OWNER_TOOLTIP_SELECTOR);
+        tooltipElements.forEach((element) => {
+            const title = element.getAttribute('data-bs-title') || element.getAttribute('title') || '';
+            if (title && !element.getAttribute('data-bs-title')) {
+                element.setAttribute('data-bs-title', title);
+            }
+            bootstrap.Tooltip.getOrCreateInstance(element, {
+                trigger: 'hover focus',
+            });
+        });
+    }
 
     document.addEventListener('DOMContentLoaded', initializeScopePage);
 
@@ -73,6 +92,7 @@
         hydrateInitialState();
         bindCoreEvents();
         bindExistingCardControls();
+        initializeOwnerTooltips();
 
         if (typeof initializeSortable === 'function') {
             initializeSortable('scopes-list', 'scope');
@@ -143,14 +163,15 @@
             description: '',
             github_enabled: false,
             github_repository: '',
-            github_project: '',
-            github_milestone: '',
-            github_repository_locked: false,
-            github_project_locked: false,
-            github_label_locked: false,
-            can_edit_metadata: true,
-            owner_name: '',
-        };
+        github_project: '',
+        github_milestone: '',
+        github_repository_locked: false,
+        github_project_locked: false,
+        github_label_locked: false,
+        can_edit_metadata: true,
+        is_owner: false,
+        owner_name: '',
+    };
     }
 
     function hydrateInitialState() {
@@ -433,6 +454,8 @@
                 setLastScopePreference(link.dataset.scopeId);
             });
         });
+
+        initializeOwnerTooltips(root);
     }
 
     function handleCreateButtonClick() {
@@ -470,6 +493,7 @@
         const labelLocked = (trigger.getAttribute('data-scope-github_label_locked') || '').toLowerCase() === 'true';
         const canEditMetadata = (trigger.getAttribute('data-scope-can-edit-metadata') || 'true').toLowerCase() === 'true';
         const ownerName = trigger.getAttribute('data-scope-owner-name') || '';
+        const isOwner = (trigger.getAttribute('data-scope-is-owner') || 'false').toLowerCase() === 'true';
         return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
@@ -481,6 +505,7 @@
             github_project_locked: projectLocked,
             github_label_locked: labelLocked,
             can_edit_metadata: canEditMetadata,
+            is_owner: isOwner,
             owner_name: ownerName,
         };
     }
@@ -738,6 +763,7 @@
         values.github_label_locked = Boolean(state.permissions.labelLocked);
         values.can_edit_metadata = Boolean(state.permissions.canEditMetadata);
         values.owner_name = state.formValues.owner_name || '';
+        values.is_owner = Boolean(state.formValues.is_owner);
         return values;
     }
 
@@ -954,9 +980,9 @@
 
     function buildEditScopeDescription(name) {
         if (name && name.trim().length > 0) {
-            return `Update the details for "${name.trim()}" before saving your changes.`;
+            return `Review or update the settings for "${name.trim()}" before saving your changes.`;
         }
-        return 'Update the scope details before saving your changes.';
+        return 'Review the scope settings before saving your changes.';
     }
 
     function updateGithubSectionVisibility() {
@@ -1713,6 +1739,7 @@
             state.scopeList.appendChild(col);
         }
         bindCardControls(col);
+        initializeOwnerTooltips(col);
         updateScopeEditTriggers(scope);
         state.scopeList.classList.remove('d-none');
         if (state.emptyState) {
@@ -1765,6 +1792,7 @@
                 scope.is_owner ? 'true' : 'false'
             );
             button.setAttribute('data-scope-owner-name', scope.owner_name || '');
+            button.setAttribute('data-scope-is-owner', scope.is_owner ? 'true' : 'false');
         });
     }
 
@@ -1820,32 +1848,20 @@
         }
         badgesContainer.appendChild(grip);
 
-        if (scope.github_integration_enabled) {
+        if (scope.show_github_badge) {
             const badge = document.createElement('span');
             badge.className = 'badge text-bg-primary d-inline-flex align-items-center gap-1';
             const icon = document.createElement('i');
-            icon.className = scope.is_owner ? 'bi bi-github' : 'bi bi-pencil';
+            icon.className = scope.github_badge_icon || 'bi bi-github';
             icon.setAttribute('aria-hidden', 'true');
             badge.appendChild(icon);
             badge.appendChild(document.createTextNode('GitHub'));
-            badgesContainer.appendChild(badge);
-        }
-
-        if (scope.is_owner) {
-            const ownerShareBadge = document.createElement('span');
-            ownerShareBadge.className = 'badge text-bg-light text-muted';
-            ownerShareBadge.dataset.shareIndicator = 'true';
-            ownerShareBadge.dataset.scopeId = String(scope.id);
-            if (!shareCount) {
-                ownerShareBadge.classList.add('d-none');
+            if (scope.github_badge_tooltip) {
+                badge.setAttribute('data-bs-toggle', 'tooltip');
+                badge.setAttribute('data-scope-owner-tooltip', 'true');
+                badge.setAttribute('title', scope.github_badge_tooltip);
             }
-            ownerShareBadge.textContent = 'Shared';
-            badgesContainer.appendChild(ownerShareBadge);
-        } else {
-            const sharedBadge = document.createElement('span');
-            sharedBadge.className = 'badge text-bg-light text-muted';
-            sharedBadge.textContent = 'Shared';
-            badgesContainer.appendChild(sharedBadge);
+            badgesContainer.appendChild(badge);
         }
 
         const actions = document.createElement('div');
@@ -1911,7 +1927,7 @@
             editButton.setAttribute('data-scope-can-edit-metadata', 'true');
             editButton.setAttribute('data-scope-owner-name', scope.owner_name || '');
             editButton.setAttribute('aria-label', `Edit scope ${scope.name || ''}`.trim());
-            editButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
+            editButton.innerHTML = '<i class="bi bi-gear" aria-hidden="true"></i>';
             actions.appendChild(editButton);
 
             const deleteButton = document.createElement('button');
@@ -1966,7 +1982,7 @@
                 'aria-label',
                 `Edit scope settings for ${scope.name || ''}`.trim()
             );
-            configureButton.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
+            configureButton.innerHTML = '<i class="bi bi-gear" aria-hidden="true"></i>';
             actions.appendChild(configureButton);
 
             const leaveButton = document.createElement('button');
