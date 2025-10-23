@@ -503,7 +503,7 @@ def build_scope_page_context(
         "scopes": annotate_scope_sharing(scopes, user),
         "scope_form": form,
         "github_token_present": bool(user.github_token_encrypted) if user else False,
-        "scope_form_state": build_scope_form_initial_state(form),
+        "scope_form_state": build_scope_form_initial_state(form, user),
     }
     if show_modal:
         context["show_modal"] = show_modal
@@ -543,7 +543,7 @@ def serialize_task_for_clipboard(task: Task | None) -> dict[str, Any]:
     }
 
 
-def build_scope_form_initial_state(form: Any) -> dict[str, Any]:
+def build_scope_form_initial_state(form: Any, user: User | None = None) -> dict[str, Any]:
     """Return serializable initial values and errors for the scope form."""
     errors = {key: list(value) for key, value in (form.errors or {}).items()}
     data = {
@@ -554,6 +554,12 @@ def build_scope_form_initial_state(form: Any) -> dict[str, Any]:
         "github_project": getattr(form, "github_project", None).data or "",
         "github_milestone": getattr(form, "github_milestone", None).data or "",
         "github_label": getattr(form, "github_label", None).data or "",
+        # For creating a new scope, the current user is the owner
+        "is_owner": True,
+        "can_edit_metadata": True,
+        "owner_name": "",
+        "owner_repository_label": "",
+        "show_owner_repository_line": False,
     }
     return {"data": data, "errors": errors}
 

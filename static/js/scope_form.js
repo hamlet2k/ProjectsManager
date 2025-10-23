@@ -144,6 +144,7 @@
             const parsed = JSON.parse(raw);
             const data = parsed && parsed.data ? parsed.data : {};
             const errors = parsed && parsed.errors ? parsed.errors : {};
+            console.log('DEBUG: parseInitialState - raw:', raw, 'parsed data:', data);
             return {
                 data: {
                     ...getDefaultFormValues(),
@@ -477,7 +478,17 @@
         state.formMode = 'create';
         state.editingScopeId = null;
         state.activeTrigger = null;
-        state.formValues = { ...getDefaultFormValues() };
+        // Use server-provided initial state for create mode, but ensure ownership is correct
+        const defaults = state.initialState?.data || getDefaultFormValues();
+        state.formValues = {
+            ...defaults,
+            // For creating a new scope, the current user is always the owner
+            is_owner: true,
+            can_edit_metadata: true,
+            owner_name: '',
+            owner_repository_label: '',
+            show_owner_repository_line: false,
+        };
         state.permissions.canEditMetadata = true;
         state.permissions.repositoryLocked = false;
         state.permissions.projectLocked = false;
@@ -578,6 +589,7 @@
                 description: DEFAULT_MESSAGES.createDescription,
                 submitLabel: DEFAULT_MESSAGES.createSubmit,
             });
+            // Update GitHub section visibility after ownership context is established
             updateGithubSectionVisibility();
             if (defaults.github_enabled) {
                 ensureGithubRepositoriesLoaded({ silent: true });
@@ -862,11 +874,13 @@
         const milestoneSelect = state.github.milestoneSelect;
         const githubLabelField = state.form.querySelector('[data-field="github_label"]');
 
+        console.log('DEBUG: applyFormValues - input data:', data);
         state.formValues = { ...state.formValues, ...data };
         state.permissions.canEditMetadata = data.can_edit_metadata !== false;
         state.permissions.repositoryLocked = Boolean(data.github_repository_locked);
         state.permissions.projectLocked = Boolean(data.github_project_locked);
         state.permissions.labelLocked = Boolean(data.github_label_locked);
+        console.log('DEBUG: applyFormValues - final formValues:', state.formValues, 'permissions:', state.permissions);
 
         if (nameField) {
             nameField.value = data.name || '';
@@ -1011,6 +1025,9 @@
         const metadataLocked = !state.permissions.canEditMetadata;
         const ownerRepositoryLabel = state.formValues.owner_repository_label || '';
         const showOwnerRepositoryLine = Boolean(state.formValues.show_owner_repository_line);
+
+        // Debug logging
+        console.log('DEBUG: updateOwnerContext - isOwner:', isOwner, 'canEditMetadata:', state.permissions.canEditMetadata, 'formValues:', state.formValues);
 
         // Update owner context for both owners and collaborators
         if (ownerNameTarget) {
