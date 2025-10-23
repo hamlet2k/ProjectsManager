@@ -653,10 +653,19 @@ def _labels_for_github(task: Task) -> list[str]:
         if not name:
             continue
         lower = name.lower()
-        if lower in {LOCAL_GITHUB_TAG_NAME, GITHUB_APP_LABEL.lower()}:
+        # Get effective GitHub label for this task's scope and user
+        from services.scope_service import get_effective_github_label
+        effective_label = get_effective_github_label(task.scope, g.user)
+        if lower in {LOCAL_GITHUB_TAG_NAME, (effective_label or GITHUB_APP_LABEL).lower()}:
             continue
         labels.add(name)
     return sorted(labels)
+
+
+def _get_effective_github_label(scope: Scope, user: User) -> str:
+    """Get the effective GitHub label for a scope and user."""
+    from services.scope_service import get_effective_github_label
+    return get_effective_github_label(scope, user) or GITHUB_APP_LABEL
 
 
 def _get_or_create_local_github_tag(scope: Scope | None):
@@ -759,12 +768,14 @@ def _format_github_datetime(value: Optional[datetime]) -> Optional[str]:
 
 def _push_task_labels_to_github(task: Task, context: dict[str, str]) -> None:
     labels = _labels_for_github(task)
+    effective_label = _get_effective_github_label(task.scope, g.user)
     issue = update_issue(
         context["token"],
         context["owner"],
         context["name"],
         task.github_issue_number,
         labels=labels,
+        app_label=effective_label,
     )
     task.github_issue_state = issue.state
     _record_sync(task, "update_issue", "success", f"Issue #{issue.number} labels updated")
@@ -864,13 +875,14 @@ def _record_sync(task: Task, action: str, status: str, message: str | None = Non
     db.session.add(log_entry)
 
 
-def _tags_for_labels(scope: Scope, labels: list[str]):
+def _tags_for_labels(scope: Scope, labels: list[str], effective_github_label: str = None):
+    github_label_to_filter = (effective_github_label or GITHUB_APP_LABEL).lower()
     normalized = []
     for label in labels:
         if not label:
             continue
         lower = label.lower()
-        if lower == GITHUB_APP_LABEL.lower() or lower == LOCAL_GITHUB_TAG_NAME:
+        if lower == github_label_to_filter or lower == LOCAL_GITHUB_TAG_NAME:
             continue
         normalized.append(label.strip().lstrip("#").lower())
     if not normalized:
@@ -925,8 +937,9 @@ def _sync_task_from_issue(task: Task, issue, scope: Scope):
         if task.completed:
             task.uncomplete_task()
     labels = issue.labels or []
+    effective_label = _get_effective_github_label(scope, g.user)
     try:
-        tags = _tags_for_labels(scope, labels)
+        tags = _tags_for_labels(scope, labels, effective_label)
     except SQLAlchemyError as exc:
         logging.error("Unable to sync tags from GitHub issue: %s", exc, exc_info=True)
         raise
@@ -1210,7 +1223,7 @@ def task():
         "search_query": search_query,
         "sortable_group_ids": sortable_group_ids,
         "github_enabled": bool(g.user and g.user.github_integration_enabled),
-        "github_label": GITHUB_APP_LABEL,
+        "github_label": _get_effective_github_label(g.scope, g.user) if g.scope else GITHUB_APP_LABEL,
         "github_local_tag_name": LOCAL_GITHUB_TAG_NAME,
         "has_github_linked_tasks": has_github_linked_tasks,
         "github_issue_missing_message": GITHUB_ISSUE_MISSING_MESSAGE,
@@ -1481,6 +1494,7 @@ def github_issue_create():
         return jsonify({"success": False, "message": "GitHub integration is not configured."}), 400
 
     labels = _labels_for_github(task)
+    effective_label = _get_effective_github_label(task.scope, g.user)
     milestone_number = context.get("milestone_number")
     warnings: list[str] = []
     try:
@@ -1492,6 +1506,7 @@ def github_issue_create():
             task.description or "",
             labels,
             milestone=milestone_number,
+            app_label=effective_label,
         )
     except GitHubError as error:
         message, status = _github_error_response(error)
@@ -1736,12 +1751,14 @@ def update_task_milestone(task_id: int):
     issue = None
     try:
         if desired_number != original_number:
+            effective_label = _get_effective_github_label(task.scope, g.user)
             issue = update_issue(
                 context["token"],
                 context["owner"],
                 context["name"],
                 task.github_issue_number,
                 milestone=desired_number,
+                app_label=effective_label,
             )
             task.github_issue_state = issue.state
             task.github_milestone_number = issue.milestone_number
@@ -2393,10 +2410,12 @@ def edit_task(id):
                 milestone_number != item.github_milestone_number
             )
             try:
+                effective_label = _get_effective_github_label(item.scope, g.user)
                 update_kwargs = {
                     "title": item.name,
                     "body": item.description or "",
                     "labels": labels,
+                    "app_label": effective_label,
                 }
                 if milestone_changed:
                     update_kwargs["milestone"] = milestone_number
@@ -2531,12 +2550,13 @@ def delete_item(item_type, id):
                 return respond(False, disabled_message, status=403, category="warning")
             if github_context and item.github_issue_number:
                 try:
+                    effective_label = _get_effective_github_label(item.scope, g.user)
                     remove_label_from_issue(
                         github_context["token"],
                         github_context["owner"],
                         github_context["name"],
                         item.github_issue_number,
-                        GITHUB_APP_LABEL,
+                        effective_label,
                     )
                 except GitHubError as error:
                     if error.status_code not in GITHUB_MISSING_ISSUE_STATUS_CODES:
@@ -2592,12 +2612,14 @@ def complete_task(id):
         if item.completed:
             if item.github_issue_number and context:
                 try:
+                    effective_label = _get_effective_github_label(item.scope, g.user)
                     issue = update_issue(
                         context["token"],
                         context["owner"],
                         context["name"],
                         item.github_issue_number,
                         state="open",
+                        app_label=effective_label,
                     )
                     item.github_issue_state = issue.state
                     _record_sync(item, "reopen_issue", "success", f"Issue #{issue.number} reopened")

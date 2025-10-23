@@ -28,11 +28,12 @@ Columns (`models/scope_github_config.py`):
 - `github_repo_id`, `github_repo_name`, `github_repo_owner`
 - `github_project_id`, `github_project_name`
 - `github_milestone_number`, `github_milestone_title`
-- `github_hidden_label` (str, optional) for shared label coordination
+- `github_hidden_label` (str, optional) for user-specific GitHub synchronization label
 Constraints & relationships:
 - Unique constraint `uq_scope_github_config_scope_user` on (`scope_id`, `user_id`)
 - Index `ix_scope_github_config_scope_user` on (`scope_id`, `user_id`)
 - Many configs per scope; each user maintains their own GitHub settings
+- Label is configurable per user per scope and propagates to collaborators sharing the same repository
 
 ### Task
 Columns (`models/task.py`):

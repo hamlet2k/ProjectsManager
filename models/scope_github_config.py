@@ -18,7 +18,7 @@ class ScopeGitHubConfig(db.Model):
     github_project_name = db.Column(db.String(200), nullable=True)
     github_milestone_number = db.Column(db.Integer, nullable=True)
     github_milestone_title = db.Column(db.String(200), nullable=True)
-    github_hidden_label = db.Column(db.String(200), nullable=True)
+    github_label_name = db.Column(db.String(200), nullable=True)
 
     scope = db.relationship("Scope", back_populates="github_configs")
     user = db.relationship("User", back_populates="scope_github_configs")
@@ -56,5 +56,5 @@ class ScopeGitHubConfig(db.Model):
         """Copy project and hidden label information from another configuration."""
         self.github_project_id = other.github_project_id
         self.github_project_name = other.github_project_name
-        self.github_hidden_label = other.github_hidden_label
+        self.github_label_name = other.github_label_name
 

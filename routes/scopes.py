@@ -33,6 +33,7 @@ from services.scope_service import (
     build_scope_page_context,
     compute_scope_github_state,
     ensure_scope_github_config,
+    generate_default_label,
     get_next_scope_rank,
     get_scope_github_config,
     get_scope_share,
@@ -84,6 +85,7 @@ def _populate_form_from_payload(form: ScopeForm, payload: Dict[str, Any]) -> Non
         "github_repository": payload.get("github_repository") or "",
         "github_project": payload.get("github_project") or "",
         "github_milestone": payload.get("github_milestone") or "",
+        "github_label": payload.get("github_label") or "",
     }
     form.process(data=normalized)
 
@@ -98,6 +100,7 @@ def _collect_form_values(form: ScopeForm) -> Dict[str, Any]:
         "github_repository": form.github_repository.data or "",
         "github_project": form.github_project.data or "",
         "github_milestone": form.github_milestone.data or "",
+        "github_label": form.github_label.data or "",
     }
 
 
@@ -476,9 +479,6 @@ def add_scope():
         payload = request.get_json(silent=True) or {}
         form = ScopeForm(meta={"csrf": False})
         _populate_form_from_payload(form, payload)
-        if not is_owner:
-            form.name.data = scope.name
-            form.description.data = scope.description
         is_valid = form.validate()
         csrf_valid = _validate_csrf_token(form, payload.get("csrf_token"))
         is_valid = is_valid and csrf_valid
@@ -493,6 +493,7 @@ def add_scope():
                 repo_payload,
                 project_payload,
                 milestone_payload,
+                github_label,
             ) = validate_github_settings(
                 form, token_available=bool(get_user_github_token(g.user))
             )
@@ -515,6 +516,8 @@ def add_scope():
                 owner_config.github_repo_id = repo_payload.get("id")
                 owner_config.github_repo_name = repo_payload.get("name")
                 owner_config.github_repo_owner = repo_payload.get("owner")
+                # Set the label from validation result or use default
+                owner_config.github_label_name = github_label or generate_default_label(scope.name)
                 if project_payload:
                     project_id = project_payload.get("id")
                     owner_config.github_project_id = str(project_id) if project_id else None
@@ -536,6 +539,7 @@ def add_scope():
                 owner_config.github_project_name = None
                 owner_config.github_milestone_number = None
                 owner_config.github_milestone_title = None
+                owner_config.github_label_name = None
 
             try:
                 db.session.add(scope)
@@ -616,6 +620,12 @@ def edit_scope(scope_id: int):
                         "title": milestone_source.github_milestone_title,
                     }
                 )
+            # Set the label field
+            if config_for_form and config_for_form.github_label_name:
+                form.github_label.data = config_for_form.github_label_name
+            elif config_for_form and not config_for_form.github_label_name and scope.name:
+                # Default to generated label if no label is set
+                form.github_label.data = generate_default_label(scope.name)
         is_valid = form.validate_on_submit()
 
     if request.method == "POST":
@@ -625,6 +635,7 @@ def edit_scope(scope_id: int):
                 repo_payload,
                 project_payload,
                 milestone_payload,
+                github_label,
             ) = validate_github_settings(
                 form, token_available=bool(get_user_github_token(g.user))
             )
@@ -650,6 +661,8 @@ def edit_scope(scope_id: int):
                 config.github_repo_id = repo_payload.get("id")
                 config.github_repo_name = repo_payload.get("name")
                 config.github_repo_owner = repo_payload.get("owner")
+                # Set the label from validation result or use default
+                config.github_label_name = github_label or generate_default_label(scope.name)
                 if project_payload:
                     project_id = project_payload.get("id")
                     config.github_project_id = str(project_id) if project_id else None
@@ -671,9 +684,10 @@ def edit_scope(scope_id: int):
                 config.github_project_name = None
                 config.github_milestone_number = None
                 config.github_milestone_title = None
+                config.github_label_name = None
 
             if not is_owner and not enable_integration:
-                config.github_hidden_label = None
+                config.github_label_name = None
 
             try:
                 db.session.commit()

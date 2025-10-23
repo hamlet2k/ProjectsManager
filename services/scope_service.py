@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -25,6 +26,33 @@ def _scope_owner_display_name(scope: Scope | None) -> str:
         if value:
             return value
     return ""
+
+
+def generate_default_label(scope_name: str | None) -> str:
+    """Generate a default GitHub label from scope name."""
+    if not scope_name:
+        return "projectsmanager"
+    
+    # Convert to lowercase and replace spaces/underscores with hyphens
+    label = scope_name.lower().strip()
+    
+    # Replace spaces and underscores with hyphens first
+    label = re.sub(r'[\s_]+', '-', label)
+    
+    # Remove special characters except hyphens
+    label = re.sub(r'[^\w-]', '', label)
+    
+    # Replace multiple hyphens with single hyphen
+    label = re.sub(r'-+', '-', label)
+    
+    # Remove leading/trailing hyphens
+    label = label.strip('-')
+    
+    # Ensure we have something
+    if not label:
+        return "projectsmanager"
+    
+    return label
 
 
 def user_can_access_scope(user: User | None, scope: Scope | None) -> bool:
@@ -188,7 +216,42 @@ def propagate_owner_github_configuration(scope: Scope, owner_config: ScopeGitHub
             continue
         config.github_project_id = owner_config.github_project_id
         config.github_project_name = owner_config.github_project_name
-        config.github_hidden_label = owner_config.github_hidden_label
+        config.github_label_name = owner_config.github_label_name
+
+
+def get_effective_github_label(scope: Scope | None, user: User | None) -> str | None:
+    """Get the effective GitHub label for a user and scope."""
+    if scope is None or user is None:
+        return None
+    
+    state = compute_scope_github_state(scope, user)
+    
+    # If user has their own config with a label, use it
+    if state.user_config and state.user_config.github_label_name:
+        return state.user_config.github_label_name
+
+    # If user shares repository with owner, use owner's label
+    if state.linked_to_owner and state.owner_config and state.owner_config.github_label_name:
+        return state.owner_config.github_label_name
+    
+    # If user has a config (even without sharing), use it or generate default
+    if state.user_config:
+        if state.user_config.github_label_name:
+            return state.user_config.github_label_name
+        else:
+            # Generate default from scope name
+            return generate_default_label(scope.name)
+    
+    # If owner has a config, use it or generate default
+    if state.owner_config:
+        if state.owner_config.github_label_name:
+            return state.owner_config.github_label_name
+        else:
+            # Generate default from scope name
+            return generate_default_label(scope.name)
+    
+    # Fallback to generated default
+    return generate_default_label(scope.name)
 
 
 def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> ScopeGitHubState:
@@ -252,6 +315,13 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     else:
         scope.github_milestone_number = None
         scope.github_milestone_title = None
+
+    # Set the GitHub label from user config or effective config
+    label_source = state.user_config or effective
+    if label_source and label_source.github_label_name:
+        scope.github_label_name = label_source.github_label_name
+    else:
+        scope.github_label_name = None
 
     scope.github_repository_locked = False
     scope.github_project_locked = False
@@ -353,6 +423,7 @@ def validate_github_settings(
     Optional[dict[str, Any]],
     Optional[dict[str, Any]],
     Optional[dict[str, Any]],
+    Optional[str],
 ]:
     """Validate GitHub integration fields on the given form.
 
@@ -363,6 +434,7 @@ def validate_github_settings(
     repo_payload: Optional[dict[str, Any]] = None
     project_payload: Optional[dict[str, Any]] = None
     milestone_payload: Optional[dict[str, Any]] = None
+    github_label: Optional[str] = None
 
     if enable_integration:
         if not token_available:
@@ -394,7 +466,27 @@ def validate_github_settings(
             except ValueError:
                 form.github_milestone.errors.append("Invalid milestone selection.")
 
-    return enable_integration, repo_payload, project_payload, milestone_payload
+        # Validate GitHub label
+        label_value = (getattr(form, "github_label", None) and getattr(form, "github_label").data) or ""
+        label_value = label_value.strip()
+        
+        if label_value:
+            # Validate label format (GitHub labels can contain letters, numbers, hyphens, and underscores)
+            if not re.match(r'^[a-zA-Z0-9_-]+$', label_value):
+                form.github_label.errors.append(
+                    "Label can only contain letters, numbers, hyphens, and underscores."
+                )
+            elif len(label_value) > 50:
+                form.github_label.errors.append(
+                    "Label must be 50 characters or fewer."
+                )
+            else:
+                github_label = label_value
+        else:
+            # If no label provided, we'll generate a default from scope name later
+            github_label = None
+
+    return enable_integration, repo_payload, project_payload, milestone_payload, github_label
 
 
 def build_scope_page_context(
@@ -461,6 +553,7 @@ def build_scope_form_initial_state(form: Any) -> dict[str, Any]:
         "github_repository": getattr(form, "github_repository", None).data or "",
         "github_project": getattr(form, "github_project", None).data or "",
         "github_milestone": getattr(form, "github_milestone", None).data or "",
+        "github_label": getattr(form, "github_label", None).data or "",
     }
     return {"data": data, "errors": errors}
 
@@ -505,6 +598,11 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
             "title": milestone_source.github_milestone_title,
         }
 
+    # Get the label from the effective config
+    github_label = None
+    if form_config and form_config.github_label_name:
+        github_label = form_config.github_label_name
+
     config_source = "none"
     if state.user_config:
         config_source = "user"
@@ -525,6 +623,7 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_repository": repo,
         "github_project": project,
         "github_milestone": milestone,
+        "github_label": github_label,
         "github_repository_locked": False,
         "github_project_locked": False,
         "github_label_locked": False,

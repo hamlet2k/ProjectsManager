@@ -165,6 +165,7 @@
             github_repository: '',
             github_project: '',
             github_milestone: '',
+            github_label: '',
             github_repository_locked: false,
             github_project_locked: false,
             github_label_locked: false,
@@ -502,6 +503,8 @@
         const repoAttribute = trigger.getAttribute('data-scope-github_repository') || '';
         const projectAttribute = trigger.getAttribute('data-scope-github_project') || '';
         const milestoneAttribute = trigger.getAttribute('data-scope-github_milestone') || '';
+        const labelAttribute = trigger.getAttribute('data-scope-github_label') || '';
+        console.log('DEBUG: Reading label from trigger data attribute:', labelAttribute);
         const repoLocked = (trigger.getAttribute('data-scope-github_repository_locked') || '').toLowerCase() === 'true';
         const projectLocked = (trigger.getAttribute('data-scope-github_project_locked') || '').toLowerCase() === 'true';
         const labelLocked = (trigger.getAttribute('data-scope-github_label_locked') || '').toLowerCase() === 'true';
@@ -517,6 +520,7 @@
             github_repository: repoAttribute,
             github_project: projectAttribute,
             github_milestone: milestoneAttribute,
+            github_label: labelAttribute,
             github_repository_locked: repoLocked,
             github_project_locked: projectLocked,
             github_label_locked: labelLocked,
@@ -547,6 +551,7 @@
         }
 
         if (state.formMode === 'edit') {
+            console.log('DEBUG: Edit mode - formValues:', state.formValues);
             applyFormValues(state.formValues || getDefaultFormValues());
             applyFormErrors(state.form, {});
             const modalMessages = state.permissions.canEditMetadata
@@ -673,6 +678,7 @@
                             github_repository: data.values.github_repository || '',
                             github_project: data.values.github_project || '',
                             github_milestone: data.values.github_milestone || '',
+                            github_label: data.values.github_label || '',
                         });
                         // Update GitHub badge tooltips after form values are applied
                         updateGithubBadgeTooltips();
@@ -757,11 +763,13 @@
             github_repository: values.github_repository || '',
             github_project: values.github_project || '',
             github_milestone: values.github_milestone || '',
+            github_label: values.github_label || '',
         };
         if (!values.github_enabled) {
             payload.github_repository = '';
             payload.github_project = '';
             payload.github_milestone = '';
+            payload.github_label = '';
         }
         return payload;
     }
@@ -774,6 +782,7 @@
         const githubSelect = state.github.select;
         const projectSelect = state.github.projectSelect;
         const milestoneSelect = state.github.milestoneSelect;
+        const githubLabelField = state.form.querySelector('[data-field="github_label"]');
 
         if (nameField) {
             values.name = nameField.value.trim();
@@ -796,6 +805,10 @@
             const explicitMilestone =
                 milestoneSelect.value || milestoneSelect.dataset.selectedMilestone || '';
             values.github_milestone = explicitMilestone;
+        }
+        if (githubLabelField) {
+            values.github_label = githubLabelField.value.trim();
+            console.log('DEBUG: Reading github_label field value:', githubLabelField.value, 'Trimmed value:', values.github_label);
         }
         values.github_repository_locked = Boolean(state.permissions.repositoryLocked);
         values.github_project_locked = Boolean(state.permissions.projectLocked);
@@ -847,6 +860,7 @@
         const githubSelect = state.github.select;
         const projectSelect = state.github.projectSelect;
         const milestoneSelect = state.github.milestoneSelect;
+        const githubLabelField = state.form.querySelector('[data-field="github_label"]');
 
         state.formValues = { ...state.formValues, ...data };
         state.permissions.canEditMetadata = data.can_edit_metadata !== false;
@@ -889,6 +903,10 @@
                 milestoneSelect.value = '';
             }
         }
+        if (githubLabelField) {
+            githubLabelField.value = data.github_label || '';
+            console.log('DEBUG: Setting github_label field value:', data.github_label, 'Field value after setting:', githubLabelField.value);
+        }
         applyLockIndicators();
         updateGithubSectionVisibility();
         if (githubToggle && githubToggle.checked) {
@@ -905,6 +923,7 @@
         const descriptionField = state.form.querySelector('[data-field="description"]');
         const repoSelect = state.github.select;
         const projectSelect = state.github.projectSelect;
+        const githubLabelField = state.form.querySelector('[data-field="github_label"]');
 
         const metadataLocked = !state.permissions.canEditMetadata;
         const nameWrapper = nameField ? nameField.closest('.form-floating') : null;
@@ -955,6 +974,19 @@
             } else {
                 projectSelect.removeAttribute('title');
                 delete projectSelect.dataset.locked;
+            }
+        }
+
+        if (githubLabelField) {
+            githubLabelField.readOnly = Boolean(state.permissions.labelLocked);
+            githubLabelField.classList.toggle('bg-body-tertiary', state.permissions.labelLocked);
+            githubLabelField.classList.toggle('disabled', state.permissions.labelLocked);
+            if (state.permissions.labelLocked) {
+                githubLabelField.setAttribute('title', 'This label is managed by the scope owner.');
+                githubLabelField.dataset.locked = 'true';
+            } else {
+                githubLabelField.removeAttribute('title');
+                delete githubLabelField.dataset.locked;
             }
         }
 
@@ -1863,6 +1895,7 @@
         const repoAttribute = serializeScopeAttribute(scope.github_repository);
         const projectAttribute = serializeScopeAttribute(scope.github_project);
         const milestoneAttribute = serializeScopeAttribute(scope.github_milestone);
+        const labelAttribute = scope.github_label || '';
         triggers.forEach((button) => {
             button.setAttribute('data-scope-name', scope.name || '');
             button.setAttribute('data-scope-description', scope.description || '');
@@ -1873,6 +1906,7 @@
             button.setAttribute('data-scope-github_repository', repoAttribute);
             button.setAttribute('data-scope-github_project', projectAttribute);
             button.setAttribute('data-scope-github_milestone', milestoneAttribute);
+            button.setAttribute('data-scope-github_label', labelAttribute);
             button.setAttribute(
                 'data-scope-github_repository_locked',
                 scope.github_repository_locked ? 'true' : 'false'
@@ -2023,6 +2057,7 @@
                 'data-scope-github_milestone',
                 scope.github_milestone ? JSON.stringify(scope.github_milestone) : ''
             );
+            editButton.setAttribute('data-scope-github_label', scope.github_label || '');
             editButton.setAttribute(
                 'data-scope-github_repository_locked',
                 scope.github_repository_locked ? 'true' : 'false'
@@ -2075,6 +2110,7 @@
                 'data-scope-github_milestone',
                 scope.github_milestone ? JSON.stringify(scope.github_milestone) : ''
             );
+            configureButton.setAttribute('data-scope-github_label', scope.github_label || '');
             configureButton.setAttribute(
                 'data-scope-github_repository_locked',
                 scope.github_repository_locked ? 'true' : 'false'

@@ -107,6 +107,20 @@
                             </div>
                             <div class="form-text">Use this milestone as the default for new issues.</div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-label-input">GitHub Label <span class="text-muted">(optional)</span></label>
+                            {{ scope_form.github_label(class="form-control" + (' is-invalid' if scope_form.github_label.errors else ''), id="scope-github-label-input", placeholder="e.g., frontend-ui", **{'data-field': 'github_label'}) }}
+                            <div class="invalid-feedback{% if scope_form.github_label.errors %} d-block{% endif %}" data-field-errors="github_label">
+                                {% for error in scope_form.github_label.errors %}
+                                    <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">This label will be automatically applied to all GitHub issues created or synced for this scope. Leave blank to use a default based on the scope name.</div>
+                            <div class="alert alert-info py-2 px-3 mt-2 d-none" data-github-label-readonly-message role="alert">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <span data-github-label-readonly-text>This label is managed by the scope owner.</span>
+                            </div>
+                        </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-milestone-warning role="alert">
                             Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.
                         </div>
