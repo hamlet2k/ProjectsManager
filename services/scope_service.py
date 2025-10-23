@@ -16,13 +16,15 @@ def _scope_owner_display_name(scope: Scope | None) -> str:
     if scope is None:
         return ""
     owner = getattr(scope, "owner", None)
+    if owner is None and getattr(scope, "owner_id", None):
+        owner = User.query.get(scope.owner_id)
     if owner is None:
         return ""
     for attr in ("name", "username", "email"):
         value = getattr(owner, attr, None)
         if value:
             return value
-    return f"User {owner.id}"
+    return ""
 
 
 def user_can_access_scope(user: User | None, scope: Scope | None) -> bool:
@@ -230,7 +232,12 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     scope.github_label_locked = False
 
     owner_display_name = _scope_owner_display_name(scope)
+    if not owner_display_name:
+        owner_display_name = getattr(scope, "owner_name", "") or (
+            f"User {scope.owner_id}" if getattr(scope, "owner_id", None) else ""
+        )
     scope.owner_display_name = owner_display_name
+    scope.owner_name = owner_display_name
 
     is_owner = bool(current_user and scope.owner_id == current_user.id)
     scope.is_owner_current_user = is_owner
@@ -471,6 +478,7 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_project_locked": False,
         "github_label_locked": False,
         "owner_name": owner_name_value,
+        "owner_display_name": getattr(scope, "owner_display_name", owner_name_value),
         "show_github_badge": bool(getattr(scope, "show_github_badge", False)),
         "github_badge_icon": getattr(scope, "github_badge_icon", "bi bi-github"),
         "has_github_linked_tasks": bool(getattr(scope, "has_github_linked_tasks", False)),
