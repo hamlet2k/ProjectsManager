@@ -53,6 +53,12 @@ class User(db.Model):
         lazy="selectin",
         cascade="all, delete-orphan",
     )
+    task_github_configs = db.relationship(
+        "TaskGitHubConfig",
+        back_populates="user",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
 
     ADMIN = 'admin'
     USER = 'user'

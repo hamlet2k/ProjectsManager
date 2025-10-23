@@ -46,14 +46,27 @@ Columns (`models/task.py`):
 - `owner_id` (FK -> `user.id`, optional)
 - `completed` (bool, default False)
 - `completed_date` (datetime, optional)
-- GitHub issue linkage: `github_issue_id`, `github_issue_node_id`, `github_issue_number`, `github_issue_url`, `github_issue_state`
-- GitHub repo cache: `github_repo_id`, `github_repo_name`, `github_repo_owner`
-- GitHub project/milestone cache: `github_project_id`, `github_project_name`, `github_milestone_number`, `github_milestone_title`, `github_milestone_due_on`
 - `scope_id` (FK -> `scope.id`, nullable for legacy tasks)
 Relationships:
 - `subtasks` self-referential 1:N (cascade delete-orphan)
 - `tags` many-to-many via `task_tags`
 - `sync_logs` 1:N SyncLog (cascade delete-orphan)
+- `github_configs` 1:N TaskGitHubConfig (cascade delete-orphan)
+
+### TaskGitHubConfig
+Columns (`models/task_github_config.py`):
+- `id` (PK, int)
+- `task_id` (FK -> `task.id`, indexed)
+- `user_id` (FK -> `user.id`, indexed)
+- GitHub issue cache: `github_issue_id`, `github_issue_node_id`, `github_issue_number`, `github_issue_url`, `github_issue_state`
+- Repository cache: `github_repo_id`, `github_repo_name`, `github_repo_owner`
+- Project/milestone cache: `github_project_id`, `github_project_name`, `github_milestone_number`, `github_milestone_title`, `github_milestone_due_on`
+- `created_at`, `updated_at` (datetime, auto-managed)
+Constraints & relationships:
+- Unique constraint `uq_task_github_config_task_user` on (`task_id`, `user_id`)
+- Index `ix_task_github_config_task_user` on (`task_id`, `user_id`)
+- Backrefs to `Task` (`github_configs`) and `User` (`task_github_configs`)
+- Each user maintains independent GitHub linkage per task; helpers proxy the active user's config for convenience
 
 ### Tag
 Columns (`models/tag.py`):
