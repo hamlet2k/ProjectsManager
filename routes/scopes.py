@@ -32,12 +32,15 @@ from services.scope_service import (
     apply_scope_github_state,
     build_scope_page_context,
     compute_scope_github_state,
+    detach_shared_repository_configs,
     ensure_scope_github_config,
     generate_default_label,
     get_next_scope_rank,
     get_scope_github_config,
+    get_scope_owner_github_config,
     get_scope_share,
     get_user_github_token,
+    propagate_owner_github_configuration,
     serialize_scope,
     serialize_shares,
     serialize_task_for_clipboard,
@@ -640,14 +643,11 @@ def edit_scope(scope_id: int):
                 form, token_available=bool(get_user_github_token(g.user))
             )
 
-            if form.errors:
-                if wants_json:
-                    return _json_form_error(form)
-                context = build_scope_page_context(g.user, form=form, show_modal="scope-modal")
-                return render_template("scope.html", **context)
-
+            owner_config = get_scope_owner_github_config(scope)
             config = ensure_scope_github_config(scope, g.user)
+
             if is_owner:
+                owner_config = config
                 scope.name = form.name.data
                 scope.description = form.description.data
             else:
@@ -655,14 +655,72 @@ def edit_scope(scope_id: int):
                 form.name.data = scope.name
                 form.description.data = scope.description
 
+            locked_to_owner = bool(
+                not is_owner and owner_config and config.is_linked_to(owner_config)
+            )
+
+            if locked_to_owner:
+                enable_integration = bool(owner_config.github_integration_enabled)
+                if owner_config.github_repo_owner and owner_config.github_repo_name:
+                    repo_payload = {
+                        "id": owner_config.github_repo_id,
+                        "name": owner_config.github_repo_name,
+                        "owner": owner_config.github_repo_owner,
+                    }
+                else:
+                    repo_payload = None
+                if (
+                    owner_config.github_project_id
+                    and owner_config.github_project_name
+                ):
+                    project_payload = {
+                        "id": owner_config.github_project_id,
+                        "name": owner_config.github_project_name,
+                    }
+                else:
+                    project_payload = None
+                if (
+                    owner_config.github_milestone_number
+                    and owner_config.github_milestone_title
+                ):
+                    milestone_payload = {
+                        "number": owner_config.github_milestone_number,
+                        "title": owner_config.github_milestone_title,
+                    }
+                else:
+                    milestone_payload = None
+                github_label = owner_config.github_label_name
+                for key in (
+                    "github_repository",
+                    "github_project",
+                    "github_milestone",
+                    "github_label",
+                ):
+                    field = getattr(form, key, None)
+                    if field is not None:
+                        field.errors = []
+                    form.errors.pop(key, None)
+
+            if form.errors:
+                if wants_json:
+                    return _json_form_error(form)
+                context = build_scope_page_context(g.user, form=form, show_modal="scope-modal")
+                return render_template("scope.html", **context)
+
+            previous_integration_enabled = bool(config.github_integration_enabled)
             config.github_integration_enabled = enable_integration
+
+            if is_owner and previous_integration_enabled and not enable_integration:
+                detach_shared_repository_configs(scope, config)
 
             if enable_integration and repo_payload:
                 config.github_repo_id = repo_payload.get("id")
                 config.github_repo_name = repo_payload.get("name")
                 config.github_repo_owner = repo_payload.get("owner")
-                # Set the label from validation result or use default
-                config.github_label_name = github_label or generate_default_label(scope.name)
+                label_value = github_label
+                if label_value is None and not locked_to_owner:
+                    label_value = generate_default_label(scope.name)
+                config.github_label_name = label_value
                 if project_payload:
                     project_id = project_payload.get("id")
                     config.github_project_id = str(project_id) if project_id else None
@@ -688,6 +746,9 @@ def edit_scope(scope_id: int):
 
             if not is_owner and not enable_integration:
                 config.github_label_name = None
+
+            if owner_config:
+                propagate_owner_github_configuration(scope, owner_config)
 
             try:
                 db.session.commit()
