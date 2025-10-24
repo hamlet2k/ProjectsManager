@@ -170,6 +170,8 @@
             github_repository_locked: false,
             github_project_locked: false,
             github_label_locked: false,
+            github_detached: false,
+            github_detached_message: '',
             can_edit_metadata: true,
             is_owner: false,
             owner_name: '',
@@ -524,6 +526,8 @@
         const isOwner = (trigger.getAttribute('data-scope-is-owner') || 'false').toLowerCase() === 'true';
         const ownerRepository = trigger.getAttribute('data-scope-owner-repository') || '';
         const showOwnerRepository = (trigger.getAttribute('data-scope-show-owner-repository') || 'false').toLowerCase() === 'true';
+        const githubDetached = (trigger.getAttribute('data-scope-github_detached') || 'false').toLowerCase() === 'true';
+        const githubDetachedMessage = trigger.getAttribute('data-scope-github_detached_message') || '';
         return {
             name: trigger.getAttribute('data-scope-name') || '',
             description: trigger.getAttribute('data-scope-description') || '',
@@ -535,6 +539,8 @@
             github_repository_locked: repoLocked,
             github_project_locked: projectLocked,
             github_label_locked: labelLocked,
+            github_detached: githubDetached,
+            github_detached_message: githubDetachedMessage,
             can_edit_metadata: canEditMetadata,
             is_owner: isOwner,
             owner_name: ownerName,
@@ -880,6 +886,8 @@
         state.permissions.repositoryLocked = Boolean(data.github_repository_locked);
         state.permissions.projectLocked = Boolean(data.github_project_locked);
         state.permissions.labelLocked = Boolean(data.github_label_locked);
+        state.formValues.github_detached = Boolean(data.github_detached);
+        state.formValues.github_detached_message = data.github_detached_message || '';
         console.log('DEBUG: applyFormValues - final formValues:', state.formValues, 'permissions:', state.permissions);
 
         if (nameField) {
@@ -922,6 +930,7 @@
             console.log('DEBUG: Setting github_label field value:', data.github_label, 'Field value after setting:', githubLabelField.value);
         }
         applyLockIndicators();
+        updateDetachedNotice();
         updateGithubSectionVisibility();
         if (githubToggle && githubToggle.checked) {
             ensureGithubRepositoriesLoaded({ silent: true });
@@ -1005,6 +1014,26 @@
         }
 
         updateOwnerContext();
+    }
+
+    function updateDetachedNotice() {
+        const detachedBanner = state.form.querySelector('[data-github-detached-message]');
+        if (!detachedBanner) {
+            return;
+        }
+        const messageTarget = detachedBanner.querySelector('[data-github-detached-text]');
+        if (state.formValues.github_detached) {
+            detachedBanner.classList.remove('d-none');
+            const message = state.formValues.github_detached_message ||
+                'You are now independently managing this repository since the owner\'s integration is disabled.';
+            if (messageTarget) {
+                messageTarget.textContent = message;
+            } else {
+                detachedBanner.textContent = message;
+            }
+        } else {
+            detachedBanner.classList.add('d-none');
+        }
     }
 
     function updateOwnerContext() {
@@ -1937,6 +1966,14 @@
                 scope.github_label_locked ? 'true' : 'false'
             );
             button.setAttribute(
+                'data-scope-github_detached',
+                scope.github_detached ? 'true' : 'false'
+            );
+            button.setAttribute(
+                'data-scope-github_detached_message',
+                scope.github_detached_message || ''
+            );
+            button.setAttribute(
                 'data-scope-can-edit-metadata',
                 scope.is_owner ? 'true' : 'false'
             );
@@ -2087,6 +2124,14 @@
                 'data-scope-github_label_locked',
                 scope.github_label_locked ? 'true' : 'false'
             );
+            editButton.setAttribute(
+                'data-scope-github_detached',
+                scope.github_detached ? 'true' : 'false'
+            );
+            editButton.setAttribute(
+                'data-scope-github_detached_message',
+                scope.github_detached_message || ''
+            );
             editButton.setAttribute('data-scope-can-edit-metadata', 'true');
             editButton.setAttribute('data-scope-owner-name', scope.owner_name || '');
             editButton.setAttribute('aria-label', `Edit scope ${scope.name || ''}`.trim());
@@ -2139,6 +2184,14 @@
             configureButton.setAttribute(
                 'data-scope-github_label_locked',
                 scope.github_label_locked ? 'true' : 'false'
+            );
+            configureButton.setAttribute(
+                'data-scope-github_detached',
+                scope.github_detached ? 'true' : 'false'
+            );
+            configureButton.setAttribute(
+                'data-scope-github_detached_message',
+                scope.github_detached_message || ''
             );
             configureButton.setAttribute('data-scope-can-edit-metadata', 'false');
             configureButton.setAttribute('data-scope-owner-name', scope.owner_name || '');

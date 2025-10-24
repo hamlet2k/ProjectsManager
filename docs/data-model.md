@@ -28,12 +28,16 @@ Columns (`models/scope_github_config.py`):
 - `github_repo_id`, `github_repo_name`, `github_repo_owner`
 - `github_project_id`, `github_project_name`
 - `github_milestone_number`, `github_milestone_title`
-- `github_hidden_label` (str, optional) for user-specific GitHub synchronization label
+- `github_label_name` (str, optional) for user-specific GitHub synchronization label
+- `is_shared_repo` (bool) indicates the config mirrors the scope owner's repository
+- `source_user_id` (FK -> `user.id`, nullable) points to the user managing a shared repository configuration
+- `is_detached` (bool) flags collaborator configs that were previously shared but now operate independently
 Constraints & relationships:
 - Unique constraint `uq_scope_github_config_scope_user` on (`scope_id`, `user_id`)
 - Index `ix_scope_github_config_scope_user` on (`scope_id`, `user_id`)
 - Many configs per scope; each user maintains their own GitHub settings
-- Label is configurable per user per scope and propagates to collaborators sharing the same repository
+- Label is configurable per user per scope and propagates to collaborators sharing the same repository via `is_shared_repo`
+- Collaborator records inherit repository, project, and milestone settings from the owner while `is_shared_repo` is true; `is_detached` captures owner failover scenarios
 
 ### Task
 Columns (`models/task.py`):
