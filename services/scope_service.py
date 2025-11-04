@@ -374,7 +374,8 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
         scope.github_project_id = None
         scope.github_project_name = None
 
-    milestone_source = state.user_config or effective
+    # Prefer a dedicated property on ScopeGitHubState if present, fall back to previous logic
+    milestone_source = getattr(state, "milestone_source", None) or state.user_config or state.effective_config
     if milestone_source and milestone_source.github_milestone_number and milestone_source.github_milestone_title:
         scope.github_milestone_number = milestone_source.github_milestone_number
         scope.github_milestone_title = milestone_source.github_milestone_title

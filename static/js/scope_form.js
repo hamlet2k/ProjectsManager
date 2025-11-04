@@ -518,10 +518,10 @@
         const milestoneAttribute = trigger.getAttribute('data-scope-github_milestone') || '';
         const labelAttribute = trigger.getAttribute('data-scope-github_label') || '';
         console.log('DEBUG: Reading label from trigger data attribute:', labelAttribute);
-        const repoLocked = (trigger.getAttribute('data-scope-github_repository_locked') || '').toLowerCase() === 'true';
-        const projectLocked = (trigger.getAttribute('data-scope-github_project_locked') || '').toLowerCase() === 'true';
-        const labelLocked = (trigger.getAttribute('data-scope-github_label_locked') || '').toLowerCase() === 'true';
-        const canEditMetadata = (trigger.getAttribute('data-scope-can-edit-metadata') || 'true').toLowerCase() === 'true';
+        const repoLocked = getBooleanAttribute(trigger, 'data-scope-github_repository_locked', false);
+        const projectLocked = getBooleanAttribute(trigger, 'data-scope-github_project_locked', false);
+        const labelLocked = getBooleanAttribute(trigger, 'data-scope-github_label_locked', false);
+        const canEditMetadata = getBooleanAttribute(trigger, 'data-scope-can-edit-metadata', true);
         const ownerName = trigger.getAttribute('data-scope-owner-name') || '';
         const isOwner = (trigger.getAttribute('data-scope-is-owner') || 'false').toLowerCase() === 'true';
         const ownerRepository = trigger.getAttribute('data-scope-owner-repository') || '';
