@@ -714,7 +714,7 @@ def _clear_github_issue_link(task: Task, user: User | None = None) -> None:
         return
     if user is not None:
         config = get_task_github_config(task, user)
-        if config is None or config.user_id != user.id:
+        if config is None:
             config = ensure_task_github_config(task, user)
     else:
         config = get_task_owner_issue_config(task)
