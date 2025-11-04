@@ -11,8 +11,9 @@ A User can complete any Task that belong to any Scope he has access to
 A User can only delete Task he owns, or Tasks that belong to a Scope he owns
 
 """
+from __future__ import annotations
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Iterable
 
 import bleach
 from database import db
@@ -79,20 +80,6 @@ class Task(db.Model):
     completed = db.Column(db.Boolean, default=False, nullable=False)
     completed_date = db.Column(db.DateTime, nullable=True)
 
-    github_issue_id = db.Column(db.BigInteger, nullable=True)
-    github_issue_node_id = db.Column(db.String(100), nullable=True)
-    github_issue_number = db.Column(db.Integer, nullable=True)
-    github_issue_url = db.Column(db.String(255), nullable=True)
-    github_issue_state = db.Column(db.String(32), nullable=True)
-    github_repo_id = db.Column(db.BigInteger, nullable=True)
-    github_repo_name = db.Column(db.String(200), nullable=True)
-    github_repo_owner = db.Column(db.String(200), nullable=True)
-    github_project_id = db.Column(db.String(100), nullable=True)
-    github_project_name = db.Column(db.String(200), nullable=True)
-    github_milestone_number = db.Column(db.Integer, nullable=True)
-    github_milestone_title = db.Column(db.String(200), nullable=True)
-    github_milestone_due_on = db.Column(db.DateTime, nullable=True)
-
     scope_id = db.Column(db.Integer, db.ForeignKey('scope.id'), nullable=True)
     subtasks = db.relationship("Task", backref=db.backref("parent_task", remote_side=[id]), lazy=True, cascade="all, delete-orphan")
     tags = db.relationship(
@@ -105,6 +92,12 @@ class Task(db.Model):
         "SyncLog",
         back_populates="task",
         lazy="dynamic",
+        cascade="all, delete-orphan",
+    )
+    github_configs = db.relationship(
+        "TaskGitHubConfig",
+        back_populates="task",
+        lazy="selectin",
         cascade="all, delete-orphan",
     )
     
@@ -126,17 +119,168 @@ class Task(db.Model):
         else:
             return False
 
+    def iter_github_configs(self) -> Iterable["TaskGitHubConfig"]:
+        """Return all GitHub configurations associated with this task."""
+        return tuple(self.github_configs or [])
+
+    def get_github_config_for_user(self, user_id: int | None) -> "TaskGitHubConfig" | None:
+        """Return the GitHub configuration for a specific user if present."""
+
+        if user_id is None:
+            return None
+        for config in self.iter_github_configs():
+            if config.user_id == user_id:
+                return config
+        return None
+
+    def _active_github_config(self, user: "User" | None = None) -> "TaskGitHubConfig" | None:
+        from services.task_service import get_task_github_config
+
+        # Use the provided user when available; falls back to owner config
+        # when user is None (handled by the service layer).
+        return get_task_github_config(self, user)
+
+    def _ensure_active_github_config(self, user: "User" | None = None) -> "TaskGitHubConfig" | None:
+        from services.task_service import (
+            ensure_task_github_config,
+            get_task_owner_github_config,
+        )
+        from models.user import User
+
+        if user is not None:
+            return ensure_task_github_config(self, user)
+        owner_config = get_task_owner_github_config(self)
+        if owner_config is not None:
+            return owner_config
+        owner_id = getattr(self, "owner_id", None)
+        if owner_id:
+            owner = User.query.get(owner_id)
+            if owner is not None:
+                return ensure_task_github_config(self, owner)
+        return None
+
+    def _get_github_attr(self, attribute: str, user: "User" | None = None):
+        config = self._active_github_config(user)
+        return getattr(config, attribute) if config else None
+
+    def _set_github_attr(self, attribute: str, value, user: "User" | None = None) -> None:
+        config = self._ensure_active_github_config(user)
+        if config is not None:
+            setattr(config, attribute, value)
+
     @property
     def has_github_issue(self) -> bool:
-        return bool(self.github_issue_id and self.github_issue_number)
+        config = self._active_github_config()
+        return bool(config and config.has_issue_link())
 
     @property
     def github_issue_is_open(self) -> bool:
-        if not self.has_github_issue:
-            return False
-        if self.github_issue_state is None:
-            return True
-        return self.github_issue_state.lower() == "open"
+        config = self._active_github_config()
+        return bool(config and config.issue_is_open())
+
+    @property
+    def github_issue_id(self):
+        return self._get_github_attr("github_issue_id")
+
+    @github_issue_id.setter
+    def github_issue_id(self, value):
+        self._set_github_attr("github_issue_id", value)
+
+    @property
+    def github_issue_node_id(self):
+        return self._get_github_attr("github_issue_node_id")
+
+    @github_issue_node_id.setter
+    def github_issue_node_id(self, value):
+        self._set_github_attr("github_issue_node_id", value)
+
+    @property
+    def github_issue_number(self):
+        return self._get_github_attr("github_issue_number")
+
+    @github_issue_number.setter
+    def github_issue_number(self, value):
+        self._set_github_attr("github_issue_number", value)
+
+    @property
+    def github_issue_url(self):
+        return self._get_github_attr("github_issue_url")
+
+    @github_issue_url.setter
+    def github_issue_url(self, value):
+        self._set_github_attr("github_issue_url", value)
+
+    @property
+    def github_issue_state(self):
+        return self._get_github_attr("github_issue_state")
+
+    @github_issue_state.setter
+    def github_issue_state(self, value):
+        self._set_github_attr("github_issue_state", value)
+
+    @property
+    def github_repo_id(self):
+        return self._get_github_attr("github_repo_id")
+
+    @github_repo_id.setter
+    def github_repo_id(self, value):
+        self._set_github_attr("github_repo_id", value)
+
+    @property
+    def github_repo_name(self):
+        return self._get_github_attr("github_repo_name")
+
+    @github_repo_name.setter
+    def github_repo_name(self, value):
+        self._set_github_attr("github_repo_name", value)
+
+    @property
+    def github_repo_owner(self):
+        return self._get_github_attr("github_repo_owner")
+
+    @github_repo_owner.setter
+    def github_repo_owner(self, value):
+        self._set_github_attr("github_repo_owner", value)
+
+    @property
+    def github_project_id(self):
+        return self._get_github_attr("github_project_id")
+
+    @github_project_id.setter
+    def github_project_id(self, value):
+        self._set_github_attr("github_project_id", value)
+
+    @property
+    def github_project_name(self):
+        return self._get_github_attr("github_project_name")
+
+    @github_project_name.setter
+    def github_project_name(self, value):
+        self._set_github_attr("github_project_name", value)
+
+    @property
+    def github_milestone_number(self):
+        return self._get_github_attr("github_milestone_number")
+
+    @github_milestone_number.setter
+    def github_milestone_number(self, value):
+        self._set_github_attr("github_milestone_number", value)
+
+    @property
+    def github_milestone_title(self):
+        return self._get_github_attr("github_milestone_title")
+
+    @github_milestone_title.setter
+    def github_milestone_title(self, value):
+        self._set_github_attr("github_milestone_title", value)
+
+    @property
+    def github_milestone_due_on(self):
+        return self._get_github_attr("github_milestone_due_on")
+
+    @github_milestone_due_on.setter
+    def github_milestone_due_on(self, value):
+        self._set_github_attr("github_milestone_due_on", value)
     @property
     def description_html(self):
         return render_task_description_html(self.description)

@@ -12,14 +12,32 @@ Columns (`models/scope.py`):
 - `description` (text, optional)
 - `rank` (int, default 1) for ordering in dashboards
 - `owner_id` (FK -> `user.id`, nullable for legacy scopes)
-- GitHub toggles: `github_integration_enabled` (bool), `github_repo_id`, `github_repo_name`, `github_repo_owner`
-- GitHub project linkage: `github_project_id`, `github_project_name`
-- GitHub milestone linkage: `github_milestone_number`, `github_milestone_title`
 Relationships:
 - `tasks` 1:N Task (cascade delete-orphan)
 - `tags` 1:N Tag (cascade delete-orphan)
 - `shares` 1:N ScopeShare (cascade delete-orphan)
 - `notifications` 1:N Notification (cascade delete-orphan)
+- `github_configs` 1:N ScopeGitHubConfig (cascade delete-orphan)
+
+### ScopeGitHubConfig
+Columns (`models/scope_github_config.py`):
+- `id` (PK, int)
+- `scope_id` (FK -> `scope.id`, indexed)
+- `user_id` (FK -> `user.id`, indexed)
+- `github_integration_enabled` (bool)
+- `github_repo_id`, `github_repo_name`, `github_repo_owner`
+- `github_project_id`, `github_project_name`
+- `github_milestone_number`, `github_milestone_title`
+- `github_label_name` (str, optional) for user-specific GitHub synchronization label
+- `is_shared_repo` (bool) indicates the config mirrors the scope owner's repository
+- `source_user_id` (FK -> `user.id`, nullable) points to the user managing a shared repository configuration
+- `is_detached` (bool) flags collaborator configs that were previously shared but now operate independently
+Constraints & relationships:
+- Unique constraint `uq_scope_github_config_scope_user` on (`scope_id`, `user_id`)
+- Index `ix_scope_github_config_scope_user` on (`scope_id`, `user_id`)
+- Many configs per scope; each user maintains their own GitHub settings
+- Label is configurable per user per scope and propagates to collaborators sharing the same repository via `is_shared_repo`
+- Collaborator records inherit repository, project, and milestone settings from the owner while `is_shared_repo` is true; `is_detached` captures owner failover scenarios
 
 ### Task
 Columns (`models/task.py`):
@@ -32,14 +50,27 @@ Columns (`models/task.py`):
 - `owner_id` (FK -> `user.id`, optional)
 - `completed` (bool, default False)
 - `completed_date` (datetime, optional)
-- GitHub issue linkage: `github_issue_id`, `github_issue_node_id`, `github_issue_number`, `github_issue_url`, `github_issue_state`
-- GitHub repo cache: `github_repo_id`, `github_repo_name`, `github_repo_owner`
-- GitHub project/milestone cache: `github_project_id`, `github_project_name`, `github_milestone_number`, `github_milestone_title`, `github_milestone_due_on`
 - `scope_id` (FK -> `scope.id`, nullable for legacy tasks)
 Relationships:
 - `subtasks` self-referential 1:N (cascade delete-orphan)
 - `tags` many-to-many via `task_tags`
 - `sync_logs` 1:N SyncLog (cascade delete-orphan)
+- `github_configs` 1:N TaskGitHubConfig (cascade delete-orphan)
+
+### TaskGitHubConfig
+Columns (`models/task_github_config.py`):
+- `id` (PK, int)
+- `task_id` (FK -> `task.id`, indexed)
+- `user_id` (FK -> `user.id`, indexed)
+- GitHub issue cache: `github_issue_id`, `github_issue_node_id`, `github_issue_number`, `github_issue_url`, `github_issue_state`
+- Repository cache: `github_repo_id`, `github_repo_name`, `github_repo_owner`
+- Project/milestone cache: `github_project_id`, `github_project_name`, `github_milestone_number`, `github_milestone_title`, `github_milestone_due_on`
+- `created_at`, `updated_at` (datetime, auto-managed)
+Constraints & relationships:
+- Unique constraint `uq_task_github_config_task_user` on (`task_id`, `user_id`)
+- Index `ix_task_github_config_task_user` on (`task_id`, `user_id`)
+- Backrefs to `Task` (`github_configs`) and `User` (`task_github_configs`)
+- Each user maintains independent GitHub linkage per task; helpers proxy the active user's config for convenience
 
 ### Tag
 Columns (`models/tag.py`):

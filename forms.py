@@ -114,6 +114,14 @@ class GitHubSettingsForm(FlaskForm):
     enabled = BooleanField("Enable GitHub Integration")
     token = PasswordField("GitHub Personal Access Token", [Optional()])
     submit = SubmitField("Save GitHub Settings")
+    remove_token = SubmitField(
+        "Remove Token",
+        render_kw={
+            "class": "btn btn-outline-danger",
+            "id": "github-remove-token",
+            "formnovalidate": True,
+        },
+    )
 
 class ScopeForm(FlaskForm):
     name = StringField("Name", [DataRequired()])
@@ -136,6 +144,18 @@ class ScopeForm(FlaskForm):
         choices=[],
         validators=[Optional()],
         validate_choice=False,
+    )
+    github_label = StringField(
+        "GitHub Label",
+        validators=[
+            Optional(),
+            Length(max=50, message="Label must be 50 characters or fewer."),
+            Regexp(
+                r'^[a-zA-Z0-9_-]*$',
+                message="Label can only contain letters, numbers, hyphens, and underscores."
+            ),
+        ],
+        description="This label will be automatically applied to all GitHub issues created or synced for this scope."
     )
     submit = SubmitField("Save Scope")
 

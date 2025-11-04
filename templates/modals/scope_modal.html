@@ -12,7 +12,7 @@
 
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="scope-modal-description">Group related tasks by creating a new scope.</p>
-                <div class="form-floating mb-3">
+                <div class="form-floating mb-3" data-owner-field="name">
                     {{ scope_form.name(class_='form-control'+ (' is-invalid' if scope_form.name.errors else ''), placeholder_=scope_form.name.name, **{'data-field': 'name'}) }}
                     {{ scope_form.name.label(class="form-label") }}
                     <div class="invalid-feedback{% if scope_form.name.errors %} d-block{% endif %}" data-field-errors="name">
@@ -21,7 +21,11 @@
                         {% endfor %}
                     </div>
                 </div>
-                <div class="form-floating mb-3">
+                <div class="mb-3 d-none" data-collaborator-name-display>
+                    <label class="form-label fw-semibold mb-1">Scope name</label>
+                    <p class="mb-0 text-body-secondary fst-italic" data-collaborator-name-value></p>
+                </div>
+                <div class="form-floating mb-3" data-owner-field="description">
                     {{ scope_form.description(
                         class_='form-control'+ (' is-invalid' if scope_form.description.errors else ''),
                         placeholder_=scope_form.description.name,
@@ -39,6 +43,16 @@
                         {% endfor %}
                     </div>
                 </div>
+                <div class="mb-3 d-none" data-collaborator-description-display>
+                    <label class="form-label fw-semibold mb-1">Description</label>
+                    <p class="mb-0 text-body-secondary fst-italic" data-collaborator-description-value style="white-space: pre-line;"></p>
+                </div>
+                <p class="text-muted small mb-2 d-none" data-collaborator-owner-line>
+                    <span class="fw-semibold">Owner:</span> <span data-collaborator-owner-name></span>
+                </p>
+                <p class="text-muted small mb-3 d-none" data-collaborator-owner-repo-line>
+                    <span class="fw-semibold">Owner repository:</span> <span data-collaborator-owner-repo></span>
+                </p>
                 <div class="mb-3 pt-3 border-top">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <div>
@@ -52,9 +66,17 @@
                     </div>
                     {% if not github_token_present %}
                         <div class="alert alert-info py-2 px-3 mb-2" role="alert">
-                            Add a GitHub token in your user settings to enable integration.
+                            Add a GitHub token in your user <a href="{{ url_for('settings') }}" class="alert-link">settings</a> to enable integration.
                         </div>
                     {% endif %}
+                    <div class="alert alert-warning py-2 px-3 d-none github-readonly-message" role="alert">
+                        <i class="bi bi-lock-fill me-2"></i>
+                        GitHub integration is disabled. Your existing GitHub-linked data will remain visible but read-only until integration is re-enabled.
+                    </div>
+                    <div class="alert alert-info py-2 px-3 d-none" data-github-detached-message role="alert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <span data-github-detached-text>You are now independently managing this repository since the owner's integration is disabled.</span>
+                    </div>
                     <div class="github-scope-settings" data-github-settings-section>
                         <div class="mb-3">
                             <label class="form-label" for="scope-github-repo-select">Repository</label>
@@ -88,6 +110,20 @@
                                 {% endfor %}
                             </div>
                             <div class="form-text">Use this milestone as the default for new issues.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="scope-github-label-input">GitHub Label <span class="text-muted">(optional)</span></label>
+                            {{ scope_form.github_label(class="form-control" + (' is-invalid' if scope_form.github_label.errors else ''), id="scope-github-label-input", placeholder="e.g., frontend-ui", **{'data-field': 'github_label'}) }}
+                            <div class="invalid-feedback{% if scope_form.github_label.errors %} d-block{% endif %}" data-field-errors="github_label">
+                                {% for error in scope_form.github_label.errors %}
+                                    <div>{{ error }}</div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">This label will be automatically applied to all GitHub issues created or synced for this scope. Leave blank to use a default based on the scope name.</div>
+                            <div class="alert alert-info py-2 px-3 mt-2 d-none" data-github-label-readonly-message role="alert">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <span data-github-label-readonly-text>This label is managed by the scope owner.</span>
+                            </div>
                         </div>
                         <div class="alert alert-warning py-2 px-3 d-none" data-github-milestone-warning role="alert">
                             Unable to load milestones for this repository. Ensure your GitHub token includes milestone access.

@@ -27,6 +27,7 @@
                     data-scope-id="{{ scope.id }}"
                     data-scope-url="{{ url_for('scopes.set_scope', scope_id=scope.id) }}"
                     data-scope-is-owner="{{ 'true' if scope.owner_id == g.user.id else 'false' }}"
+                    data-scope-owner-name="{{ scope.owner_display_name | default('') | e }}"
                 >
                     <div class="card-header bg-transparent border-0 pb-0">
                         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -40,10 +41,32 @@
                                         <i class="bi bi-grip-vertical"></i>
                                     </span>
                                 {% endif %}
-                                {% if scope.github_integration_enabled %}
-                                    <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
-                                        <i class="bi bi-github" aria-hidden="true"></i>
+                                {% if scope.show_github_badge %}
+                                    <span
+                                        class="badge d-inline-flex align-items-center gap-1 {% if scope.github_ui_state == 'read-only' %}text-bg-secondary github-badge-read-only{% else %}text-bg-primary{% endif %}"
+                                        {% if scope.github_badge_tooltip %}
+                                            data-bs-toggle="tooltip"
+                                            data-scope-owner-tooltip="true"
+                                            title="{{ scope.github_badge_tooltip | e }}"
+                                        {% endif %}
+                                        data-github-state="{{ scope.github_ui_state or 'unknown' }}"
+                                    >
+                                        <i class="{{ scope.github_badge_icon }}" aria-hidden="true"></i>
                                         GitHub
+                                        {% if scope.github_ui_state == 'read-only' %}
+                                            <i class="bi bi-lock-fill ms-1" title="Read-only - integration disabled"></i>
+                                        {% endif %}
+                                    </span>
+                                {% endif %}
+                                {% if scope.show_shared_badge %}
+                                    <span
+                                        class="badge text-bg-secondary d-inline-flex align-items-center gap-1"
+                                        data-bs-toggle="tooltip"
+                                        data-scope-owner-tooltip="true"
+                                        title="{{ scope.shared_badge_tooltip | e }}"
+                                    >
+                                        <i class="bi bi-people" aria-hidden="true"></i>
+                                        Shared
                                     </span>
                                 {% endif %}
                             </div>
@@ -72,9 +95,20 @@
                                         data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
                                         data-scope-github_project='{{ {'id': scope.github_project_id, 'name': scope.github_project_name} | tojson if scope.github_project_id and scope.github_project_name else '' }}'
                                         data-scope-github_milestone='{{ {'number': scope.github_milestone_number, 'title': scope.github_milestone_title} | tojson if scope.github_milestone_number and scope.github_milestone_title else '' }}'
+                                        data-scope-github_label="{{ scope.github_label_name | default('') | e }}"
+                                        data-scope-github_repository_locked="{{ 'true' if scope.github_repository_locked else 'false' }}"
+                                        data-scope-github_project_locked="{{ 'true' if scope.github_project_locked else 'false' }}"
+                                        data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
+                                        data-scope-github_detached="{{ 'true' if scope.github_detached else 'false' }}"
+                                        data-scope-github_detached_message="{{ scope.github_detached_message | default('') | e }}"
+                                        data-scope-can-edit-metadata="true"
+                                        data-scope-owner-name="{{ '' if scope.owner_id == g.user.id else scope.owner_display_name | default('') | e }}"
+                                        data-scope-owner-repository="{{ scope.owner_repository_label | default('') | e }}"
+                                        data-scope-show-owner-repository="{{ 'true' if scope.show_owner_repository_line else 'false' }}"
+                                        data-scope-is-owner="true"
                                         aria-label="Edit scope {{ scope.name }}"
                                     >
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                        <i class="bi bi-gear" aria-hidden="true"></i>
                                     </button>
                                     <button
                                         type="button"
@@ -87,6 +121,33 @@
                                         <i class="bi bi-trash3" aria-hidden="true"></i>
                                     </button>
                                 {% else %}
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary edit-scope-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#scope-modal"
+                                        data-scope-id="{{ scope.id }}"
+                                        data-scope-name="{{ scope.name | default('') | e }}"
+                                        data-scope-description="{{ scope.description | default('') | e }}"
+                                        data-scope-github_enabled="{{ 'true' if scope.github_integration_enabled else 'false' }}"
+                                        data-scope-github_repository='{{ {'id': scope.github_repo_id, 'name': scope.github_repo_name, 'owner': scope.github_repo_owner} | tojson if scope.github_repo_owner and scope.github_repo_name else '' }}'
+                                        data-scope-github_project='{{ {'id': scope.github_project_id, 'name': scope.github_project_name} | tojson if scope.github_project_id and scope.github_project_name else '' }}'
+                                        data-scope-github_milestone='{{ {'number': scope.github_milestone_number, 'title': scope.github_milestone_title} | tojson if scope.github_milestone_number and scope.github_milestone_title else '' }}'
+                                        data-scope-github_label="{{ scope.github_label_name | default('') | e }}"
+                                        data-scope-github_repository_locked="{{ 'true' if scope.github_repository_locked else 'false' }}"
+                                        data-scope-github_project_locked="{{ 'true' if scope.github_project_locked else 'false' }}"
+                                        data-scope-github_label_locked="{{ 'true' if scope.github_label_locked else 'false' }}"
+                                        data-scope-github_detached="{{ 'true' if scope.github_detached else 'false' }}"
+                                        data-scope-github_detached_message="{{ scope.github_detached_message | default('') | e }}"
+                                        data-scope-can-edit-metadata="false"
+                                        data-scope-owner-name="{{ scope.owner_display_name | default('') | e }}"
+                                        data-scope-owner-repository="{{ scope.owner_repository_label | default('') | e }}"
+                                        data-scope-show-owner-repository="{{ 'true' if scope.show_owner_repository_line else 'false' }}"
+                                        data-scope-is-owner="false"
+                                        aria-label="Edit scope settings for {{ scope.name }}"
+                                    >
+                                        <i class="bi bi-gear" aria-hidden="true"></i>
+                                    </button>
                                     <button
                                         type="button"
                                         class="btn btn-outline-secondary scope-leave-btn"
@@ -128,6 +189,28 @@
         </div>
     </div>
 </div>
+
+<style>
+.github-badge-read-only {
+    opacity: 0.6;
+    border-style: dashed !important;
+}
+
+.github-badge-read-only:hover {
+    opacity: 0.7 !important;
+    cursor: not-allowed !important;
+}
+
+[data-github-state="read-only"] .github-action-btn {
+    display: none;
+}
+
+[data-github-state="read-only"] .github-interactive-element {
+    pointer-events: none;
+    opacity: 0.6;
+}
+</style>
+
 {% endblock %}
 
 {% block modals %}

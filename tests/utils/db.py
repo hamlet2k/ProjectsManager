@@ -99,8 +99,23 @@ def temporary_database(prefix: str = "projectsmanager_test") -> Iterator[Tuple[s
             cleanup_test_database(db_name)
 
 
+def rebuild_database_engine(db, database_uri: str):
+    """Ensure the SQLAlchemy engine reflects the provided database URI."""
+
+    engines = db.engines
+    engine = engines.pop(None, None)
+
+    if engine is not None:
+        engine.dispose()
+
+    engine_options = getattr(db, "_engine_options", {}) or {}
+    engines[None] = db.create_engine(database_uri, **engine_options)
+    return engines[None]
+
+
 __all__ = [
     "cleanup_test_database",
     "provision_test_database",
+    "rebuild_database_engine",
     "temporary_database",
 ]

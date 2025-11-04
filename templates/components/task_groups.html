@@ -66,11 +66,15 @@
                                                 <a href="{{ task.github_issue_url }}"
                                                    target="_blank"
                                                    rel="noopener"
-                                                   class="github-issue-badge"
+                                                   class="github-issue-badge {% if not github_enabled %}github-issue-read-only{% endif %}"
                                                    onclick="event.stopPropagation()"
-                                                   title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                   title="Open GitHub issue #{{ task.github_issue_number }}"
+                                                   {% if not github_enabled %}style="pointer-events: none; opacity: 0.6;"{% endif %}>
                                                     <i class="bi bi-github"></i>
                                                     #{{ task.github_issue_number }}
+                                                    {% if not github_enabled %}
+                                                    <i class="bi bi-lock-fill ms-1" title="GitHub integration disabled"></i>
+                                                    {% endif %}
                                                 </a>
                                                 {% if task.has_github_issue and task.github_milestone_title %}
                                                     <button type="button"
@@ -106,28 +110,29 @@
                                                 <a href="{{ task.github_issue_url }}"
                                                    target="_blank"
                                                    rel="noopener"
-                                                   class="github-issue-badge"
-                                                   title="Open GitHub issue #{{ task.github_issue_number }}">
+                                                   class="github-issue-badge {% if not github_enabled %}github-issue-read-only{% endif %}"
+                                                   title="Open GitHub issue #{{ task.github_issue_number }}"
+                                                   {% if not github_enabled %}style="pointer-events: none; opacity: 0.6;"{% endif %}>
                                                     <i class="bi bi-github"></i>
                                                     #{{ task.github_issue_number }}
+                                                    {% if not github_enabled %}
+                                                    <i class="bi bi-lock-fill ms-1" title="GitHub integration disabled"></i>
+                                                    {% endif %}
                                                 </a>
                                                 {% if task.has_github_issue and task.github_milestone_title %}
                                                     <button type="button"
-                                                            class="github-milestone-pill"
-                                                            data-task-milestone-trigger
-                                                            data-task-id="{{ task.id }}"
-                                                            data-task-name="{{ task.name | e }}"
-                                                            data-github-owner="{{ task.github_repo_owner or (g.scope.github_repo_owner if g.scope else '') }}"
-                                                            data-github-name="{{ task.github_repo_name or (g.scope.github_repo_name if g.scope else '') }}"
-                                                            data-current-milestone-number="{{ task.github_milestone_number or '' }}"
-                                                            data-current-milestone-title="{{ task.github_milestone_title or '' }}"
-                                                            data-current-milestone-due="{{ task.github_milestone_due_on.isoformat() if task.github_milestone_due_on else '' }}"
-                                                            data-bs-toggle="tooltip"
-                                                            data-bs-placement="top"
-                                                            title="">
-                                                        <i class="bi bi-signpost-2"></i>
-                                                        <span class="milestone-name text-truncate">{{ task.github_milestone_title }}</span>
-                                                        <span class="visually-hidden">Edit milestone</span>
+                                                           class="github-milestone-pill {% if not github_enabled %}github-milestone-read-only{% endif %}"
+                                                           {% if not github_enabled %}style="pointer-events: none; opacity: 0.6;"{% endif %}
+                                                           title="{{ task.github_milestone_title }}"
+                                                           data-milestone-task-id="{{ task.id }}"
+                                                           data-milestone-trigger
+                                                           data-bs-toggle="tooltip"
+                                                           data-bs-placement="top">
+                                                        <i class="bi bi-flag"></i>
+                                                        {{ task.github_milestone_title }}
+                                                        {% if not github_enabled %}
+                                                        <i class="bi bi-lock-fill ms-1" title="GitHub integration disabled"></i>
+                                                        {% endif %}
                                                     </button>
                                                 {% endif %}
                                             </div>
