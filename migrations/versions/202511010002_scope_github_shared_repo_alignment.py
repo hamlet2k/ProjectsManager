@@ -2,8 +2,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "202511010002_scope_github_shared_repo_alignment"
-down_revision = "202511010001_task_github_config_per_user"
+revision = "20251101_scope_github_align"
+down_revision = "20251101_task_github_config"
 branch_labels = None
 depends_on = None
 

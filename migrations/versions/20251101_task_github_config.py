@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "202511010001_task_github_config_per_user"
+revision = "20251101_task_github_config"
 down_revision = "202510200001_postgres_alignment"
 branch_labels = None
 depends_on = None
@@ -26,6 +26,18 @@ TASK_GITHUB_COLUMN_DEFINITIONS = {
     "github_milestone_due_on": sa.DateTime(),
 }
 TASK_GITHUB_COLUMNS = list(TASK_GITHUB_COLUMN_DEFINITIONS.keys())
+
+# String column lengths for truncation during migration
+TASK_GITHUB_STRING_LENGTHS = {
+    "github_issue_node_id": 100,
+    "github_issue_url": 255,
+    "github_issue_state": 32,
+    "github_repo_name": 200,
+    "github_repo_owner": 200,
+    "github_project_id": 100,
+    "github_project_name": 200,
+    "github_milestone_title": 200,
+}
 
 
 def upgrade() -> None:
@@ -79,7 +91,14 @@ def upgrade() -> None:
         owner_id = row.owner_id
         if owner_id is None:
             continue
-        values = {column: getattr(row, column) for column in TASK_GITHUB_COLUMNS}
+        values = {}
+        for column in TASK_GITHUB_COLUMNS:
+            value = getattr(row, column)
+            if isinstance(value, str) and column in TASK_GITHUB_STRING_LENGTHS:
+                max_length = TASK_GITHUB_STRING_LENGTHS[column]
+                if len(value) > max_length:
+                    value = value[:max_length]
+            values[column] = value
         if not any(values.values()):
             continue
         payload = {"task_id": row.id, "user_id": owner_id}
@@ -132,7 +151,14 @@ def downgrade() -> None:
         owner_id = row.owner_id
         if owner_id is not None and owner_id != row.user_id:
             continue
-        updates = {column: getattr(row, column) for column in TASK_GITHUB_COLUMNS}
+        updates = {}
+        for column in TASK_GITHUB_COLUMNS:
+            value = getattr(row, column)
+            if isinstance(value, str) and column in TASK_GITHUB_STRING_LENGTHS:
+                max_length = TASK_GITHUB_STRING_LENGTHS[column]
+                if len(value) > max_length:
+                    value = value[:max_length]
+            updates[column] = value
         connection.execute(
             task_table.update()
             .where(task_table.c.id == row.task_id)

@@ -133,22 +133,20 @@ class Task(db.Model):
                 return config
         return None
 
-    def _active_github_config(self) -> "TaskGitHubConfig" | None:
-        from flask import g
+    def _active_github_config(self, user: "User" | None = None) -> "TaskGitHubConfig" | None:
         from services.task_service import get_task_github_config
 
-        user = getattr(g, "user", None)
+        # Use the provided user when available; falls back to owner config
+        # when user is None (handled by the service layer).
         return get_task_github_config(self, user)
 
-    def _ensure_active_github_config(self) -> "TaskGitHubConfig" | None:
-        from flask import g
+    def _ensure_active_github_config(self, user: "User" | None = None) -> "TaskGitHubConfig" | None:
         from services.task_service import (
             ensure_task_github_config,
             get_task_owner_github_config,
         )
         from models.user import User
 
-        user = getattr(g, "user", None)
         if user is not None:
             return ensure_task_github_config(self, user)
         owner_config = get_task_owner_github_config(self)
@@ -159,16 +157,14 @@ class Task(db.Model):
             owner = User.query.get(owner_id)
             if owner is not None:
                 return ensure_task_github_config(self, owner)
-        if user is not None:
-            return ensure_task_github_config(self, user)
         return None
 
-    def _get_github_attr(self, attribute: str):
-        config = self._active_github_config()
+    def _get_github_attr(self, attribute: str, user: "User" | None = None):
+        config = self._active_github_config(user)
         return getattr(config, attribute) if config else None
 
-    def _set_github_attr(self, attribute: str, value) -> None:
-        config = self._ensure_active_github_config()
+    def _set_github_attr(self, attribute: str, value, user: "User" | None = None) -> None:
+        config = self._ensure_active_github_config(user)
         if config is not None:
             setattr(config, attribute, value)
 
