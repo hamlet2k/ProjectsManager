@@ -123,6 +123,7 @@ class ScopeGitHubState:
     owner_config: ScopeGitHubConfig | None
     effective_config: ScopeGitHubConfig | None
     linked_to_owner: bool
+    detached_from_owner: bool
 
     @property
     def integration_enabled(self) -> bool:
@@ -188,7 +189,7 @@ def compute_scope_github_state(scope: Scope | None, user: User | None) -> ScopeG
     """Return GitHub configuration state for the supplied scope and user."""
 
     if scope is None:
-        return ScopeGitHubState(None, None, None, False)
+        return ScopeGitHubState(None, None, None, False, False)
 
     owner_config = get_scope_owner_github_config(scope)
     user_config = None
@@ -196,27 +197,92 @@ def compute_scope_github_state(scope: Scope | None, user: User | None) -> ScopeG
         user_config = owner_config
     elif user:
         user_config = _lookup_config(scope, user.id)
+
     effective_config = user_config or owner_config
     linked = False
-    if user and scope.owner_id and user.id != scope.owner_id:
-        if user_config and owner_config:
-            linked = user_config.shares_repository_with(owner_config)
-    return ScopeGitHubState(user_config, owner_config, effective_config, linked)
+    detached = False
+
+    if user_config and owner_config and user_config.user_id != owner_config.user_id:
+        detached = bool(user_config.is_detached)
+        if user_config.is_linked_to(owner_config):
+            linked = True
+            effective_config = owner_config
+
+    if effective_config is None:
+        effective_config = owner_config or user_config
+
+    return ScopeGitHubState(user_config, owner_config, effective_config, linked, detached)
 
 
-def propagate_owner_github_configuration(scope: Scope, owner_config: ScopeGitHubConfig) -> None:
-    """Synchronize project and label details for configs sharing the owner's repository."""
+def _snapshot_repository_configuration(config: ScopeGitHubConfig) -> dict[str, Any]:
+    """Return a snapshot of repository-related fields for replication."""
 
-    if not owner_config.github_repo_owner or not owner_config.github_repo_name:
+    return {
+        "github_repo_id": config.github_repo_id,
+        "github_repo_name": config.github_repo_name,
+        "github_repo_owner": config.github_repo_owner,
+        "github_project_id": config.github_project_id,
+        "github_project_name": config.github_project_name,
+        "github_milestone_number": config.github_milestone_number,
+        "github_milestone_title": config.github_milestone_title,
+        "github_label_name": config.github_label_name,
+        "github_integration_enabled": config.github_integration_enabled,
+    }
+
+
+def _apply_repository_snapshot(config: ScopeGitHubConfig, snapshot: dict[str, Any]) -> None:
+    """Apply a snapshot produced by :func:`_snapshot_repository_configuration`."""
+
+    config.github_repo_id = snapshot.get("github_repo_id")
+    config.github_repo_name = snapshot.get("github_repo_name")
+    config.github_repo_owner = snapshot.get("github_repo_owner")
+    config.github_project_id = snapshot.get("github_project_id")
+    config.github_project_name = snapshot.get("github_project_name")
+    config.github_milestone_number = snapshot.get("github_milestone_number")
+    config.github_milestone_title = snapshot.get("github_milestone_title")
+    config.github_label_name = snapshot.get("github_label_name")
+    config.github_integration_enabled = snapshot.get("github_integration_enabled")
+
+
+def detach_shared_repository_configs(scope: Scope, owner_config: ScopeGitHubConfig) -> None:
+    """Detach collaborator configs when the owner's integration is disabled."""
+
+    if scope is None or owner_config is None:
         return
+
+    snapshot = _snapshot_repository_configuration(owner_config)
+
     for config in _iter_scope_configs(scope):
         if config.user_id == owner_config.user_id:
             continue
         if not config.shares_repository_with(owner_config):
             continue
-        config.github_project_id = owner_config.github_project_id
-        config.github_project_name = owner_config.github_project_name
-        config.github_label_name = owner_config.github_label_name
+        config.mark_as_detached_from(owner_config)
+        _apply_repository_snapshot(config, snapshot)
+
+
+def propagate_owner_github_configuration(scope: Scope, owner_config: ScopeGitHubConfig) -> None:
+    """Synchronize shared repository collaborators with the owner's configuration."""
+
+    if scope is None or owner_config is None:
+        return
+
+    has_repository = bool(owner_config.github_repo_owner and owner_config.github_repo_name)
+
+    for config in _iter_scope_configs(scope):
+        if config.user_id == owner_config.user_id:
+            continue
+
+        if not has_repository or not config.shares_repository_with(owner_config):
+            if config.is_shared_repo and config.source_user_id == owner_config.user_id:
+                config.clear_shared_flags()
+            continue
+
+        config.clone_repository_metadata_from(owner_config)
+        config.clone_project_and_label_from(owner_config)
+        config.clone_milestone_from(owner_config)
+        config.github_integration_enabled = owner_config.github_integration_enabled
+        config.mark_as_shared_with(owner_config)
 
 
 def get_effective_github_label(scope: Scope | None, user: User | None) -> str | None:
@@ -323,10 +389,6 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
     else:
         scope.github_label_name = None
 
-    scope.github_repository_locked = False
-    scope.github_project_locked = False
-    scope.github_label_locked = False
-
     owner_display_name = _scope_owner_display_name(scope)
     if not owner_display_name:
         owner_display_name = getattr(scope, "owner_name", "") or (
@@ -337,6 +399,18 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
 
     is_owner = bool(current_user and scope.owner_id == current_user.id)
     scope.is_owner_current_user = is_owner
+
+    shared_locked = bool(state.linked_to_owner and not is_owner)
+    scope.github_repository_locked = shared_locked
+    scope.github_project_locked = shared_locked
+    scope.github_label_locked = shared_locked
+    scope.github_detached = bool(state.detached_from_owner and not is_owner)
+    if scope.github_detached:
+        scope.github_detached_message = (
+            "You are now independently managing this repository since the owner's integration is disabled."
+        )
+    else:
+        scope.github_detached_message = ""
 
     has_linked_tasks = any(getattr(task, "github_issue_number", None) for task in (getattr(scope, "tasks", None) or []))
     scope.has_github_linked_tasks = has_linked_tasks
@@ -389,8 +463,12 @@ def apply_scope_github_state(scope: Scope | None, current_user: User | None) -> 
             repo_differs = user_repo_label != owner_repo_label
         
         scope.github_badge_icon = "bi bi-pencil" if repo_differs else "bi bi-github"
-        
-        if user_repo_label:
+
+        if shared_locked and owner_repo_label:
+            scope.github_badge_tooltip = f"Managed by owner for shared repository ({owner_repo_label})"
+        elif shared_locked:
+            scope.github_badge_tooltip = "Managed by owner for shared repository"
+        elif user_repo_label:
             scope.github_badge_tooltip = f"Repository: {user_repo_label}"
         elif owner_repo_label:
             scope.github_badge_tooltip = f"Owner repository: {owner_repo_label}"
@@ -560,6 +638,11 @@ def build_scope_form_initial_state(form: Any, user: User | None = None) -> dict[
         "owner_name": "",
         "owner_repository_label": "",
         "show_owner_repository_line": False,
+        "github_repository_locked": False,
+        "github_project_locked": False,
+        "github_label_locked": False,
+        "github_detached": False,
+        "github_detached_message": "",
     }
     return {"data": data, "errors": errors}
 
@@ -630,9 +713,11 @@ def serialize_scope(scope: Scope, current_user: User | None) -> dict[str, Any]:
         "github_project": project,
         "github_milestone": milestone,
         "github_label": github_label,
-        "github_repository_locked": False,
-        "github_project_locked": False,
-        "github_label_locked": False,
+        "github_repository_locked": bool(getattr(scope, "github_repository_locked", False)),
+        "github_project_locked": bool(getattr(scope, "github_project_locked", False)),
+        "github_label_locked": bool(getattr(scope, "github_label_locked", False)),
+        "github_detached": bool(getattr(scope, "github_detached", False)),
+        "github_detached_message": getattr(scope, "github_detached_message", ""),
         "owner_name": owner_name_value,
         "owner_display_name": getattr(scope, "owner_display_name", owner_name_value),
         "show_github_badge": bool(getattr(scope, "show_github_badge", False)),
