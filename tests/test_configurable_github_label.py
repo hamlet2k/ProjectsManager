@@ -1,9 +1,6 @@
 """Tests for configurable GitHub label functionality."""
 
-import pytest
-from models.scope import Scope
-from models.scope_github_config import ScopeGitHubConfig
-from models.user import User
+# Removed unused import
 from services.scope_service import (
     generate_default_label,
     get_effective_github_label,

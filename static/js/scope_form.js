@@ -144,7 +144,7 @@
             const parsed = JSON.parse(raw);
             const data = parsed && parsed.data ? parsed.data : {};
             const errors = parsed && parsed.errors ? parsed.errors : {};
-            console.log('DEBUG: parseInitialState - raw:', raw, 'parsed data:', data);
+            
             return {
                 data: {
                     ...getDefaultFormValues(),
@@ -517,7 +517,7 @@
         const projectAttribute = trigger.getAttribute('data-scope-github_project') || '';
         const milestoneAttribute = trigger.getAttribute('data-scope-github_milestone') || '';
         const labelAttribute = trigger.getAttribute('data-scope-github_label') || '';
-        console.log('DEBUG: Reading label from trigger data attribute:', labelAttribute);
+        //console.log('DEBUG: Reading label from trigger data attribute:', labelAttribute);
         const repoLocked = getBooleanAttribute(trigger, 'data-scope-github_repository_locked', false);
         const projectLocked = getBooleanAttribute(trigger, 'data-scope-github_project_locked', false);
         const labelLocked = getBooleanAttribute(trigger, 'data-scope-github_label_locked', false);
@@ -568,7 +568,7 @@
         }
 
         if (state.formMode === 'edit') {
-            console.log('DEBUG: Edit mode - formValues:', state.formValues);
+            //console.log('DEBUG: Edit mode - formValues:', state.formValues);
             applyFormValues(state.formValues || getDefaultFormValues());
             applyFormErrors(state.form, {});
             const modalMessages = state.permissions.canEditMetadata
@@ -826,7 +826,7 @@
         }
         if (githubLabelField) {
             values.github_label = githubLabelField.value.trim();
-            console.log('DEBUG: Reading github_label field value:', githubLabelField.value, 'Trimmed value:', values.github_label);
+            //console.log('DEBUG: Reading github_label field value:', githubLabelField.value, 'Trimmed value:', values.github_label);
         }
         values.github_repository_locked = Boolean(state.permissions.repositoryLocked);
         values.github_project_locked = Boolean(state.permissions.projectLocked);
@@ -880,7 +880,7 @@
         const milestoneSelect = state.github.milestoneSelect;
         const githubLabelField = state.form.querySelector('[data-field="github_label"]');
 
-        console.log('DEBUG: applyFormValues - input data:', data);
+        //console.log('DEBUG: applyFormValues - input data:', data);
         state.formValues = { ...state.formValues, ...data };
         state.permissions.canEditMetadata = data.can_edit_metadata !== false;
         state.permissions.repositoryLocked = Boolean(data.github_repository_locked);
@@ -888,7 +888,7 @@
         state.permissions.labelLocked = Boolean(data.github_label_locked);
         state.formValues.github_detached = Boolean(data.github_detached);
         state.formValues.github_detached_message = data.github_detached_message || '';
-        console.log('DEBUG: applyFormValues - final formValues:', state.formValues, 'permissions:', state.permissions);
+        //console.log('DEBUG: applyFormValues - final formValues:', state.formValues, 'permissions:', state.permissions);
 
         if (nameField) {
             nameField.value = data.name || '';
@@ -927,7 +927,7 @@
         }
         if (githubLabelField) {
             githubLabelField.value = data.github_label || '';
-            console.log('DEBUG: Setting github_label field value:', data.github_label, 'Field value after setting:', githubLabelField.value);
+            //console.log('DEBUG: Setting github_label field value:', data.github_label, 'Field value after setting:', githubLabelField.value);
         }
         applyLockIndicators();
         updateDetachedNotice();
@@ -1056,7 +1056,7 @@
         const showOwnerRepositoryLine = Boolean(state.formValues.show_owner_repository_line);
 
         // Debug logging
-        console.log('DEBUG: updateOwnerContext - isOwner:', isOwner, 'canEditMetadata:', state.permissions.canEditMetadata, 'formValues:', state.formValues);
+        //console.log('DEBUG: updateOwnerContext - isOwner:', isOwner, 'canEditMetadata:', state.permissions.canEditMetadata, 'formValues:', state.formValues);
 
         // Update owner context for both owners and collaborators
         if (ownerNameTarget) {

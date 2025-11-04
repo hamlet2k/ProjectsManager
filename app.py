@@ -107,9 +107,7 @@ from services.task_service import (
     clear_task_github_issue,
     ensure_task_github_config,
     get_task_github_config,
-    get_task_github_config_for_user,
     get_task_owner_github_config as get_task_owner_issue_config,
-    task_github_issue_is_open,
     task_has_github_issue,
 )
 from services.notification_service import build_notifications_summary

@@ -5,8 +5,8 @@ Revises: 202511010001_task_github_config_per_user, 68522b0ac1aa
 Create Date: 2025-10-23 17:30:55.790850
 
 """
-from alembic import op
-import sqlalchemy as sa
+
+
 
 
 # revision identifiers, used by Alembic.
