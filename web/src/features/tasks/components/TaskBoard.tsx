@@ -1,0 +1,1133 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import type { Tag, Task, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
+import { copyToClipboard, cn } from '@/lib/utils'
+import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { Icons } from '@/components/icons'
+import { Button } from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Input'
+import { MarkdownView } from '@/lib/markdown'
+
+export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
+
+export type QuickAddPayload = {
+  name: string
+  description?: string | null
+  endDate?: string | null
+  tagIds?: string[]
+}
+
+type Props = {
+  tasks: Task[]
+  tags: Tag[]
+  taskTags: TaskTag[]
+  githubByTask: Map<string, TaskGitHubConfig>
+  canEdit: boolean
+  /** Show GitHub badges/chrome (preference ON or scope integrated). */
+  githubVisible: boolean
+  /** Create/sync/close actions allowed. */
+  githubEnabled: boolean
+  onToggleComplete: (task: Task, completed: boolean) => void
+  onEdit: (task: Task) => void
+  onDelete: (task: Task) => void
+  onReorder: (orderedIds: string[]) => void
+  onQuickAdd: (input: QuickAddPayload) => Promise<void>
+  onOpenDetailedAdd: () => void
+  onSetTaskTags: (taskId: string, tagIds: string[]) => Promise<void>
+  onCreateTag: (name: string) => Promise<Tag>
+  onGithubAction: (task: Task, action: 'create' | 'sync') => Promise<void>
+  searchInputRef?: React.RefObject<HTMLInputElement | null>
+  quickAddRef?: React.RefObject<HTMLInputElement | null>
+}
+
+type TaskGroup = {
+  key: string
+  title: string
+  tagId: string | null
+  tasks: Task[]
+}
+
+export function TaskBoard({
+  tasks,
+  tags,
+  taskTags,
+  githubByTask,
+  canEdit,
+  githubVisible,
+  githubEnabled,
+  onToggleComplete,
+  onEdit,
+  onDelete,
+  onReorder,
+  onQuickAdd,
+  onOpenDetailedAdd,
+  onSetTaskTags,
+  onCreateTag,
+  onGithubAction,
+  searchInputRef,
+  quickAddRef,
+}: Props) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [search, setSearch] = useState(() => localStorage.getItem('pm-task-search') ?? '')
+  const [sortBy, setSortBy] = useState<SortMode>(
+    () => (localStorage.getItem('pm-task-sort') as SortMode) || 'rank',
+  )
+  const [showCompleted, setShowCompleted] = useState(
+    () => localStorage.getItem('pm-show-completed') === 'true',
+  )
+  const [activeTagIds, setActiveTagIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pm-active-tags') || '[]') as string[]
+    } catch {
+      return []
+    }
+  })
+
+  // Sticky panels: visible open state + preferred state when returning to top
+  const isMobile = useMediaQuery('(max-width: 767.98px)')
+  const [filtersOpen, setFiltersOpen] = useState(() => !isMobile)
+  const [addOpen, setAddOpen] = useState(() => !isMobile)
+  /** User preference when at page top (survives scroll collapse). */
+  const wantFiltersAtTop = useRef(!isMobile)
+  const wantAddAtTop = useRef(!isMobile)
+  const wasAtTop = useRef(true)
+  const [newScopeTag, setNewScopeTag] = useState('')
+
+  // #4 Quick-add details accordion
+  const [quickDetails, setQuickDetails] = useState(false)
+  const [quickName, setQuickName] = useState('')
+  const [quickDescription, setQuickDescription] = useState('')
+  const [quickEndDate, setQuickEndDate] = useState('')
+  const [quickTagIds, setQuickTagIds] = useState<string[]>([])
+  const [savingQuick, setSavingQuick] = useState(false)
+
+  const [tagEditTaskId, setTagEditTaskId] = useState<string | null>(null)
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+
+  const localSearchRef = useRef<HTMLInputElement>(null)
+  const localQuickRef = useRef<HTMLInputElement>(null)
+  const searchRef = searchInputRef ?? localSearchRef
+  const quickRef = quickAddRef ?? localQuickRef
+
+  const openFilters = () => {
+    wantFiltersAtTop.current = true
+    setFiltersOpen(true)
+  }
+  const closeFilters = () => {
+    wantFiltersAtTop.current = false
+    setFiltersOpen(false)
+  }
+  const openAdd = () => {
+    wantAddAtTop.current = true
+    setAddOpen(true)
+  }
+  const closeAdd = () => {
+    wantAddAtTop.current = false
+    setAddOpen(false)
+  }
+
+  useEffect(() => {
+    localStorage.setItem('pm-task-search', search)
+  }, [search])
+  useEffect(() => {
+    localStorage.setItem('pm-task-sort', sortBy)
+  }, [sortBy])
+  useEffect(() => {
+    localStorage.setItem('pm-show-completed', String(showCompleted))
+  }, [showCompleted])
+  useEffect(() => {
+    localStorage.setItem('pm-active-tags', JSON.stringify(activeTagIds))
+  }, [activeTagIds])
+
+  /*
+   * Scroll expand/collapse with hysteresis + cooldown.
+   * Expanding panels grow document height; collapsing shrinks it and can
+   * pull scrollY under a single threshold → infinite open/close thrash
+   * (especially near the bottom of a short list). Use separate thresholds
+   * and ignore scroll briefly after we change panel state.
+   */
+  const scrollLockUntil = useRef(0)
+  useEffect(() => {
+    // Collapse only after scrolling clearly away from the top
+    const COLLAPSE_Y = 140
+    // Expand only when truly back near the top
+    const EXPAND_Y = 20
+    const COOLDOWN_MS = 200
+
+    const lock = () => {
+      scrollLockUntil.current = performance.now() + COOLDOWN_MS
+    }
+
+    const onScroll = () => {
+      if (performance.now() < scrollLockUntil.current) return
+
+      const y = window.scrollY
+
+      if (wasAtTop.current) {
+        if (y >= COLLAPSE_Y) {
+          wasAtTop.current = false
+          // Auto-collapse UI only (keep want* for restore)
+          setFiltersOpen(false)
+          setAddOpen(false)
+          lock()
+        }
+      } else if (y <= EXPAND_Y) {
+        wasAtTop.current = true
+        setFiltersOpen(wantFiltersAtTop.current)
+        setAddOpen(wantAddAtTop.current)
+        lock()
+      }
+    }
+
+    wasAtTop.current = window.scrollY < COLLAPSE_Y
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (e.key.toLowerCase() === 'backspace') {
+        if (!search) return
+        const el = e.target as HTMLElement | null
+        const tag = (el?.tagName || '').toLowerCase()
+        const typingInOtherField =
+          (tag === 'input' || tag === 'textarea') && el !== searchRef.current
+        if (typingInOtherField) return
+        e.preventDefault()
+        setSearch('')
+        searchRef.current?.focus()
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        openAdd()
+        setQuickDetails(false)
+        queueMicrotask(() => quickRef.current?.focus())
+      }
+      if (e.key === 'ArrowDown' && document.activeElement === quickRef.current) {
+        e.preventDefault()
+        setQuickDetails(true)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [search, searchRef, quickRef])
+
+  const tagsByTask = useMemo(() => {
+    const m = new Map<string, Tag[]>()
+    const tagMap = new Map(tags.map((t) => [t.id, t]))
+    for (const tt of taskTags) {
+      const tag = tagMap.get(tt.tag_id)
+      if (!tag) continue
+      const list = m.get(tt.task_id) ?? []
+      list.push(tag)
+      m.set(tt.task_id, list)
+    }
+    return m
+  }, [tags, taskTags])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let list = tasks.filter((t) => {
+      if (!showCompleted && t.completed) return false
+      if (q) {
+        const hay = `${t.name}\n${t.description ?? ''}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      if (activeTagIds.length > 0) {
+        const ids = new Set((tagsByTask.get(t.id) ?? []).map((x) => x.id))
+        if (!activeTagIds.every((id) => ids.has(id))) return false
+      }
+      return true
+    })
+
+    list = [...list]
+    if (sortBy === 'name') {
+      list.sort((a, b) => a.name.localeCompare(b.name) || a.rank - b.rank)
+    } else if (sortBy === 'due') {
+      list.sort((a, b) => {
+        const ad = a.end_date ? new Date(a.end_date).getTime() : Number.POSITIVE_INFINITY
+        const bd = b.end_date ? new Date(b.end_date).getTime() : Number.POSITIVE_INFINITY
+        return ad - bd || a.rank - b.rank
+      })
+    } else if (sortBy === 'created') {
+      list.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || a.rank - b.rank,
+      )
+    } else if (sortBy === 'tags') {
+      // grouping handled separately; keep stable rank within group
+      list.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+    } else {
+      list.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+    }
+    return list
+  }, [tasks, search, showCompleted, activeTagIds, tagsByTask, sortBy])
+
+  // #6 Tag groups
+  const groups: TaskGroup[] = useMemo(() => {
+    if (sortBy !== 'tags') {
+      return [{ key: 'all', title: 'Tasks', tagId: null, tasks: filtered }]
+    }
+
+    const byTag = new Map<string, Task[]>()
+    const untagged: Task[] = []
+    const assigned = new Set<string>()
+
+    // Prefer active tag filters as group order; else all scope tags
+    const tagOrder =
+      activeTagIds.length > 0
+        ? tags.filter((t) => activeTagIds.includes(t.id))
+        : [...tags].sort((a, b) => a.name.localeCompare(b.name))
+
+    for (const tag of tagOrder) byTag.set(tag.id, [])
+
+    for (const task of filtered) {
+      const ttags = tagsByTask.get(task.id) ?? []
+      if (ttags.length === 0) {
+        untagged.push(task)
+        continue
+      }
+      // Put task in first matching group only (classic-ish single membership for display)
+      let placed = false
+      for (const tag of tagOrder) {
+        if (ttags.some((x) => x.id === tag.id)) {
+          byTag.get(tag.id)!.push(task)
+          assigned.add(task.id)
+          placed = true
+          break
+        }
+      }
+      if (!placed) untagged.push(task)
+    }
+
+    const result: TaskGroup[] = []
+    for (const tag of tagOrder) {
+      const list = byTag.get(tag.id) ?? []
+      if (list.length === 0 && activeTagIds.length === 0) continue
+      if (list.length === 0) continue
+      result.push({ key: tag.id, title: `#${tag.name}`, tagId: tag.id, tasks: list })
+    }
+    if (untagged.length > 0) {
+      result.push({ key: 'untagged', title: 'Untagged', tagId: null, tasks: untagged })
+    }
+    if (result.length === 0) {
+      result.push({ key: 'empty', title: 'Tasks', tagId: null, tasks: [] })
+    }
+    return result
+  }, [filtered, sortBy, tags, tagsByTask, activeTagIds])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const canDrag =
+    canEdit && sortBy === 'rank' && !search && activeTagIds.length === 0
+
+  const onDragEnd = (event: DragEndEvent) => {
+    if (!canDrag) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const ids = filtered.map((t) => t.id)
+    const oldIndex = ids.indexOf(String(active.id))
+    const newIndex = ids.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const nextVisible = arrayMove(ids, oldIndex, newIndex)
+    const hidden = tasks.filter((t) => !nextVisible.includes(t.id)).sort((a, b) => a.rank - b.rank)
+    onReorder([...nextVisible, ...hidden.map((t) => t.id)])
+  }
+
+  const toggleTag = (id: string) => {
+    setActiveTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  const resetQuick = () => {
+    setQuickName('')
+    setQuickDescription('')
+    setQuickEndDate('')
+    setQuickTagIds([])
+    setQuickDetails(false)
+  }
+
+  const submitQuick = async () => {
+    const name = quickName.trim()
+    if (!name) return
+    setSavingQuick(true)
+    try {
+      await onQuickAdd({
+        name,
+        description: quickDescription.trim() || null,
+        endDate: quickEndDate ? new Date(quickEndDate).toISOString() : null,
+        tagIds: quickTagIds,
+      })
+      resetQuick()
+      quickRef.current?.focus()
+    } catch (err) {
+      toast.push(err instanceof Error ? err.message : 'Could not add task', 'error')
+    } finally {
+      setSavingQuick(false)
+    }
+  }
+
+  const stickySolid = filtersOpen || addOpen
+  const showingPills = !filtersOpen || !addOpen
+  const chromeMode =
+    filtersOpen && addOpen ? 'panels' : showingPills && !stickySolid ? 'pills' : 'mixed'
+
+  return (
+    <div className="scope-task-layout space-y-4" data-chrome={chromeMode}>
+      {/* Sticky header + floating pills */}
+      <div
+        className={cn(
+          'sticky-task-chrome sticky z-20 -mx-1 px-1 py-2 transition-colors',
+          stickySolid
+            ? 'is-expanded bg-[var(--color-bg)]/95 backdrop-blur-md'
+            : 'pointer-events-none bg-transparent',
+        )}
+      >
+        {/* Floating pills when a panel is collapsed — elevated bubble style */}
+        {showingPills ? (
+          <div className="pointer-events-auto sticky-pill-bar mb-3 flex items-center justify-between gap-3">
+            <div className="flex gap-3">
+              {canEdit && !addOpen ? (
+                <button
+                  type="button"
+                  className="sticky-pill sticky-pill-bubble"
+                  title="Add task"
+                  onClick={() => {
+                    openAdd()
+                    queueMicrotask(() => quickRef.current?.focus())
+                  }}
+                >
+                  <Icons.Plus size="1.25em" />
+                  <span>Add</span>
+                </button>
+              ) : (
+                <span />
+              )}
+            </div>
+            <div className="flex gap-3">
+              {!filtersOpen ? (
+                <button
+                  type="button"
+                  className="sticky-pill sticky-pill-bubble"
+                  title="Filters"
+                  onClick={() => openFilters()}
+                >
+                  <Icons.Filter size="1.2em" />
+                  <span>Filters</span>
+                  {activeTagIds.length > 0 || search ? (
+                    <span className="sticky-pill-dot" />
+                  ) : null}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="pointer-events-auto space-y-3">
+          {filtersOpen ? (
+            <section className="notebook-panel floating-elevated space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold">Filters</span>
+                <button
+                  type="button"
+                  className="icon-btn !h-8 !w-8"
+                  title="Collapse filters"
+                  onClick={() => closeFilters()}
+                >
+                  <Icons.X size="0.85em" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                <label className="block min-w-0 flex-1 text-sm">
+                  <span className="mb-1 block font-medium text-[var(--color-muted)]">
+                    Search tasks
+                  </span>
+                  <input
+                    ref={searchRef}
+                    className="field-input"
+                    placeholder="Search by name or description"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape' && search) {
+                        e.preventDefault()
+                        setSearch('')
+                      }
+                    }}
+                  />
+                </label>
+                <label className="block w-full text-sm md:w-44">
+                  <span className="mb-1 block font-medium text-[var(--color-muted)]">Sort by</span>
+                  <select
+                    className="field-input"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortMode)}
+                  >
+                    <option value="rank">Rank</option>
+                    <option value="name">Name</option>
+                    <option value="due">Due date</option>
+                    <option value="created">Created</option>
+                    <option value="tags">Tags (groups)</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 pb-2 text-sm text-[var(--color-muted)]">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-8 accent-[var(--color-primary)]"
+                    checked={showCompleted}
+                    onChange={(e) => setShowCompleted(e.target.checked)}
+                  />
+                  Show completed
+                </label>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  <Icons.Tag size="0.9em" />
+                  <span>Tags:</span>
+                  {activeTagIds.length > 0 ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-0.5 normal-case tracking-normal underline decoration-wavy"
+                      onClick={() => setActiveTagIds([])}
+                    >
+                      <Icons.X size="0.85em" /> clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.length === 0 ? (
+                    <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
+                  ) : (
+                    tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        className={cn('tag-chip', activeTagIds.includes(tag.id) && 'active')}
+                        onClick={() => toggleTag(tag.id)}
+                      >
+                        #{tag.name}
+                        {activeTagIds.includes(tag.id) ? <Icons.X size="0.75em" /> : null}
+                      </button>
+                    ))
+                  )}
+                </div>
+                {sortBy === 'tags' ? (
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Tasks are listed under tag group headers. Drag reorder is disabled in this mode.
+                  </p>
+                ) : !canDrag && canEdit ? (
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Drag reorder works when sort is <strong>Rank</strong> and no search/tag filters.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {/* #4 Quick add + details accordion */}
+          {canEdit && addOpen ? (
+            <section className="notebook-panel floating-elevated !py-2 space-y-2">
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <span className="text-sm font-semibold">Add task</span>
+                <button
+                  type="button"
+                  className="icon-btn !h-8 !w-8"
+                  title="Collapse"
+                  onClick={() => closeAdd()}
+                >
+                  <Icons.X size="0.85em" />
+                </button>
+              </div>
+              <form
+                className="space-y-2"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  await submitQuick()
+                }}
+              >
+                <div className="quick-add">
+                  <button
+                    type="button"
+                    className="px-3 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    title={quickDetails ? 'Hide details' : 'Show details (Ctrl+↓)'}
+                    onClick={() => setQuickDetails((v) => !v)}
+                  >
+                    {quickDetails ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
+                  </button>
+                  <input
+                    ref={quickRef}
+                    value={quickName}
+                    onChange={(e) => setQuickName(e.target.value)}
+                    placeholder="Add new task…"
+                    disabled={savingQuick}
+                  />
+                  <div className="quick-side">
+                    {quickName ? (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Clear"
+                        onClick={() => resetQuick()}
+                      >
+                        <Icons.X />
+                      </button>
+                    ) : null}
+                    <button
+                      type="submit"
+                      className="icon-btn"
+                      title="Save task"
+                      disabled={savingQuick || !quickName.trim()}
+                    >
+                      <Icons.Save />
+                    </button>
+                  </div>
+                </div>
+
+                {quickDetails ? (
+                  <div className="space-y-2 rounded-[var(--radius-sketch-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3">
+                    <label className="block text-sm">
+                      <span className="mb-1 block text-[var(--color-muted)]">Description</span>
+                      <Textarea
+                        className="min-h-[72px] bg-[var(--color-surface)]"
+                        value={quickDescription}
+                        onChange={(e) => setQuickDescription(e.target.value)}
+                        placeholder="Optional details (Markdown)…"
+                      />
+                    </label>
+                    <label className="block text-sm sm:max-w-xs">
+                      <span className="mb-1 block text-[var(--color-muted)]">Due date</span>
+                      <input
+                        type="date"
+                        className="field-input"
+                        value={quickEndDate}
+                        onChange={(e) => setQuickEndDate(e.target.value)}
+                      />
+                    </label>
+                    <div>
+                      <span className="mb-1 block text-sm text-[var(--color-muted)]">Tags</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {tags.length === 0 ? (
+                          <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
+                        ) : (
+                          tags.map((tag) => {
+                            const on = quickTagIds.includes(tag.id)
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                className={cn('tag-chip', on && 'active')}
+                                onClick={() =>
+                                  setQuickTagIds((prev) =>
+                                    on ? prev.filter((id) => id !== tag.id) : [...prev, tag.id],
+                                  )
+                                }
+                              >
+                                #{tag.name}
+                              </button>
+                            )
+                          })
+                        )}
+                      </div>
+                      <form
+                        className="mt-2 flex flex-wrap gap-2"
+                        onSubmit={async (e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const name = newScopeTag.trim().replace(/^#/, '')
+                          if (!name) return
+                          try {
+                            const tag = await onCreateTag(name)
+                            setQuickTagIds((prev) =>
+                              prev.includes(tag.id) ? prev : [...prev, tag.id],
+                            )
+                            setNewScopeTag('')
+                            toast.push(`Tag #${tag.name} created`, 'success')
+                          } catch {
+                            /* toast in parent */
+                          }
+                        }}
+                      >
+                        <input
+                          className="field-input min-w-[10rem] flex-1"
+                          placeholder="New tag name…"
+                          value={newScopeTag}
+                          onChange={(e) => setNewScopeTag(e.target.value)}
+                        />
+                        <Button type="submit" size="sm" variant="secondary">
+                          <Icons.Plus size="0.9em" /> Add tag
+                        </Button>
+                      </form>
+                    </div>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      Or open the full editor:{' '}
+                      <button
+                        type="button"
+                        className="underline decoration-wavy"
+                        onClick={onOpenDetailedAdd}
+                      >
+                        detailed form
+                      </button>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="px-1 text-xs text-[var(--color-muted)]">
+                    <span className="kbd">Ctrl</span>+<span className="kbd">↓</span> for details ·{' '}
+                    <span className="kbd">Ctrl</span>+<span className="kbd">↑</span> focus add
+                  </p>
+                )}
+              </form>
+            </section>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Task list — flat or tag groups */}
+      <section className="space-y-4">
+        {filtered.length === 0 ? (
+          <div className="notebook-panel py-10 text-center text-sm text-[var(--color-muted)]">
+            No tasks match these filters.
+          </div>
+        ) : (
+          groups.map((group) => (
+            <div key={group.key} className="space-y-2">
+              {sortBy === 'tags' ? (
+                <div className="task-group-header sticky z-10 flex flex-wrap items-center gap-2 bg-[var(--color-bg)]/95 py-1.5 backdrop-blur-sm">
+                  <h3 className="task-group-title text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    {group.title}
+                  </h3>
+                  <span className="text-xs text-[var(--color-muted)]">({group.tasks.length})</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="icon-btn !h-7 !w-7"
+                      title="Copy group tasks"
+                      onClick={async () => {
+                        const text = group.tasks
+                          .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.name}`)
+                          .join('\n')
+                        const ok = await copyToClipboard(text)
+                        toast.push(ok ? 'Group copied' : 'Copy failed', ok ? 'success' : 'error')
+                      }}
+                    >
+                      <Icons.Clipboard size="0.85em" />
+                    </button>
+                    {canEdit && group.tagId ? (
+                      <button
+                        type="button"
+                        className="icon-btn !h-7 !w-7"
+                        title="Add task with this tag"
+                        onClick={() => {
+                          openAdd()
+                          setQuickDetails(true)
+                          setQuickTagIds([group.tagId!])
+                          queueMicrotask(() => quickRef.current?.focus())
+                        }}
+                      >
+                        <Icons.Plus size="0.85em" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={onDragEnd}
+              >
+                <SortableContext
+                  items={group.tasks.map((t) => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {group.tasks.map((task) => (
+                    <SortableTaskRow
+                      key={task.id}
+                      task={task}
+                      tags={tagsByTask.get(task.id) ?? []}
+                      allTags={tags}
+                      github={githubVisible ? githubByTask.get(task.id) : undefined}
+                      canEdit={canEdit}
+                      canDrag={canDrag}
+                      githubVisible={githubVisible}
+                      githubEnabled={githubEnabled}
+                      expanded={expandedTaskId === task.id}
+                      tagEditOpen={tagEditTaskId === task.id}
+                      onToggleExpand={() =>
+                        setExpandedTaskId((id) => (id === task.id ? null : task.id))
+                      }
+                      onToggleComplete={onToggleComplete}
+                      onEdit={onEdit}
+                      onConfirmDelete={async (task) => {
+                        const ok = await confirm({
+                          title: 'Delete task?',
+                          message: `Delete “${task.name}”? This cannot be undone.`,
+                          confirmLabel: 'Delete',
+                          cancelLabel: 'Cancel',
+                          danger: true,
+                        })
+                        if (ok) onDelete(task)
+                      }}
+                      onCopy={async () => {
+                        const ok = await copyToClipboard(task.name)
+                        toast.push(
+                          ok ? 'Task name copied' : 'Copy failed',
+                          ok ? 'success' : 'error',
+                        )
+                      }}
+                      onGithub={async (action) => {
+                        try {
+                          await onGithubAction(task, action)
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : 'GitHub action failed',
+                            'error',
+                          )
+                        }
+                      }}
+                      onToggleTagEdit={() =>
+                        setTagEditTaskId((id) => (id === task.id ? null : task.id))
+                      }
+                      onSetTags={async (ids) => {
+                        try {
+                          await onSetTaskTags(task.id, ids)
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : 'Tag update failed',
+                            'error',
+                          )
+                        }
+                      }}
+                      onCreateTag={async (name) => {
+                        try {
+                          const tag = await onCreateTag(name)
+                          const current = (tagsByTask.get(task.id) ?? []).map((t) => t.id)
+                          await onSetTaskTags(task.id, [...current, tag.id])
+                          return tag
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : 'Create tag failed',
+                            'error',
+                          )
+                          throw e
+                        }
+                      }}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+          ))
+        )}
+      </section>
+
+    </div>
+  )
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(query).matches : false,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const fn = () => setMatches(mq.matches)
+    fn()
+    mq.addEventListener('change', fn)
+    return () => mq.removeEventListener('change', fn)
+  }, [query])
+  return matches
+}
+
+function SortableTaskRow({
+  task,
+  tags,
+  allTags,
+  github,
+  canEdit,
+  canDrag,
+  githubVisible,
+  githubEnabled,
+  expanded,
+  tagEditOpen,
+  onToggleExpand,
+  onToggleComplete,
+  onEdit,
+  onConfirmDelete,
+  onCopy,
+  onGithub,
+  onToggleTagEdit,
+  onSetTags,
+  onCreateTag,
+}: {
+  task: Task
+  tags: Tag[]
+  allTags: Tag[]
+  github?: TaskGitHubConfig
+  canEdit: boolean
+  canDrag: boolean
+  githubVisible: boolean
+  githubEnabled: boolean
+  expanded: boolean
+  tagEditOpen: boolean
+  onToggleExpand: () => void
+  onToggleComplete: (task: Task, completed: boolean) => void
+  onEdit: (task: Task) => void
+  onConfirmDelete: (task: Task) => void
+  onCopy: () => void
+  onGithub: (action: 'create' | 'sync') => Promise<void>
+  onToggleTagEdit: () => void
+  onSetTags: (ids: string[]) => Promise<void>
+  onCreateTag: (name: string) => Promise<Tag>
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+    disabled: !canDrag,
+  })
+  const [newTag, setNewTag] = useState('')
+  const [ghBusy, setGhBusy] = useState(false)
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const selected = new Set(tags.map((t) => t.id))
+  const hasDetails = Boolean(
+    task.description?.trim() || task.end_date || tags.length > 0 || github?.github_issue_number,
+  )
+
+  return (
+    <div className="relative" ref={setNodeRef} style={style}>
+      <div
+        className={cn(
+          'task-row',
+          task.completed && 'completed',
+          isDragging && 'dragging',
+          expanded && 'expanded-row',
+        )}
+      >
+        <div className="task-row-main">
+          <button
+            type="button"
+            className={cn('grip', !canDrag && 'opacity-30')}
+            title={canDrag ? 'Drag to reorder' : 'Reorder when sorted by Rank'}
+            {...(canDrag ? { ...attributes, ...listeners } : {})}
+          >
+            <Icons.Grip />
+          </button>
+
+          <button
+            type="button"
+            className="task-title"
+            title={hasDetails ? (expanded ? 'Collapse details' : 'Show details') : task.name}
+            onClick={onToggleExpand}
+          >
+            {task.name}
+          </button>
+
+          {githubVisible && github?.github_issue_number ? (
+            <a
+              className={cn('pill-badge', !githubEnabled && 'opacity-60')}
+              href={github.github_issue_url ?? undefined}
+              target="_blank"
+              rel="noreferrer"
+              title={
+                githubEnabled
+                  ? 'Open GitHub issue'
+                  : 'GitHub issue (read-only — enable integration in Settings to sync)'
+              }
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Icons.Github /> #{github.github_issue_number}
+            </a>
+          ) : null}
+
+          {githubVisible && github?.github_milestone_title ? (
+            <span className="pill-badge" title="Milestone">
+              <Icons.Flag /> {github.github_milestone_title}
+            </span>
+          ) : null}
+
+          {tags.slice(0, 2).map((t) => (
+            <span key={t.id} className="pill-badge">
+              #{t.name}
+            </span>
+          ))}
+        </div>
+
+        <div className="task-row-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            title={task.completed ? 'Mark incomplete' : 'Complete'}
+            disabled={!canEdit}
+            onClick={() => onToggleComplete(task, !task.completed)}
+          >
+            <Icons.Check />
+          </button>
+          <button type="button" className="icon-btn" title="Copy name" onClick={onCopy}>
+            <Icons.Copy />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="Tags"
+            disabled={!canEdit}
+            onClick={onToggleTagEdit}
+          >
+            <Icons.Tag />
+          </button>
+          {githubVisible && (githubEnabled || github?.github_issue_number) ? (
+            <button
+              type="button"
+              className={cn('icon-btn', !githubEnabled && 'opacity-50')}
+              title={
+                !githubEnabled
+                  ? 'GitHub actions need integration enabled in Settings'
+                  : github?.github_issue_number
+                    ? 'Sync GitHub issue'
+                    : 'Create GitHub issue'
+              }
+              disabled={!canEdit || !githubEnabled || ghBusy}
+              onClick={async () => {
+                setGhBusy(true)
+                try {
+                  await onGithub(github?.github_issue_number ? 'sync' : 'create')
+                } finally {
+                  setGhBusy(false)
+                }
+              }}
+            >
+              <Icons.Github />
+            </button>
+          ) : null}
+          <button type="button" className="icon-btn" title="Edit" onClick={() => onEdit(task)}>
+            <Icons.Edit />
+          </button>
+          <button
+            type="button"
+            className="icon-btn danger"
+            title="Delete"
+            disabled={!canEdit}
+            onClick={() => onConfirmDelete(task)}
+          >
+            <Icons.Trash />
+          </button>
+        </div>
+      </div>
+
+      <div className={cn('task-expand', expanded && 'open')}>
+        <div className="task-expand-inner">
+          <div className="task-expand-body space-y-3">
+            {task.end_date ? (
+              <p className="text-sm text-[var(--color-muted)]">
+                Due{' '}
+                <strong className="text-[var(--color-text)]">
+                  {new Date(task.end_date).toLocaleDateString()}
+                </strong>
+              </p>
+            ) : null}
+            {tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <span key={t.id} className="pill-badge">
+                    #{t.name}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {github?.github_issue_url ? (
+              <p className="text-sm">
+                <a
+                  className="inline-flex items-center gap-1 underline decoration-wavy"
+                  href={github.github_issue_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Icons.Github /> Issue #{github.github_issue_number}
+                  {github.github_issue_state ? ` · ${github.github_issue_state}` : ''}
+                </a>
+              </p>
+            ) : null}
+            {task.description?.trim() ? (
+              <MarkdownView source={task.description} />
+            ) : (
+              <p className="text-sm text-[var(--color-muted)]">No description.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {tagEditOpen ? (
+        <div className="notebook-panel mt-1 space-y-2 p-3">
+          <div className="flex flex-wrap gap-1.5">
+            {allTags.map((tag) => {
+              const on = selected.has(tag.id)
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  className={cn('tag-chip', on && 'active')}
+                  onClick={() => {
+                    const next = on
+                      ? tags.filter((t) => t.id !== tag.id).map((t) => t.id)
+                      : [...tags.map((t) => t.id), tag.id]
+                    void onSetTags(next)
+                  }}
+                >
+                  #{tag.name}
+                </button>
+              )
+            })}
+          </div>
+          <form
+            className="flex gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const name = newTag.trim().replace(/^#/, '')
+              if (!name) return
+              await onCreateTag(name)
+              setNewTag('')
+            }}
+          >
+            <input
+              className="field-input flex-1"
+              placeholder="New tag…"
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+            />
+            <Button type="submit" size="sm" variant="secondary">
+              Add
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onToggleTagEdit}>
+              Done
+            </Button>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  )
+}

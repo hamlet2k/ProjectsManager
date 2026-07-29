@@ -1,0 +1,35 @@
+# Supabase local/dev config (optional). Cloud project is primary for this app.
+
+[project]
+id = "projects-manager"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**", "https://*.vercel.app/**"]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[functions.github-proxy]
+verify_jwt = true
+
+[functions.github-credentials]
+verify_jwt = true
