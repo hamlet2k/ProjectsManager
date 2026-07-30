@@ -87,52 +87,56 @@ type ScopeConfig = {
   updated_at?: string
 }
 
-/** Installation / PAT used only for product feedback issues (not the user's PAT). */
+/**
+ * Product feedback uses the "ProjectsManager Feedback Bot" GitHub App (or a
+ * dedicated machine token). Callers never need a personal PAT — same model as
+ * the classic Flask /api/feedback flow (utils/github_token.py).
+ *
+ * Secrets (edge function):
+ *   GITHUB_FEEDBACK_REPOSITORY  e.g. hamlet2k/ProjectsManager
+ *   GITHUB_APP_ID               App ID from the GitHub App settings page
+ *   GITHUB_INSTALLATION_ID      Installation id on that account/org
+ *   GITHUB_APP_PRIVATE_KEY      Full PEM (PKCS#1 or PKCS#8); newlines may be \n
+ *
+ * Optional escape hatch for ops only:
+ *   GITHUB_FEEDBACK_TOKEN       fine-grained/classic PAT with Issues write
+ */
 async function getFeedbackGitHubToken(): Promise<string> {
   const direct = (Deno.env.get('GITHUB_FEEDBACK_TOKEN') || '').trim()
   if (direct) return direct
 
   const appId = (Deno.env.get('GITHUB_APP_ID') || '').trim()
   const installationId = (Deno.env.get('GITHUB_INSTALLATION_ID') || '').trim()
-  const privateKeyPem = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
+  let privateKeyPem = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
   if (!appId || !installationId || !privateKeyPem) {
     throw new Error(
-      'Feedback is not configured. Set GITHUB_FEEDBACK_TOKEN or GitHub App secrets (GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY) plus GITHUB_FEEDBACK_REPOSITORY on the edge function.',
+      'Feedback bot is not configured. Set GITHUB_APP_ID, GITHUB_INSTALLATION_ID, and GITHUB_APP_PRIVATE_KEY (ProjectsManager Feedback Bot) on the edge function.',
     )
   }
 
-  // Minimal RS256 JWT for GitHub Apps (10 min max)
-  const jose = await import('https://esm.sh/jose@5.2.0')
-  const pem = privateKeyPem.includes('\\n')
-    ? privateKeyPem.replace(/\\n/g, '\n')
-    : privateKeyPem
-  const key = await jose.importPKCS8(pem, 'RS256')
-  const now = Math.floor(Date.now() / 1000)
-  const appJwt = await new jose.SignJWT({})
-    .setProtectedHeader({ alg: 'RS256' })
-    .setIssuedAt(now - 60)
-    .setExpirationTime(now + 9 * 60)
-    .setIssuer(appId)
-    .sign(key)
-
-  const tokenRes = await fetch(
-    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
-    {
-      method: 'POST',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${appJwt}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    },
-  )
-  if (!tokenRes.ok) {
-    const text = await tokenRes.text()
-    throw new Error(`Could not mint GitHub App token (${tokenRes.status}): ${text.slice(0, 200)}`)
+  // Supabase secrets UI often stores PEM with literal \n sequences
+  privateKeyPem = privateKeyPem.replace(/\\n/g, '\n').trim()
+  if (!privateKeyPem.includes('BEGIN')) {
+    throw new Error('GITHUB_APP_PRIVATE_KEY does not look like a PEM private key')
   }
-  const data = (await tokenRes.json()) as { token?: string }
-  if (!data.token) throw new Error('GitHub App token response missing token')
-  return data.token
+
+  // @octokit/auth-app accepts GitHub's usual PKCS#1 RSA PEMs (same as PyGithub)
+  const { createAppAuth } = await import('https://esm.sh/@octokit/auth-app@6.1.1')
+  const auth = createAppAuth({
+    appId,
+    privateKey: privateKeyPem,
+    installationId: Number(installationId),
+  })
+  try {
+    const result = await auth({ type: 'installation' })
+    if (!result?.token) throw new Error('GitHub App auth returned no installation token')
+    return result.token
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `Could not mint Feedback Bot installation token. Check App ID, installation id, PEM, and that the app is installed on the feedback repo. (${msg.slice(0, 200)})`,
+    )
+  }
 }
 
 Deno.serve(async (req) => {
@@ -200,37 +204,18 @@ Deno.serve(async (req) => {
         `**Submitted:** ${new Date().toISOString()}`,
       ].join('\n')
 
-      // Prefer dedicated feedback token / GitHub App; fall back to caller's PAT.
-      let feedbackToken: string | null = null
-      let feedbackTokenSource = 'app'
+      // Always use Feedback Bot (GitHub App) / dedicated token — never the user's PAT.
+      // That way every signed-in app user can submit issues without linking GitHub.
+      let feedbackToken: string
       try {
         feedbackToken = await getFeedbackGitHubToken()
-      } catch {
-        feedbackToken = null
-      }
-      if (!feedbackToken) {
-        const secretFb = Deno.env.get('GITHUB_TOKEN_SECRET')
-        if (secretFb && secretFb.length >= 16) {
-          const { data: credFb } = await admin
-            .from('github_credentials')
-            .select('token_encrypted')
-            .eq('user_id', user.id)
-            .maybeSingle()
-          if (credFb?.token_encrypted) {
-            try {
-              feedbackToken = (await decryptToken(credFb.token_encrypted, secretFb)).trim()
-              feedbackTokenSource = 'user_pat'
-            } catch {
-              feedbackToken = null
-            }
-          }
-        }
-      }
-      if (!feedbackToken) {
+      } catch (e) {
         return json(
           {
             error:
-              'Feedback is not configured. Set GITHUB_FEEDBACK_TOKEN (or GitHub App secrets) on the edge function, or save your GitHub PAT under Settings with access to the feedback repository.',
+              e instanceof Error
+                ? e.message
+                : 'Feedback bot is not configured on the server.',
           },
           500,
         )
@@ -239,7 +224,7 @@ Deno.serve(async (req) => {
       try {
         const create = (labels: string[]) =>
           ghJson<{ number: number; html_url: string }>(
-            feedbackToken!,
+            feedbackToken,
             `/repos/${owner}/${repoName}/issues`,
             {
               method: 'POST',
@@ -261,7 +246,7 @@ Deno.serve(async (req) => {
           ok: true,
           issue_number: issue.number,
           issue_url: issue.html_url,
-          via: feedbackTokenSource,
+          via: 'feedback_bot',
         })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Could not create feedback issue'

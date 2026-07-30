@@ -186,7 +186,8 @@ export function FeedbackModal({ open, onClose }: Props) {
           </p>
         </Field>
         <p className="text-xs text-[var(--color-muted)]">
-          Submits a GitHub issue on the Projects Manager repository so we can track and respond.
+          Opens a GitHub issue via the ProjectsManager Feedback Bot — you do not need a GitHub
+          account or personal token. Optional contact is stored on the issue if we need to follow up.
         </p>
       </div>
     </Modal>
