@@ -87,6 +87,113 @@ type ScopeConfig = {
   updated_at?: string
 }
 
+/** Decode PEM body (base64) → DER bytes. */
+function pemBodyToDer(pem: string, typeHint: string): Uint8Array {
+  const re = new RegExp(
+    `-----BEGIN[^-]*${typeHint}[^-]*-----[\\s\\S]*?-----END[^-]*${typeHint}[^-]*-----`,
+    'i',
+  )
+  const block = pem.match(re)?.[0] ?? pem
+  const b64 = block
+    .replace(/-----BEGIN[^-]+-----/g, '')
+    .replace(/-----END[^-]+-----/g, '')
+    .replace(/\s+/g, '')
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+function derToPem(der: Uint8Array, label: string): string {
+  // Avoid String.fromCharCode(...largeArray) stack limits on 2048-bit keys
+  let binary = ''
+  for (let i = 0; i < der.length; i++) binary += String.fromCharCode(der[i]!)
+  const b64 = btoa(binary)
+  const lines = b64.match(/.{1,64}/g) ?? [b64]
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`
+}
+
+function encodeDerLength(len: number): Uint8Array {
+  if (len < 0x80) return Uint8Array.of(len)
+  if (len < 0x100) return Uint8Array.of(0x81, len)
+  if (len < 0x10000) return Uint8Array.of(0x82, (len >> 8) & 0xff, len & 0xff)
+  if (len < 0x1000000) {
+    return Uint8Array.of(0x83, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff)
+  }
+  return Uint8Array.of(
+    0x84,
+    (len >> 24) & 0xff,
+    (len >> 16) & 0xff,
+    (len >> 8) & 0xff,
+    len & 0xff,
+  )
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    o += p.length
+  }
+  return out
+}
+
+function encodeDerSequence(content: Uint8Array): Uint8Array {
+  return concatBytes(Uint8Array.of(0x30), encodeDerLength(content.length), content)
+}
+
+function encodeDerOctetString(content: Uint8Array): Uint8Array {
+  return concatBytes(Uint8Array.of(0x04), encodeDerLength(content.length), content)
+}
+
+/**
+ * GitHub downloads App keys as PKCS#1 (`BEGIN RSA PRIVATE KEY`).
+ * universal-github-app-jwt / WebCrypto only accept PKCS#8 (`BEGIN PRIVATE KEY`).
+ * Wrap PKCS#1 DER in a minimal PKCS#8 PrivateKeyInfo.
+ */
+function rsaPkcs1PemToPkcs8Pem(pkcs1Pem: string): string {
+  const pkcs1Der = pemBodyToDer(pkcs1Pem, 'RSA PRIVATE KEY')
+  // AlgorithmIdentifier: rsaEncryption OID 1.2.840.113549.1.1.1 + NULL
+  const algorithmIdentifier = Uint8Array.of(
+    0x30,
+    0x0d,
+    0x06,
+    0x09,
+    0x2a,
+    0x86,
+    0x48,
+    0x86,
+    0xf7,
+    0x0d,
+    0x01,
+    0x01,
+    0x01,
+    0x05,
+    0x00,
+  )
+  const version = Uint8Array.of(0x02, 0x01, 0x00) // INTEGER 0
+  const privateKey = encodeDerOctetString(pkcs1Der)
+  const pkcs8Der = encodeDerSequence(concatBytes(version, algorithmIdentifier, privateKey))
+  return derToPem(pkcs8Der, 'PRIVATE KEY')
+}
+
+/** Normalize PEM from secrets UI / Windows paste; convert PKCS#1 → PKCS#8 if needed. */
+function normalizeGitHubAppPrivateKey(raw: string): string {
+  let pem = raw.trim()
+  // Secrets often store literal \n; Windows paste may use \r\n
+  if (pem.includes('\\n')) pem = pem.replace(/\\n/g, '\n')
+  pem = pem.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+
+  if (pem.includes('BEGIN PRIVATE KEY')) return pem.endsWith('\n') ? pem : `${pem}\n`
+  if (pem.includes('BEGIN RSA PRIVATE KEY')) return rsaPkcs1PemToPkcs8Pem(pem)
+
+  throw new Error(
+    'GITHUB_APP_PRIVATE_KEY must be a PEM starting with BEGIN RSA PRIVATE KEY or BEGIN PRIVATE KEY',
+  )
+}
+
 /**
  * Product feedback uses the "ProjectsManager Feedback Bot" GitHub App (or a
  * dedicated machine token). Callers never need a personal PAT — same model as
@@ -96,7 +203,7 @@ type ScopeConfig = {
  *   GITHUB_FEEDBACK_REPOSITORY  e.g. hamlet2k/ProjectsManager
  *   GITHUB_APP_ID               App ID from the GitHub App settings page
  *   GITHUB_INSTALLATION_ID      Installation id on that account/org
- *   GITHUB_APP_PRIVATE_KEY      Full PEM (PKCS#1 or PKCS#8); newlines may be \n
+ *   GITHUB_APP_PRIVATE_KEY      Full PEM from GitHub (PKCS#1 or PKCS#8 OK)
  *
  * Optional escape hatch for ops only:
  *   GITHUB_FEEDBACK_TOKEN       fine-grained/classic PAT with Issues write
@@ -107,20 +214,21 @@ async function getFeedbackGitHubToken(): Promise<string> {
 
   const appId = (Deno.env.get('GITHUB_APP_ID') || '').trim()
   const installationId = (Deno.env.get('GITHUB_INSTALLATION_ID') || '').trim()
-  let privateKeyPem = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
-  if (!appId || !installationId || !privateKeyPem) {
+  const rawKey = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
+  if (!appId || !installationId || !rawKey) {
     throw new Error(
       'Feedback bot is not configured. Set GITHUB_APP_ID, GITHUB_INSTALLATION_ID, and GITHUB_APP_PRIVATE_KEY (ProjectsManager Feedback Bot) on the edge function.',
     )
   }
 
-  // Supabase secrets UI often stores PEM with literal \n sequences
-  privateKeyPem = privateKeyPem.replace(/\\n/g, '\n').trim()
-  if (!privateKeyPem.includes('BEGIN')) {
-    throw new Error('GITHUB_APP_PRIVATE_KEY does not look like a PEM private key')
+  let privateKeyPem: string
+  try {
+    privateKeyPem = normalizeGitHubAppPrivateKey(rawKey)
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : 'Invalid GITHUB_APP_PRIVATE_KEY')
   }
 
-  // @octokit/auth-app accepts GitHub's usual PKCS#1 RSA PEMs (same as PyGithub)
+  // Spread large PEMs carefully for btoa in derToPem — use chunked btoa if needed
   const { createAppAuth } = await import('https://esm.sh/@octokit/auth-app@6.1.1')
   const auth = createAppAuth({
     appId,
@@ -134,7 +242,7 @@ async function getFeedbackGitHubToken(): Promise<string> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(
-      `Could not mint Feedback Bot installation token. Check App ID, installation id, PEM, and that the app is installed on the feedback repo. (${msg.slice(0, 200)})`,
+      `Could not mint Feedback Bot installation token. Check App ID, installation id, PEM, and that the app is installed on the feedback repo. (${msg.slice(0, 240)})`,
     )
   }
 }
