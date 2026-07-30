@@ -130,4 +130,50 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 
 1. **Next engineering focus:** remaining P2 (link existing issue, Project board on create), then help system, then polish/AI.  
 2. Integration enable/disable matrix: **`docs/github-integration-matrix.md`** (issue #35 adapted).  
-3. Your long list stays context; this file is the **authoritative** backlog for the new repo.
+3. Your long list stays context; this file is the **authoritative** backlog for the new repo.  
+4. **Historical AI export** (below) informs priorities but does not replace this file.
+
+---
+
+## Historical project export (AI backlog intake)
+
+Source export: `projects-manager-app-tasks.md` (206 tasks, 2026-07-30) via Import/Export → AI backlog.
+
+### Instructions for the AI (from that export — keep applying)
+
+1. These tasks live on the **Projects Manager App** backlog in the product.  
+2. They **may be outdated** and were often written for the **old Flask app**.  
+3. **Intake as knowledge** to inform the **future** backlog — do not re-implement Flask-era details blindly; re-map to the Supabase/React stack and current product decisions.
+
+### Status map (new stack) — high-signal items from that export
+
+| Theme / old # | Intent | New-stack stance |
+|---------------|--------|------------------|
+| #1 Signup ↔ profile | Consistency, validation, security | Largely done (Supabase Auth, OAuth, recovery); no Flask CSRF |
+| #2 Scope edit modal empty | Bug | Verify / fix if still present on project edit |
+| #3 PR/commit review | Process | Ongoing |
+| #4 GH switch overlaps label | UI bug | Check Settings / project GitHub modal |
+| #5 / #35 GH UI when disabled | Read-only chrome | **Done** (matrix + soft-disable) |
+| #9–16, #19–20, #26, #38, #49–50 Chatbot/voice/AI | Epic | **P3** |
+| #12 Chevron expand | Expand task details | Partially done (title expand); chevron polish optional |
+| #17 / #44 Import from GitHub | Link existing issue | **P2 open** |
+| #18 Per-user scope GH config | Multi-binding | Superseded: **one repo/project** + user PAT |
+| #21 Mobile auto-collapse filters | UX | **Done** |
+| #22 Keyboard shortcuts | Consolidate | **P1 open** |
+| #23 Scopes → projects | Rename UI | **Done** |
+| #25 Separate GH tables | Schema | Done conceptually (scope/task github configs) |
+| #27 Delete task group | Tag group bulk delete | Still useful |
+| #28 Help system | Help modal + index | **P4 open** |
+| #29 / #49 Advanced import/export | Modal + formats | **Core done**; user/scope advanced flag optional |
+| #30 Multi-integration link modal | Jira etc. | Deferred until 2nd provider |
+| #35 Flash new task | Scroll + highlight | **Done** |
+| #36 Collapsed vs expanded icons | Row chrome | **P1 open** |
+| #39 End → due date | Labels | **Done** |
+| #41 Feedback | Navbar feedback | **Done** (Feedback Bot → GH issue) |
+| #42 SSO | Google/GitHub | **Done** |
+| #43 Spinners on sync | UX | Largely done on GH actions |
+| #44–48 Testing, donate, name, deploy, LAN exee | Platform | **P4** |
+| #51 Task dependencies | Graph | Deferred / backlog |
+| #52 Dark selected-tag border | Theme | **Done** |
+
+Flask-specific notes in long descriptions (WTForms, CSRF, `task.html`, etc.) are **not** implementation targets on this stack.
