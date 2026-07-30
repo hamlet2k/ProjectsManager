@@ -553,7 +553,11 @@ export function TaskBoard({
                 >
                   <Icons.Filter size="1.2em" />
                   <span>Filters</span>
-                  {activeTagIds.length > 0 || search ? (
+                  {activeTagIds.length > 0 ||
+                  search ||
+                  sortBy !== 'rank' ||
+                  showCompleted ||
+                  githubRepoFilter ? (
                     <span className="sticky-pill-dot" />
                   ) : null}
                 </button>
@@ -567,14 +571,40 @@ export function TaskBoard({
             <section className="notebook-panel floating-elevated space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold">Filters</span>
-                <button
-                  type="button"
-                  className="icon-btn !h-8 !w-8"
-                  title="Collapse filters"
-                  onClick={() => closeFilters()}
-                >
-                  <Icons.X size="0.85em" />
-                </button>
+                <div className="flex items-center gap-1">
+                  {(search ||
+                    activeTagIds.length > 0 ||
+                    sortBy !== 'rank' ||
+                    showCompleted ||
+                    githubRepoFilter) && (
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs font-medium text-[var(--color-muted)] underline decoration-wavy hover:text-[var(--color-text)]"
+                      title="Reset search, tags, sort, and completed"
+                      onClick={() => {
+                        setSearch('')
+                        setActiveTagIds([])
+                        setSortBy('rank')
+                        setShowCompleted(false)
+                        setGithubRepoFilter(null)
+                        localStorage.setItem('pm-task-search', '')
+                        localStorage.setItem('pm-task-sort', 'rank')
+                        localStorage.setItem('pm-show-completed', 'false')
+                        localStorage.setItem('pm-active-tags', '[]')
+                      }}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="icon-btn !h-8 !w-8"
+                    title="Collapse filters"
+                    onClick={() => closeFilters()}
+                  >
+                    <Icons.X size="0.85em" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-col gap-3 md:flex-row md:items-end">
@@ -582,26 +612,41 @@ export function TaskBoard({
                   <span className="mb-1 block font-medium text-[var(--color-muted)]">
                     Search tasks
                   </span>
-                  <input
-                    ref={searchRef}
-                    className="field-input"
-                    placeholder={
-                      githubVisible
-                        ? 'Search name, description, #issue…'
-                        : 'Search by name or description'
-                    }
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape' && search) {
-                        e.preventDefault()
-                        setSearch('')
+                  <div className="field-input-wrap">
+                    <input
+                      ref={searchRef}
+                      className="field-input !pr-9"
+                      placeholder={
+                        githubVisible
+                          ? 'Search name, description, #issue…'
+                          : 'Search by name or description'
                       }
-                      if (e.key === 'Enter') {
-                        collapseFiltersIfMobile()
-                      }
-                    }}
-                  />
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape' && search) {
+                          e.preventDefault()
+                          setSearch('')
+                        }
+                        if (e.key === 'Enter') {
+                          collapseFiltersIfMobile()
+                        }
+                      }}
+                    />
+                    {search ? (
+                      <button
+                        type="button"
+                        className="field-input-clear"
+                        title="Clear search"
+                        onClick={() => {
+                          setSearch('')
+                          searchRef.current?.focus()
+                        }}
+                      >
+                        <Icons.X size="0.85em" />
+                      </button>
+                    ) : null}
+                  </div>
                 </label>
                 <label className="block w-full text-sm md:w-44">
                   <span className="mb-1 block font-medium text-[var(--color-muted)]">Sort by</span>

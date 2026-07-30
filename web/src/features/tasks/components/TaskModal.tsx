@@ -5,6 +5,7 @@ import { Field, Input, Textarea } from '@/components/ui/Input'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import type { Tag, Task } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
+import { Icons } from '@/components/icons'
 
 type Props = {
   open: boolean
@@ -47,6 +48,30 @@ export function TaskModal({
     setError(null)
   }, [open, initial, selectedTagIds])
 
+  const save = async () => {
+    if (!name.trim() || saving) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        endDate: endDate ? new Date(endDate).toISOString() : null,
+        tagIds,
+      })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cancel = () => {
+    if (saving) return
+    onClose()
+  }
+
   return (
     <Modal
       open={open}
@@ -87,29 +112,10 @@ export function TaskModal({
             ) : null}
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose} disabled={saving}>
+            <Button variant="secondary" onClick={cancel} disabled={saving}>
               Cancel
             </Button>
-            <Button
-              disabled={saving || !name.trim()}
-              onClick={async () => {
-                setSaving(true)
-                setError(null)
-                try {
-                  await onSubmit({
-                    name: name.trim(),
-                    description: description.trim(),
-                    endDate: endDate ? new Date(endDate).toISOString() : null,
-                    tagIds,
-                  })
-                  onClose()
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : 'Save failed')
-                } finally {
-                  setSaving(false)
-                }
-              }}
-            >
+            <Button disabled={saving || !name.trim()} onClick={() => void save()}>
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>
@@ -118,13 +124,46 @@ export function TaskModal({
     >
       <div className="space-y-4">
         <Field label="Title" htmlFor="task-name" error={error ?? undefined}>
-          <Input
-            id="task-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="What needs doing?"
-            autoFocus
-          />
+          <div className="quick-add">
+            <input
+              id="task-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="What needs doing?"
+              autoFocus
+              disabled={saving}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void save()
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancel()
+                }
+              }}
+            />
+            <div className="quick-side">
+              <button
+                type="button"
+                className="icon-btn"
+                title="Cancel"
+                disabled={saving}
+                onClick={cancel}
+              >
+                <Icons.X />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                title="Save task"
+                disabled={saving || !name.trim()}
+                onClick={() => void save()}
+              >
+                <Icons.Save />
+              </button>
+            </div>
+          </div>
         </Field>
         <Field label="Description (Markdown)" htmlFor="task-desc">
           <Textarea
@@ -133,6 +172,7 @@ export function TaskModal({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Details, checklists, links…"
             className="min-h-[140px]"
+            disabled={saving}
           />
         </Field>
         <Field label="Due date" htmlFor="task-due">
@@ -141,6 +181,7 @@ export function TaskModal({
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
+            disabled={saving}
           />
         </Field>
         {tags.length > 0 ? (
@@ -153,6 +194,7 @@ export function TaskModal({
                     key={tag.id}
                     type="button"
                     className={cn('tag-chip', active && 'active')}
+                    disabled={saving}
                     onClick={() =>
                       setTagIds((prev) =>
                         active ? prev.filter((id) => id !== tag.id) : [...prev, tag.id],

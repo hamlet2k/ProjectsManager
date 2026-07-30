@@ -87,15 +87,58 @@ type ScopeConfig = {
   updated_at?: string
 }
 
+/** Installation / PAT used only for product feedback issues (not the user's PAT). */
+async function getFeedbackGitHubToken(): Promise<string> {
+  const direct = (Deno.env.get('GITHUB_FEEDBACK_TOKEN') || '').trim()
+  if (direct) return direct
+
+  const appId = (Deno.env.get('GITHUB_APP_ID') || '').trim()
+  const installationId = (Deno.env.get('GITHUB_INSTALLATION_ID') || '').trim()
+  const privateKeyPem = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
+  if (!appId || !installationId || !privateKeyPem) {
+    throw new Error(
+      'Feedback is not configured. Set GITHUB_FEEDBACK_TOKEN or GitHub App secrets (GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY) plus GITHUB_FEEDBACK_REPOSITORY on the edge function.',
+    )
+  }
+
+  // Minimal RS256 JWT for GitHub Apps (10 min max)
+  const jose = await import('https://esm.sh/jose@5.2.0')
+  const pem = privateKeyPem.includes('\\n')
+    ? privateKeyPem.replace(/\\n/g, '\n')
+    : privateKeyPem
+  const key = await jose.importPKCS8(pem, 'RS256')
+  const now = Math.floor(Date.now() / 1000)
+  const appJwt = await new jose.SignJWT({})
+    .setProtectedHeader({ alg: 'RS256' })
+    .setIssuedAt(now - 60)
+    .setExpirationTime(now + 9 * 60)
+    .setIssuer(appId)
+    .sign(key)
+
+  const tokenRes = await fetch(
+    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${appJwt}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
+  )
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text()
+    throw new Error(`Could not mint GitHub App token (${tokenRes.status}): ${text.slice(0, 200)}`)
+  }
+  const data = (await tokenRes.json()) as { token?: string }
+  if (!data.token) throw new Error('GitHub App token response missing token')
+  return data.token
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const secret = Deno.env.get('GITHUB_TOKEN_SECRET')
-    if (!secret || secret.length < 16) {
-      return json({ error: 'GITHUB_TOKEN_SECRET is not configured on the Edge Function' }, 500)
-    }
-
     const authHeaderIn = req.headers.get('Authorization')
     if (!authHeaderIn) return json({ error: 'Missing Authorization' }, 401)
 
@@ -113,6 +156,123 @@ Deno.serve(async (req) => {
     if (userErr || !user) return json({ error: 'Unauthorized' }, 401)
 
     const admin = createClient(supabaseUrl, serviceKey)
+    const body = await req.json().catch(() => ({}))
+    const action = body.action as string
+
+    // Product feedback → GitHub issue on the Projects Manager repo (GitHub App / feedback token).
+    // Does not require the user's personal PAT.
+    if (action === 'submit_feedback') {
+      const title = String(body.title ?? '').trim()
+      const description = String(body.description ?? body.body ?? '').trim()
+      const feedbackType = String(body.type ?? 'question').trim().toLowerCase()
+      const contact = String(body.contact ?? '').trim()
+      if (!title || !description) {
+        return json({ error: 'Title and description are required.' }, 400)
+      }
+      const typeLabel =
+        feedbackType === 'bug' || feedbackType === 'enhancement' || feedbackType === 'question'
+          ? feedbackType
+          : 'question'
+
+      const repoConfig = (Deno.env.get('GITHUB_FEEDBACK_REPOSITORY') || 'hamlet2k/ProjectsManager').trim()
+      const [owner, repoName] = repoConfig.split('/')
+      if (!owner || !repoName) {
+        return json({ error: 'GITHUB_FEEDBACK_REPOSITORY is invalid (expected owner/repo).' }, 500)
+      }
+
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('name, email, username')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const issueBody = [
+        `### Feedback (${typeLabel})`,
+        '',
+        description,
+        '',
+        '---',
+        `**From:** ${profile?.name || '—'} <${profile?.email || user.email || '—'}>`,
+        `**Username:** ${profile?.username || '—'}`,
+        `**User id:** ${user.id}`,
+        contact ? `**Contact / reply-to:** ${contact}` : '**Contact / reply-to:** (not provided)',
+        `**App URL:** ${String(body.appUrl ?? '').trim() || '—'}`,
+        `**Submitted:** ${new Date().toISOString()}`,
+      ].join('\n')
+
+      // Prefer dedicated feedback token / GitHub App; fall back to caller's PAT.
+      let feedbackToken: string | null = null
+      let feedbackTokenSource = 'app'
+      try {
+        feedbackToken = await getFeedbackGitHubToken()
+      } catch {
+        feedbackToken = null
+      }
+      if (!feedbackToken) {
+        const secretFb = Deno.env.get('GITHUB_TOKEN_SECRET')
+        if (secretFb && secretFb.length >= 16) {
+          const { data: credFb } = await admin
+            .from('github_credentials')
+            .select('token_encrypted')
+            .eq('user_id', user.id)
+            .maybeSingle()
+          if (credFb?.token_encrypted) {
+            try {
+              feedbackToken = (await decryptToken(credFb.token_encrypted, secretFb)).trim()
+              feedbackTokenSource = 'user_pat'
+            } catch {
+              feedbackToken = null
+            }
+          }
+        }
+      }
+      if (!feedbackToken) {
+        return json(
+          {
+            error:
+              'Feedback is not configured. Set GITHUB_FEEDBACK_TOKEN (or GitHub App secrets) on the edge function, or save your GitHub PAT under Settings with access to the feedback repository.',
+          },
+          500,
+        )
+      }
+
+      try {
+        const create = (labels: string[]) =>
+          ghJson<{ number: number; html_url: string }>(
+            feedbackToken!,
+            `/repos/${owner}/${repoName}/issues`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                title: title.slice(0, 200),
+                body: issueBody,
+                labels,
+              }),
+            },
+          )
+        let issue: { number: number; html_url: string }
+        try {
+          issue = await create([typeLabel, 'feedback'])
+        } catch {
+          // Labels may not exist on the repo — still open the issue.
+          issue = await create([])
+        }
+        return json({
+          ok: true,
+          issue_number: issue.number,
+          issue_url: issue.html_url,
+          via: feedbackTokenSource,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not create feedback issue'
+        return json({ error: msg }, 400)
+      }
+    }
+
+    const secret = Deno.env.get('GITHUB_TOKEN_SECRET')
+    if (!secret || secret.length < 16) {
+      return json({ error: 'GITHUB_TOKEN_SECRET is not configured on the Edge Function' }, 500)
+    }
 
     const { data: cred, error: credErr } = await admin
       .from('github_credentials')
@@ -137,9 +297,6 @@ Deno.serve(async (req) => {
       )
     }
     if (!token) return json({ error: 'Stored GitHub token is empty' }, 400)
-
-    const body = await req.json().catch(() => ({}))
-    const action = body.action as string
 
     if (action === 'test') {
       try {

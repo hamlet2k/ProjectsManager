@@ -103,6 +103,21 @@ export async function closeIssueForTask(taskId: string) {
   return invokeGitHubProxy<{ config: TaskGitHubConfig }>('close_issue', { taskId })
 }
 
+/** Product feedback → GitHub issue (server uses App / feedback token, not user PAT). */
+export async function submitFeedback(input: {
+  type: 'question' | 'enhancement' | 'bug'
+  title: string
+  description: string
+  contact?: string
+  appUrl?: string
+}) {
+  return invokeGitHubProxy<{
+    ok: boolean
+    issue_number: number
+    issue_url: string
+  }>('submit_feedback', input)
+}
+
 export async function fetchScopeGitHubConfig(scopeId: string, userId: string) {
   const { data, error } = await getSupabase()
     .from('scope_github_configs')

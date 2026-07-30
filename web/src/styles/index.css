@@ -651,6 +651,36 @@ a:hover .project-title {
   box-shadow: var(--shadow-sketch);
 }
 
+.field-input-wrap {
+  position: relative;
+}
+
+.field-input-wrap .field-input {
+  width: 100%;
+}
+
+.field-input-clear {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.field-input-clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
 .kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.75rem;

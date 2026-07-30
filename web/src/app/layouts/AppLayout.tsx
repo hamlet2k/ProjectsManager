@@ -1,5 +1,6 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { useTheme } from '@/app/providers/ThemeProvider'
 import { Button } from '@/components/ui/Button'
@@ -12,19 +13,42 @@ import {
 import { useToast } from '@/components/ui/Toast'
 import { Icons } from '@/components/icons'
 import { FeedbackModal } from '@/features/feedback/FeedbackModal'
+import {
+  fetchScopeGitHubConfigs,
+  fetchTaskGitHubConfigsForTasks,
+  syncTaskWithGitHub,
+} from '@/features/github/api'
+import { isScopeGitHubIntegrated } from '@/features/github/visibility'
+import { getSupabase } from '@/lib/supabase/client'
 
 export function AppLayout() {
-  const { signOut } = useAuth()
+  const { signOut, profile } = useAuth()
   const { theme, setTheme, resolved } = useTheme()
   const { data: notifications = [] } = useNotifications()
   const markRead = useMarkNotificationRead()
   const respond = useRespondToShareInvite()
   const toast = useToast()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [menuOpen, setMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
+
+  const projectMatch = useMatch('/projects/:scopeId')
+  const scopeId = projectMatch?.params.scopeId
+
+  const scopeGhQuery = useQuery({
+    queryKey: ['scope-github-configs', scopeId],
+    enabled: Boolean(scopeId),
+    queryFn: () => fetchScopeGitHubConfigs(scopeId!),
+    staleTime: 30_000,
+  })
+
+  const projectLinked = Boolean(
+    scopeId && isScopeGitHubIntegrated(scopeGhQuery.data ?? []),
+  )
 
   const unread = notifications.filter((n) => !n.read_at && !n.resolved_at).length
   const preview = notifications.slice(0, 8)
@@ -39,6 +63,56 @@ export function AppLayout() {
 
   const iconBtn =
     'inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'
+
+  const handleGithubRefresh = async () => {
+    if (!scopeId || refreshing) return
+    setRefreshing(true)
+    try {
+      // Reload local task + GitHub link state
+      await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+      await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+      await qc.invalidateQueries({ queryKey: ['scope-github-configs', scopeId] })
+
+      // Soft-pull linked issues when user has integration preference (PAT)
+      if (profile?.github_integration_enabled) {
+        const { data: tasks } = await getSupabase()
+          .from('tasks')
+          .select('id')
+          .eq('scope_id', scopeId)
+        const taskIds = (tasks ?? []).map((t) => t.id as string)
+        if (taskIds.length > 0) {
+          const links = await fetchTaskGitHubConfigsForTasks(taskIds)
+          const linked = links.filter((c) => c.github_issue_number)
+          let updated = 0
+          // Cap concurrent work for free-tier edge
+          for (const link of linked.slice(0, 40)) {
+            try {
+              await syncTaskWithGitHub(link.task_id, 'pull')
+              updated += 1
+            } catch {
+              /* skip individual failures */
+            }
+          }
+          await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+          await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+          toast.push(
+            updated > 0
+              ? `Refreshed ${updated} GitHub issue link${updated === 1 ? '' : 's'}`
+              : 'Project data reloaded',
+            'success',
+          )
+        } else {
+          toast.push('Project data reloaded', 'success')
+        }
+      } else {
+        toast.push('Project data reloaded', 'success')
+      }
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Refresh failed', 'error')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   return (
     <div className="notebook-shell">
@@ -56,14 +130,17 @@ export function AppLayout() {
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1">
-          <button
-            type="button"
-            className={iconBtn}
-            title="Refresh"
-            onClick={() => window.location.reload()}
-          >
-            <Icons.Refresh />
-          </button>
+          {projectLinked ? (
+            <button
+              type="button"
+              className={iconBtn}
+              title="Refresh GitHub issue links for this project"
+              disabled={refreshing}
+              onClick={() => void handleGithubRefresh()}
+            >
+              <Icons.Refresh className={refreshing ? 'animate-spin' : undefined} />
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -262,6 +339,19 @@ export function AppLayout() {
             >
               Settings
             </Link>
+            {projectLinked ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={refreshing}
+                onClick={() => {
+                  void handleGithubRefresh()
+                  setMenuOpen(false)
+                }}
+              >
+                Refresh GitHub
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               size="sm"
