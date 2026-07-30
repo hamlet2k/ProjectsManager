@@ -67,6 +67,8 @@ type Props = {
   onExpandTask?: (task: Task) => void
   /** Open project GitHub settings (e.g. change default repo). */
   onOpenGithubSettings?: () => void
+  /** Open import/export for a subset of tasks (e.g. tag group). */
+  onOpenTransfer?: (taskIds: string[], mode?: 'export' | 'import') => void
   searchInputRef?: React.RefObject<HTMLInputElement | null>
   quickAddRef?: React.RefObject<HTMLInputElement | null>
 }
@@ -99,6 +101,7 @@ export function TaskBoard({
   onGithubAction,
   onExpandTask,
   onOpenGithubSettings,
+  onOpenTransfer,
   searchInputRef,
   quickAddRef,
 }: Props) {
@@ -965,8 +968,19 @@ export function TaskBoard({
                     <button
                       type="button"
                       className="icon-btn !h-7 !w-7"
-                      title="Copy group tasks"
+                      title={
+                        onOpenTransfer
+                          ? 'Export group tasks'
+                          : 'Copy group tasks'
+                      }
                       onClick={async () => {
+                        if (onOpenTransfer) {
+                          onOpenTransfer(
+                            group.tasks.map((t) => t.id),
+                            'export',
+                          )
+                          return
+                        }
                         const text = group.tasks
                           .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.name}`)
                           .join('\n')

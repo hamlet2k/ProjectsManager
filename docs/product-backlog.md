@@ -99,7 +99,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [ ] **Comprehensive help site/page** explaining the app and features (GitHub matrix, share roles, tags, sync LWW, etc.)
 - [ ] Contextual **Help links** from Settings / GitHub modal / Share / empty states into the right help section
 - [ ] Help index entry in navbar (once help content exists)
-- [ ] Advanced import/export configuration
+- [x] Advanced import/export (issue #49 core): unified modal, formats (plain/checklist/AI backlog/JSON/CSV), full metadata toggle, AI instructions field, copy + download, paste/upload import with preview — user/scope `advanced_export_enabled` DB prefs still optional polish
 - [x] Rename scopes → projects in UI (internal DB still `scopes`)
 
 ### Explicitly deferred / N/A on new stack

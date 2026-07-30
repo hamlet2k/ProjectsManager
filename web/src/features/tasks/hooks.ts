@@ -77,6 +77,7 @@ export function useCreateTask(scopeId: string) {
       description?: string | null
       endDate?: string | null
       tagIds?: string[]
+      completed?: boolean
     }) =>
       createTask({
         scopeId,
@@ -86,6 +87,9 @@ export function useCreateTask(scopeId: string) {
         endDate: input.endDate,
       }).then(async (task) => {
         if (input.tagIds?.length) await setTaskTags(task.id, input.tagIds)
+        if (input.completed) {
+          await setTaskCompleted(task.id, true)
+        }
         return task
       }),
     onSuccess: () => {

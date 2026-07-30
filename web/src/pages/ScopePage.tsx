@@ -46,8 +46,8 @@ import { createTag as createTagApi, setTaskTags } from '@/features/tasks/api'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/Modal'
 import { Field } from '@/components/ui/Input'
-import { copyToClipboard } from '@/lib/utils'
 import { Icons } from '@/components/icons'
+import { TaskTransferModal } from '@/features/tasks/components/TaskTransferModal'
 
 export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
@@ -81,9 +81,9 @@ export function ScopePage() {
   } | null>(null)
   const [ghSaving, setGhSaving] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
-  const [importOpen, setImportOpen] = useState(false)
-  const [importText, setImportText] = useState('')
-  const [importing, setImporting] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferMode, setTransferMode] = useState<'export' | 'import'>('export')
+  const [transferTaskIds, setTransferTaskIds] = useState<string[] | null>(null)
 
   const searchRef = useRef<HTMLInputElement>(null)
   const quickAddRef = useRef<HTMLInputElement>(null)
@@ -474,23 +474,15 @@ export function ScopePage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={async () => {
-              const text = tasks
-                .slice()
-                .sort((a, b) => a.rank - b.rank)
-                .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.name}`)
-                .join('\n')
-              const ok = await copyToClipboard(text)
-              toast.push(ok ? 'Tasks copied' : 'Copy failed', ok ? 'success' : 'error')
+            title="Import or export tasks (formats, AI backlog, copy/download)"
+            onClick={() => {
+              setTransferTaskIds(null)
+              setTransferMode('export')
+              setTransferOpen(true)
             }}
           >
-            <Icons.Clipboard size={14} /> Copy list
+            <Icons.Clipboard size={14} /> Import / Export
           </Button>
-          {access.canEdit ? (
-            <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
-              <Icons.Paste size={14} /> Import
-            </Button>
-          ) : null}
           {access.canManageShares ? (
             <Button
               variant="secondary"
@@ -670,6 +662,11 @@ export function ScopePage() {
         onOpenGithubSettings={
           ghCaps.canConfigure ? () => setGithubOpen(true) : undefined
         }
+        onOpenTransfer={(taskIds, mode = 'export') => {
+          setTransferTaskIds(taskIds)
+          setTransferMode(mode)
+          setTransferOpen(true)
+        }}
       />
 
       <TaskModal
@@ -714,53 +711,48 @@ export function ScopePage() {
         <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} scopeId={scope.id} />
       ) : null}
 
-      <Modal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        title="Import tasks from list"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setImportOpen(false)} disabled={importing}>
-              Cancel
-            </Button>
-            <Button
-              disabled={importing || !importText.trim()}
-              onClick={async () => {
-                const names = importText
-                  .split(/\r?\n/)
-                  .map((l) => l.replace(/^\s*[-*\[\]xX\d.)\s]+/, '').trim())
-                  .filter(Boolean)
-                if (!names.length) return
-                setImporting(true)
-                try {
-                  for (const name of names) {
-                    await createTask.mutateAsync({ name })
-                  }
-                  toast.push(`Imported ${names.length} task(s)`, 'success')
-                  setImportText('')
-                  setImportOpen(false)
-                } catch (e) {
-                  toast.push(e instanceof Error ? e.message : 'Import failed', 'error')
-                } finally {
-                  setImporting(false)
-                }
-              }}
-            >
-              {importing ? 'Importing…' : 'Import'}
-            </Button>
-          </>
-        }
-      >
-        <p className="mb-2 text-sm text-[var(--color-muted)]">
-          Paste one task per line. Leading bullets, numbers, or <code>[ ]</code> are stripped.
-        </p>
-        <textarea
-          className="field-input min-h-[180px] font-mono text-sm"
-          value={importText}
-          onChange={(e) => setImportText(e.target.value)}
-          placeholder={'Buy milk\nCall plumber\n- Fix fence'}
-        />
-      </Modal>
+      <TaskTransferModal
+        open={transferOpen}
+        onClose={() => {
+          setTransferOpen(false)
+          setTransferTaskIds(null)
+        }}
+        mode={transferMode}
+        projectName={scope.name}
+        tasks={tasks}
+        tags={tags}
+        taskTags={taskTags}
+        githubByTask={githubByTask}
+        canImport={access.canEdit}
+        initialTaskIds={transferTaskIds}
+        onImport={async (parsed) => {
+          const tagCache = new Map<string, string>(tags.map((t) => [t.name.toLowerCase(), t.id]))
+          for (const item of parsed) {
+            const tagIds: string[] = []
+            for (const raw of item.tagNames ?? []) {
+              const key = raw.toLowerCase()
+              let id = tagCache.get(key)
+              if (!id) {
+                const created = await createTagApi(scopeId!, raw)
+                id = created.id
+                tagCache.set(key, id)
+              }
+              tagIds.push(id)
+            }
+            await createTask.mutateAsync({
+              name: item.name,
+              description: item.description ?? null,
+              endDate: item.endDate
+                ? new Date(item.endDate.length === 10 ? `${item.endDate}T12:00:00` : item.endDate).toISOString()
+                : null,
+              tagIds: tagIds.length ? tagIds : undefined,
+              completed: item.completed,
+            })
+          }
+          await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+          await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+        }}
+      />
 
       <Modal
         open={githubOpen}
