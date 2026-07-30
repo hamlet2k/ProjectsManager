@@ -29,7 +29,7 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title={initial ? 'Edit scope' : 'New scope'}
+      title={initial ? 'Edit project' : 'New project'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={saving}>

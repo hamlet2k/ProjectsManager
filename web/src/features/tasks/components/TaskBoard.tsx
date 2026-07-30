@@ -121,6 +121,9 @@ export function TaskBoard({
 
   const [tagEditTaskId, setTagEditTaskId] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  /** Temporary highlight after a task is created */
+  const [flashTaskId, setFlashTaskId] = useState<string | null>(null)
+  const knownTaskIds = useRef<Set<string> | null>(null)
 
   const localSearchRef = useRef<HTMLInputElement>(null)
   const localQuickRef = useRef<HTMLInputElement>(null)
@@ -204,6 +207,21 @@ export function TaskBoard({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Esc: close tag editor / collapse expanded task details (modals handle their own Esc)
+      if (e.key === 'Escape') {
+        if (tagEditTaskId) {
+          e.preventDefault()
+          setTagEditTaskId(null)
+          return
+        }
+        if (expandedTaskId) {
+          e.preventDefault()
+          setExpandedTaskId(null)
+          return
+        }
+        return
+      }
+
       if (!(e.ctrlKey || e.metaKey)) return
       if (e.key.toLowerCase() === 'backspace') {
         if (!search) return
@@ -229,7 +247,34 @@ export function TaskBoard({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [search, searchRef, quickRef])
+  }, [search, searchRef, quickRef, tagEditTaskId, expandedTaskId])
+
+  // Scroll to + flash newly created tasks (quick-add or modal)
+  useEffect(() => {
+    const ids = new Set(tasks.map((t) => t.id))
+    if (knownTaskIds.current == null) {
+      knownTaskIds.current = ids
+      return
+    }
+    const added = tasks.filter((t) => !knownTaskIds.current!.has(t.id))
+    knownTaskIds.current = ids
+    if (added.length === 0) return
+    // Prefer the newest by created_at when several appear
+    const newest = [...added].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0]!
+    setFlashTaskId(newest.id)
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById(`task-row-${newest.id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 50)
+    const clearFlash = window.setTimeout(() => setFlashTaskId(null), 2200)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearTimeout(clearFlash)
+    }
+  }, [tasks])
 
   const tagsByTask = useMemo(() => {
     const m = new Map<string, Tag[]>()
@@ -246,11 +291,20 @@ export function TaskBoard({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const qDigits = q.replace(/^#/, '').replace(/\D/g, '')
     let list = tasks.filter((t) => {
       if (!showCompleted && t.completed) return false
       if (q) {
-        const hay = `${t.name}\n${t.description ?? ''}`.toLowerCase()
-        if (!hay.includes(q)) return false
+        const gh = githubVisible ? githubByTask.get(t.id) : undefined
+        const issueStr = gh?.github_issue_number != null ? String(gh.github_issue_number) : ''
+        const mile = (gh?.github_milestone_title ?? '').toLowerCase()
+        const hay = `${t.name}\n${t.description ?? ''}\n#${issueStr}\n${issueStr}\n${mile}`.toLowerCase()
+        const textMatch = hay.includes(q)
+        const issueMatch =
+          Boolean(qDigits) &&
+          issueStr.length > 0 &&
+          (issueStr === qDigits || issueStr.includes(qDigits) || q.includes(`#${issueStr}`))
+        if (!textMatch && !issueMatch) return false
       }
       if (activeTagIds.length > 0) {
         const ids = new Set((tagsByTask.get(t.id) ?? []).map((x) => x.id))
@@ -280,7 +334,7 @@ export function TaskBoard({
       list.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
     }
     return list
-  }, [tasks, search, showCompleted, activeTagIds, tagsByTask, sortBy])
+  }, [tasks, search, showCompleted, activeTagIds, tagsByTask, sortBy, githubVisible, githubByTask])
 
   // #6 Tag groups
   const groups: TaskGroup[] = useMemo(() => {
@@ -336,28 +390,39 @@ export function TaskBoard({
   }, [filtered, sortBy, tags, tagsByTask, activeTagIds])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    // Slightly higher distance so clicks (complete / expand) don't start a drag
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   const canDrag =
-    canEdit && sortBy === 'rank' && !search && activeTagIds.length === 0
+    canEdit && sortBy === 'rank' && !search.trim() && activeTagIds.length === 0
 
   const onDragEnd = (event: DragEndEvent) => {
     if (!canDrag) return
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const ids = filtered.map((t) => t.id)
-    const oldIndex = ids.indexOf(String(active.id))
-    const newIndex = ids.indexOf(String(over.id))
+    // Reorder within the currently visible ranked list, then append hidden tasks
+    // (e.g. completed when "show completed" is off) preserving their relative order.
+    const visibleIds = filtered.map((t) => t.id)
+    const oldIndex = visibleIds.indexOf(String(active.id))
+    const newIndex = visibleIds.indexOf(String(over.id))
     if (oldIndex < 0 || newIndex < 0) return
-    const nextVisible = arrayMove(ids, oldIndex, newIndex)
-    const hidden = tasks.filter((t) => !nextVisible.includes(t.id)).sort((a, b) => a.rank - b.rank)
-    onReorder([...nextVisible, ...hidden.map((t) => t.id)])
+    const nextVisible = arrayMove(visibleIds, oldIndex, newIndex)
+    const hiddenIds = tasks
+      .slice()
+      .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+      .map((t) => t.id)
+      .filter((id) => !nextVisible.includes(id))
+    onReorder([...nextVisible, ...hiddenIds])
   }
 
   const toggleTag = (id: string) => {
     setActiveTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    // Mobile: collapse filters after a tag pick so the list is usable
+    if (isMobile && filtersOpen) {
+      closeFilters()
+    }
   }
 
   const resetQuick = () => {
@@ -467,13 +532,20 @@ export function TaskBoard({
                   <input
                     ref={searchRef}
                     className="field-input"
-                    placeholder="Search by name or description"
+                    placeholder={
+                      githubVisible
+                        ? 'Search name, description, #issue…'
+                        : 'Search by name or description'
+                    }
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape' && search) {
                         e.preventDefault()
                         setSearch('')
+                      }
+                      if (e.key === 'Enter' && isMobile && filtersOpen) {
+                        closeFilters()
                       }
                     }}
                   />
@@ -536,11 +608,17 @@ export function TaskBoard({
                 </div>
                 {sortBy === 'tags' ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    Tasks are listed under tag group headers. Drag reorder is disabled in this mode.
+                    Grouped by tag. To change priority order, set sort to <strong>Rank</strong> and
+                    drag the ⋮⋮ handle.
                   </p>
                 ) : !canDrag && canEdit ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    Drag reorder works when sort is <strong>Rank</strong> and no search/tag filters.
+                    Drag reorder needs sort <strong>Rank</strong> and no search/tag filters. Use the
+                    ⋮⋮ handle on each row.
+                  </p>
+                ) : canDrag ? (
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Drag the ⋮⋮ handle to change task priority order.
                   </p>
                 ) : null}
               </div>
@@ -706,6 +784,12 @@ export function TaskBoard({
 
       {/* Task list — flat or tag groups */}
       <section className="space-y-4">
+        {canEdit && sortBy === 'tags' ? (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
+            Sorted by <strong>Tags (groups)</strong> — drag-to-reorder priority is off. Switch sort
+            to <strong>Rank</strong> to drag tasks with the ⋮⋮ handle.
+          </p>
+        ) : null}
         {filtered.length === 0 ? (
           <div className="notebook-panel py-10 text-center text-sm text-[var(--color-muted)]">
             No tasks match these filters.
@@ -774,6 +858,7 @@ export function TaskBoard({
                       githubVisible={githubVisible}
                       githubEnabled={githubEnabled}
                       expanded={expandedTaskId === task.id}
+                      flash={flashTaskId === task.id}
                       tagEditOpen={tagEditTaskId === task.id}
                       onToggleExpand={() =>
                         setExpandedTaskId((id) => (id === task.id ? null : task.id))
@@ -871,6 +956,7 @@ function SortableTaskRow({
   githubVisible,
   githubEnabled,
   expanded,
+  flash,
   tagEditOpen,
   onToggleExpand,
   onToggleComplete,
@@ -891,6 +977,7 @@ function SortableTaskRow({
   githubVisible: boolean
   githubEnabled: boolean
   expanded: boolean
+  flash: boolean
   tagEditOpen: boolean
   onToggleExpand: () => void
   onToggleComplete: (task: Task, completed: boolean) => void
@@ -902,7 +989,15 @@ function SortableTaskRow({
   onSetTags: (ids: string[]) => Promise<void>
   onCreateTag: (name: string) => Promise<Tag>
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: task.id,
     disabled: !canDrag,
   })
@@ -912,6 +1007,9 @@ function SortableTaskRow({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    // Keep dragging item above neighbors / expand panels
+    zIndex: isDragging ? 25 : undefined,
+    position: 'relative' as const,
   }
 
   const selected = new Set(tags.map((t) => t.id))
@@ -920,23 +1018,37 @@ function SortableTaskRow({
   )
 
   return (
-    <div className="relative" ref={setNodeRef} style={style}>
+    <div
+      id={`task-row-${task.id}`}
+      className={cn('task-sortable', isDragging && 'is-dragging')}
+      ref={setNodeRef}
+      style={style}
+    >
       <div
         className={cn(
           'task-row',
           task.completed && 'completed',
           isDragging && 'dragging',
           expanded && 'expanded-row',
+          flash && 'flash-new',
         )}
       >
         <div className="task-row-main">
+          {/*
+            Drag handle only (not the title). Use setActivatorNodeRef so dnd-kit
+            attaches pointer listeners to the grip — required after expand UI
+            split the row from the details panel.
+          */}
           <button
             type="button"
-            className={cn('grip', !canDrag && 'opacity-30')}
+            ref={canDrag ? setActivatorNodeRef : undefined}
+            className={cn('grip', !canDrag && 'opacity-30', isDragging && 'is-active')}
             title={canDrag ? 'Drag to reorder' : 'Reorder when sorted by Rank'}
+            aria-label={canDrag ? 'Drag to reorder task' : 'Reordering disabled'}
+            aria-disabled={!canDrag}
             {...(canDrag ? { ...attributes, ...listeners } : {})}
           >
-            <Icons.Grip />
+            <Icons.Grip className="pointer-events-none" />
           </button>
 
           <button
@@ -944,6 +1056,10 @@ function SortableTaskRow({
             className="task-title"
             title={hasDetails ? (expanded ? 'Collapse details' : 'Show details') : task.name}
             onClick={onToggleExpand}
+            onPointerDown={(e) => {
+              // Never start a drag from the title — title is expand only
+              e.stopPropagation()
+            }}
           >
             {task.name}
           </button>
@@ -1021,7 +1137,14 @@ function SortableTaskRow({
                 }
               }}
             >
-              <Icons.Github />
+              {ghBusy ? (
+                <span
+                  className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                  aria-hidden
+                />
+              ) : (
+                <Icons.Github />
+              )}
             </button>
           ) : null}
           <button type="button" className="icon-btn" title="Edit" onClick={() => onEdit(task)}>

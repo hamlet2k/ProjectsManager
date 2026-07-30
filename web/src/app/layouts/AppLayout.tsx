@@ -189,10 +189,7 @@ export function AppLayout() {
             ) : null}
           </div>
 
-          <NavLink to="/settings" className={iconBtn} title="Profile / Settings">
-            <Icons.User />
-          </NavLink>
-          <NavLink to="/settings" className={cn(iconBtn, 'hidden sm:inline-flex')} title="Settings">
+          <NavLink to="/settings" className={iconBtn} title="Settings">
             <Icons.Settings />
           </NavLink>
 
@@ -249,7 +246,7 @@ export function AppLayout() {
               to="/"
               onClick={() => setMenuOpen(false)}
             >
-              Scopes
+              Projects
             </Link>
             <Link
               className="rounded-lg px-3 py-2 hover:bg-[var(--color-surface-2)]"

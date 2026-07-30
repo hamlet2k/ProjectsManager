@@ -1,15 +1,23 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { AppLayout } from '@/app/layouts/AppLayout'
 import { AuthLayout } from '@/app/layouts/AuthLayout'
 import { PageLoader } from '@/components/ui/Spinner'
 import { LoginPage } from '@/pages/LoginPage'
 import { SignupPage } from '@/pages/SignupPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
+import { AuthCallbackPage } from '@/pages/AuthCallbackPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { ScopePage } from '@/pages/ScopePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage'
+
+function LegacyScopeRedirect() {
+  const { scopeId } = useParams<{ scopeId: string }>()
+  return <Navigate to={`/projects/${scopeId}`} replace />
+}
 
 function RequireAuth() {
   const { user, loading, configured } = useAuth()
@@ -38,6 +46,9 @@ export function AppRoutes() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
       </Route>
 
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
@@ -45,7 +56,9 @@ export function AppRoutes() {
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
-          <Route path="scopes/:scopeId" element={<ScopePage />} />
+          <Route path="projects/:scopeId" element={<ScopePage />} />
+          {/* Legacy path from "scopes" naming */}
+          <Route path="scopes/:scopeId" element={<LegacyScopeRedirect />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
 import { PageLoader } from '@/components/ui/Spinner'
 import { isSupabaseConfigured } from '@/lib/supabase/client'
+import { AuthDivider, OAuthButtons, friendlyAuthError } from '@/features/auth/OAuthButtons'
 
 export function LoginPage() {
   const { signInWithPassword, signInWithMagicLink, user, loading, configured } = useAuth()
@@ -36,9 +37,13 @@ export function LoginPage() {
       <div>
         <h1 className="text-xl font-semibold">Sign in</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Welcome back. Use a password or a magic link.
+          Google, GitHub, password, or magic link.
         </p>
       </div>
+
+      <OAuthButtons onError={setError} />
+
+      <AuthDivider />
 
       <div className="flex gap-2 rounded-lg bg-[var(--color-surface-2)] p-1">
         <button
@@ -72,7 +77,9 @@ export function LoginPage() {
               await signInWithPassword(email, password)
             }
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Sign in failed')
+            setError(
+              friendlyAuthError(err instanceof Error ? err.message : 'Sign in failed'),
+            )
           } finally {
             setBusy(false)
           }
@@ -89,16 +96,26 @@ export function LoginPage() {
           />
         </Field>
         {mode === 'password' ? (
-          <Field label="Password" htmlFor="password">
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
+          <div className="space-y-1">
+            <Field label="Password" htmlFor="password">
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            <div className="flex justify-end">
+              <Link
+                to="/forgot-password"
+                className="text-xs text-[var(--color-primary)] hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
+          </div>
         ) : null}
         {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}
         {info ? <p className="text-sm text-[var(--color-success)]">{info}</p> : null}

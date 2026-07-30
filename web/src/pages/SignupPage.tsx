@@ -4,6 +4,7 @@ import { useAuth } from '@/app/providers/AuthProvider'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
 import { PageLoader } from '@/components/ui/Spinner'
+import { AuthDivider, OAuthButtons, friendlyAuthError } from '@/features/auth/OAuthButtons'
 
 export function SignupPage() {
   const { signUp, user, loading } = useAuth()
@@ -23,9 +24,13 @@ export function SignupPage() {
       <div>
         <h1 className="text-xl font-semibold">Create account</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Join to create scopes and share them with family.
+          Join with Google, GitHub, or email to create projects and share with family.
         </p>
       </div>
+
+      <OAuthButtons onError={setError} />
+
+      <AuthDivider label="or register with email" />
 
       <form
         className="space-y-4"
@@ -36,9 +41,11 @@ export function SignupPage() {
           setInfo(null)
           try {
             await signUp({ email, password, name, username })
-            setInfo('Account created. You may need to confirm your email before signing in.')
+            setInfo(
+              'Account created. If email confirmation is on, check your inbox; otherwise you can sign in now.',
+            )
           } catch (err) {
-            setError(err instanceof Error ? err.message : 'Sign up failed')
+            setError(friendlyAuthError(err instanceof Error ? err.message : 'Sign up failed'))
           } finally {
             setBusy(false)
           }

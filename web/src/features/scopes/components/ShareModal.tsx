@@ -64,7 +64,7 @@ export function ShareModal({ open, onClose, scopeId }: Props) {
   }, [profilesQuery.data])
 
   return (
-    <Modal open={open} onClose={onClose} title="Share scope" size="lg">
+    <Modal open={open} onClose={onClose} title="Share project" size="lg">
       <div className="space-y-6">
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">Invite by username or email</h3>
@@ -251,7 +251,7 @@ export function ShareModal({ open, onClose, scopeId }: Props) {
         <Field label="Role for new invites">
           <p className="text-xs text-[var(--color-muted)]">
             Editors can create and complete tasks. Viewers can only read. Only you can rename or
-            delete this scope.
+            delete this project.
           </p>
         </Field>
       </div>

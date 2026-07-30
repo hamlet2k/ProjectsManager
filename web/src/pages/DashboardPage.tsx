@@ -97,9 +97,9 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Scopes</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Select a scope to view and manage its tasks.
+            Select a project to view and manage its tasks.
             {profile?.name ? ` — Hi ${profile.name}` : null}
           </p>
         </div>
@@ -109,20 +109,20 @@ export function DashboardPage() {
             setModalOpen(true)
           }}
         >
-          <Icons.Plus size={16} /> Add scope
+          <Icons.Plus size={16} /> Add project
         </Button>
       </div>
 
       {error ? (
         <p className="text-sm text-[var(--color-danger)]">
-          Failed to load scopes: {error instanceof Error ? error.message : 'Unknown error'}
+          Failed to load projects: {error instanceof Error ? error.message : 'Unknown error'}
         </p>
       ) : null}
 
       {scopes.length === 0 ? (
         <EmptyState
-          title="No scopes yet"
-          description="Create a scope (project space), then add tasks and invite family with a link."
+          title="No projects yet"
+          description="Create a project, then add tasks and invite family with a link."
           action={
             <Button
               onClick={() => {
@@ -130,7 +130,7 @@ export function DashboardPage() {
                 setModalOpen(true)
               }}
             >
-              Create your first scope
+              Create your first project
             </Button>
           }
         />
@@ -150,16 +150,16 @@ export function DashboardPage() {
                   onShare={() => setShareScopeId(scope.id)}
                   onDelete={async () => {
                     const ok = await confirm({
-                      title: 'Delete scope?',
+                      title: 'Delete project?',
                       message: `Delete “${scope.name}” and all of its tasks? This cannot be undone.`,
-                      confirmLabel: 'Delete scope',
+                      confirmLabel: 'Delete project',
                       cancelLabel: 'Cancel',
                       danger: true,
                     })
                     if (!ok) return
                     try {
                       await deleteScope.mutateAsync(scope.id)
-                      toast.push('Scope deleted', 'success')
+                      toast.push('Project deleted', 'success')
                     } catch (e) {
                       toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
                     }
@@ -192,10 +192,10 @@ export function DashboardPage() {
                 name: values.name,
                 description: values.description || null,
               })
-              toast.push('Scope updated', 'success')
+              toast.push('Project updated', 'success')
             } else {
               await createScope.mutateAsync(values)
-              toast.push('Scope created', 'success')
+              toast.push('Project created', 'success')
             }
           } catch (e) {
             toast.push(e instanceof Error ? e.message : 'Save failed', 'error')
@@ -290,8 +290,8 @@ function SortableScopeCard({
         </div>
       </div>
 
-      <Link to={`/scopes/${scope.id}`} className="mt-1 block min-w-0">
-        <h2 className="truncate text-lg font-semibold hover:underline">{scope.name}</h2>
+      <Link to={`/projects/${scope.id}`} className="mt-1 block min-w-0">
+        <h2 className="project-title truncate text-lg font-bold hover:underline">{scope.name}</h2>
         {scope.description ? (
           <p className="mt-1 line-clamp-2 text-sm text-[var(--color-muted)]">{scope.description}</p>
         ) : (

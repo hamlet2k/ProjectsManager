@@ -49,27 +49,28 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] I2: one binding per scope (collaborator can set; owner override via owner-preferred canonical binding)
 - [x] Complete → close GitHub (optional `close_issue_on_complete` on scope binding) — pull/sync already closes→complete path where implemented
 - [x] GitHub UI hidden when preference off (except integrated scopes)
-- [ ] Scope GitHub settings polish (enable switch layout; populated edit modal if still broken)
-- [ ] Apply migration `20260729000000_github_visibility_rls.sql` on Supabase (member SELECT + close_issue_on_complete)
+- [x] Project GitHub settings polish (link toggle, status banner, loading/saving states)
+- [ ] Apply migration `20260729000000_github_visibility_rls.sql` on Supabase (member SELECT + close_issue_on_complete) — run in SQL Editor if not done
 
 ### P1 — UX polish from your list (still valid)
 
-- [ ] Scroll to newly added task + temporary highlight
-- [ ] Esc cancels task edit / closes expanded edit contexts
-- [ ] Auto-collapse filters after selection on mobile
+- [x] Scroll to newly added task + temporary highlight
+- [x] Esc cancels task tag editor / closes expanded task details (modals already Esc)
+- [x] Auto-collapse filters after tag selection / search Enter on mobile
 - [ ] Global + contextual keyboard shortcuts consolidated; alt-text for keybound buttons
 - [ ] Select which icons show collapsed vs expanded on task rows
-- [ ] Rename UI “end date” → “due date” everywhere
+- [x] Rename UI “end date” → “due date” everywhere (labels already Due date)
+- [x] Clearer drag-reorder hints when sort is Tags / not Rank
 - [ ] Due-date group sort (today / tomorrow / …) if not fully parity
 - [ ] Delete tag from filter chips with confirm when in use
-- [ ] Search also matches GitHub issue numbers / milestones when GH active
-- [ ] Navbar: home icon; less “back”; edit-scope affordance if desired
-- [ ] Spinner on sync/transactional actions
-- [ ] Signup/login polish (profile standards, register↔login links, password strength)
-- [ ] Scope title font bolder (not hollow sketch font only)
-- [ ] Dark mode: selected-tag border greyer (not bright blue)
+- [x] Search also matches GitHub issue numbers / milestones when GH active
+- [ ] Navbar: home icon; less “back”; edit-project affordance if desired
+- [x] Spinner on GitHub create/sync task actions
+- [x] Signup/login polish (OAuth Google/GitHub, password recovery)
+- [x] Project title font bolder (not hollow sketch font only)
+- [x] Dark mode: selected-tag border greyer (not bright blue)
 - [ ] Markdown help file + link from description UI
-- [ ] Token/help links in Settings
+- [x] Token/help links in Settings
 
 ### P2 — GitHub depth
 
@@ -78,7 +79,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [ ] Ensure label; add issue to Project on create
 - [ ] Blocked-by issue pill (red) from GitHub relationships
 - [ ] Webhooks for two-way without manual sync
-- [ ] SSO GitHub/Google (broader than PAT)
+- [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)
 
 ### P3 — Chatbot / voice / AI (large epic)
 
@@ -96,7 +97,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [ ] Offline SQLite → sync (long-term; different architecture)
 - [ ] Help index + navbar help
 - [ ] Advanced import/export configuration
-- [ ] Rename scopes → projects/groups/lists in UI (product naming)
+- [x] Rename scopes → projects in UI (internal DB still `scopes`)
 
 ### Explicitly deferred / N/A on new stack
 

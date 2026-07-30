@@ -21,7 +21,7 @@ export function InviteAcceptPage() {
       .then((share) => {
         if (cancelled) return
         setDone(true)
-        navigate(`/scopes/${share.scope_id}`, { replace: true })
+        navigate(`/projects/${share.scope_id}`, { replace: true })
       })
       .catch((e) => {
         if (cancelled) return
@@ -42,7 +42,7 @@ export function InviteAcceptPage() {
       <div className="mx-auto max-w-md space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
         <h1 className="text-xl font-semibold">You&apos;re invited</h1>
         <p className="text-sm text-[var(--color-muted)]">
-          Sign in or create an account to join this shared scope.
+          Sign in or create an account to join this shared project.
         </p>
         <div className="flex justify-center gap-2">
           <Link to={`/login?next=${redirect}`}>

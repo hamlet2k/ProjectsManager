@@ -67,7 +67,7 @@ export async function createScope(input: {
   })
 
   if (error) {
-    const msg = error.message || 'Failed to create scope'
+    const msg = error.message || 'Failed to create project'
     if (msg.toLowerCase().includes('could not find the function') || error.code === 'PGRST202') {
       throw new Error(
         'create_scope is missing in Supabase. Run supabase/migrations/20260727000003_create_scope_rpc.sql in the SQL Editor, then retry.',
@@ -86,7 +86,7 @@ export async function createScope(input: {
 
   // rpc may return a single object or (rarely) an array depending on PostgREST typing
   const row = Array.isArray(data) ? data[0] : data
-  if (!row) throw new Error('Scope was not returned from the server')
+  if (!row) throw new Error('Project was not returned from the server')
   return row as Scope
 }
 

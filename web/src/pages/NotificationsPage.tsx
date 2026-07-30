@@ -61,9 +61,9 @@ export function NotificationsPage() {
                         {' · '}
                         <Link
                           className="text-[var(--color-primary)] hover:underline"
-                          to={`/scopes/${n.scope_id}`}
+                          to={`/projects/${n.scope_id}`}
                         >
-                          Open scope
+                          Open project
                         </Link>
                       </>
                     ) : null}

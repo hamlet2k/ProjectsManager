@@ -8,7 +8,7 @@ export function AuthLayout() {
           Projects<span className="text-[var(--color-primary)]">Manager</span>
         </Link>
         <p className="mt-2 text-sm text-[var(--color-muted)]">
-          Family projects, shared scopes, GitHub-linked tasks
+          Family projects, shared tasks, and optional GitHub sync
         </p>
       </div>
       <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">

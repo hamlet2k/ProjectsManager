@@ -164,10 +164,10 @@ export function ScopePage() {
     return (
       <div className="space-y-3">
         <p className="text-[var(--color-danger)]">
-          {scopeError instanceof Error ? scopeError.message : 'Scope not found or no access.'}
+          {scopeError instanceof Error ? scopeError.message : 'Project not found or no access.'}
         </p>
         <Link to="/">
-          <Button variant="secondary">Back to scopes</Button>
+          <Button variant="secondary">Back to projects</Button>
         </Link>
       </div>
     )
@@ -179,12 +179,12 @@ export function ScopePage() {
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-sm text-[var(--color-muted)]">
             <Link to="/" className="hover:underline">
-              Scopes
+              Projects
             </Link>
             <span>/</span>
             <span className="truncate">{scope.name}</span>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">{scope.name}</h1>
+          <h1 className="project-title text-2xl font-bold tracking-tight">{scope.name}</h1>
           {scope.description ? (
             <p className="mt-1 text-sm text-[var(--color-muted)]">{scope.description}</p>
           ) : null}
@@ -305,7 +305,7 @@ export function ScopePage() {
         }}
         onGithubAction={async (task, action) => {
           if (!ghCaps.canMutate || !ghCaps.scopeIntegrated) {
-            toast.push('Enable GitHub in Settings and link a repo for this scope first', 'error')
+            toast.push('Enable GitHub in Settings and link a repo for this project first', 'error')
             return
           }
           try {
@@ -417,25 +417,44 @@ export function ScopePage() {
         />
       </Modal>
 
-      <Modal open={githubOpen} onClose={() => setGithubOpen(false)} title="GitHub for this scope" size="lg">
+      <Modal open={githubOpen} onClose={() => setGithubOpen(false)} title="GitHub for this project" size="lg">
         <div className="space-y-4">
-          {ghCaps.scopeIntegrated && displayRepo ? (
-            <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
-              Linked repository: <strong>{displayRepo}</strong>
-              {ghCaps.readOnly ? (
-                <span className="mt-1 block text-xs text-[var(--color-muted)]">
-                  Read-only for you. Enable GitHub under Settings (and ensure you can edit this
-                  scope) to create/sync issues.
-                </span>
+          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">
+                {ghCaps.scopeIntegrated && displayRepo ? (
+                  <>
+                    Linked:{' '}
+                    <a
+                      className="underline"
+                      href={`https://github.com/${displayRepo}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {displayRepo}
+                    </a>
+                  </>
+                ) : (
+                  'No repository linked yet'
+                )}
+              </span>
+              {saveGhConfig.isPending ? (
+                <span className="text-xs text-[var(--color-muted)]">Saving…</span>
               ) : null}
-            </p>
-          ) : null}
+            </div>
+            {ghCaps.readOnly ? (
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                Read-only for you. Enable GitHub under Settings (and ensure you can edit this
+                project) to create/sync issues.
+              </p>
+            ) : null}
+          </div>
 
           {!ghCaps.preferenceOn ? (
             <p className="text-sm text-[var(--color-muted)]">
               {ghCaps.scopeIntegrated ? (
                 <>
-                  This scope is linked to GitHub. Enable your personal GitHub integration under{' '}
+                  This project is linked to GitHub. Enable your personal GitHub integration under{' '}
                   <Link className="underline" to="/settings">
                     Settings
                   </Link>{' '}
@@ -453,15 +472,49 @@ export function ScopePage() {
             </p>
           ) : !ghCaps.canConfigure ? (
             <p className="text-sm text-[var(--color-muted)]">
-              You can view this scope’s GitHub link but need editor access to change it.
+              You can view this project’s GitHub link but need editor access to change it.
             </p>
           ) : (
             <>
               <p className="text-xs text-[var(--color-muted)]">
-                One repository per scope. Owner or editors can set the link; the owner’s binding
+                One repository per project. Owner or editors can set the link; the owner’s binding
                 wins if both exist.
               </p>
-              <Field label="Link repository">
+
+              <label className="flex items-start gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={Boolean(
+                    (myScopeConfig?.github_integration_enabled &&
+                      myScopeConfig?.github_repo_owner &&
+                      myScopeConfig?.github_repo_name) ||
+                      (ghCaps.scopeIntegrated && !myScopeConfig),
+                  )}
+                  onChange={(e) => {
+                    if (!e.target.checked) {
+                      saveGhConfig.mutate({
+                        github_integration_enabled: false,
+                        github_repo_id: null,
+                        github_repo_name: null,
+                        github_repo_owner: null,
+                      })
+                    }
+                    // Turning on: user picks a repo below (enables on select)
+                  }}
+                />
+                <span>
+                  Link this project to GitHub
+                  <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                    Uncheck to clear <em>your</em> binding. Pick a repository below to enable.
+                  </span>
+                </span>
+              </label>
+
+              <Field label="Repository">
+                {reposQuery.isLoading ? (
+                  <p className="mt-1 text-sm text-[var(--color-muted)]">Loading repositories…</p>
+                ) : null}
                 {reposQuery.isError ? (
                   <p className="text-sm text-[var(--color-danger)]">
                     Could not list repos. Check your token in Settings.
@@ -469,6 +522,7 @@ export function ScopePage() {
                 ) : null}
                 <select
                   className="field-input mt-1"
+                  disabled={reposQuery.isLoading || saveGhConfig.isPending}
                   value={
                     (myScopeConfig?.github_repo_owner && myScopeConfig?.github_repo_name
                       ? `${myScopeConfig.github_repo_owner}/${myScopeConfig.github_repo_name}`
@@ -516,6 +570,7 @@ export function ScopePage() {
                   <Field label="Default milestone">
                     <select
                       className="field-input mt-1"
+                      disabled={saveGhConfig.isPending}
                       value={
                         myScopeConfig?.github_milestone_number ??
                         binding?.github_milestone_number ??
@@ -538,9 +593,10 @@ export function ScopePage() {
                       ))}
                     </select>
                   </Field>
-                  <Field label="GitHub Project (optional)">
+                  <Field label="GitHub Project board (optional)">
                     <select
                       className="field-input mt-1"
+                      disabled={saveGhConfig.isPending}
                       value={myScopeConfig?.github_project_id ?? binding?.github_project_id ?? ''}
                       onChange={(e) => {
                         const id = e.target.value || null
