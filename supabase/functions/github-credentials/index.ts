@@ -97,6 +97,27 @@ Deno.serve(async (req) => {
     if (action === 'save') {
       const token = String(body.token ?? '').trim()
       if (!token) return json({ error: 'token required' }, 400)
+      // Quick validation against GitHub before storing
+      const probe = await fetch('https://api.github.com/user', {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      })
+      if (!probe.ok) {
+        const t = await probe.text()
+        return json(
+          {
+            error:
+              probe.status === 401
+                ? 'GitHub rejected this token. Use a classic PAT (repo scope) or fine-grained PAT with repository + Issues access.'
+                : `GitHub validation failed (${probe.status}): ${t.slice(0, 200)}`,
+          },
+          400,
+        )
+      }
+      const me = (await probe.json()) as { login?: string }
       const token_encrypted = await encryptToken(token, secret)
       const token_hint = token.slice(-4)
       const { error } = await admin.from('github_credentials').upsert({
@@ -105,7 +126,7 @@ Deno.serve(async (req) => {
         token_hint,
       })
       if (error) return json({ error: error.message }, 400)
-      return json({ ok: true, token_hint })
+      return json({ ok: true, token_hint, login: me.login ?? null })
     }
 
     if (action === 'delete') {

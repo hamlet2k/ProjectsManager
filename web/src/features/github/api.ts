@@ -1,12 +1,37 @@
 import { getSupabase } from '@/lib/supabase/client'
 import type { ScopeGitHubConfig, TaskGitHubConfig } from '@/lib/supabase/types'
 
+async function extractFnError(error: unknown, data: unknown): Promise<string> {
+  if (data && typeof data === 'object' && data !== null && 'error' in data) {
+    const e = (data as { error?: unknown }).error
+    if (typeof e === 'string' && e.trim()) return e
+  }
+  const err = error as { message?: string; context?: Response }
+  if (err?.context && typeof err.context.json === 'function') {
+    try {
+      const body = await err.context.json()
+      if (body?.error && typeof body.error === 'string') return body.error
+    } catch {
+      /* ignore */
+    }
+  }
+  if (err?.message) {
+    if (err.message.includes('non-2xx')) {
+      return 'GitHub request failed. Check your PAT under Settings (classic repo scope or fine-grained Issues access), then Test connection.'
+    }
+    return err.message
+  }
+  return 'Request failed'
+}
+
 async function invokeGitHubProxy<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await getSupabase().functions.invoke('github-proxy', {
     body: { action, ...payload },
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error as string)
+  if (error) throw new Error(await extractFnError(error, data))
+  if (data && typeof data === 'object' && data !== null && 'error' in data && (data as { error?: string }).error) {
+    throw new Error(String((data as { error: string }).error))
+  }
   return data as T
 }
 
@@ -14,8 +39,10 @@ async function invokeCredentials<T>(action: string, payload: Record<string, unkn
   const { data, error } = await getSupabase().functions.invoke('github-credentials', {
     body: { action, ...payload },
   })
-  if (error) throw error
-  if (data?.error) throw new Error(data.error as string)
+  if (error) throw new Error(await extractFnError(error, data))
+  if (data && typeof data === 'object' && data !== null && 'error' in data && (data as { error?: string }).error) {
+    throw new Error(String((data as { error: string }).error))
+  }
   return data as T
 }
 

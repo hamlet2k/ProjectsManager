@@ -43,16 +43,18 @@ async function decryptToken(payload: string, secret: string): Promise<string> {
   return new TextDecoder().decode(plain)
 }
 
-async function gh(
-  token: string,
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
+/** GitHub accepts Bearer for classic (ghp_) and fine-grained (github_pat_) PATs. */
+function authHeader(token: string): string {
+  const t = token.trim()
+  return `Bearer ${t}`
+}
+
+async function gh(token: string, path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${GITHUB_API}${path}`, {
     ...init,
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
+      Authorization: authHeader(token),
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
@@ -64,13 +66,14 @@ async function ghJson<T>(token: string, path: string, init?: RequestInit): Promi
   const res = await gh(token, path, init)
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`GitHub ${res.status}: ${text.slice(0, 300)}`)
+    throw new Error(`GitHub ${res.status}: ${text.slice(0, 400)}`)
   }
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
 }
 
 type ScopeConfig = {
+  user_id?: string
   github_integration_enabled: boolean
   github_repo_owner: string | null
   github_repo_name: string | null
@@ -80,6 +83,8 @@ type ScopeConfig = {
   github_project_id: string | null
   github_project_name: string | null
   github_label_name: string | null
+  close_issue_on_complete?: boolean
+  updated_at?: string
 }
 
 Deno.serve(async (req) => {
@@ -88,18 +93,18 @@ Deno.serve(async (req) => {
   try {
     const secret = Deno.env.get('GITHUB_TOKEN_SECRET')
     if (!secret || secret.length < 16) {
-      return json({ error: 'GITHUB_TOKEN_SECRET is not configured' }, 500)
+      return json({ error: 'GITHUB_TOKEN_SECRET is not configured on the Edge Function' }, 500)
     }
 
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return json({ error: 'Missing Authorization' }, 401)
+    const authHeaderIn = req.headers.get('Authorization')
+    if (!authHeaderIn) return json({ error: 'Missing Authorization' }, 401)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
     const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+      global: { headers: { Authorization: authHeaderIn } },
     })
     const {
       data: { user },
@@ -115,59 +120,100 @@ Deno.serve(async (req) => {
       .eq('user_id', user.id)
       .maybeSingle()
     if (credErr) return json({ error: credErr.message }, 400)
-    if (!cred?.token_encrypted) return json({ error: 'No GitHub token configured' }, 400)
+    if (!cred?.token_encrypted) {
+      return json({ error: 'No GitHub token configured. Save a PAT under Settings first.' }, 400)
+    }
 
-    const token = await decryptToken(cred.token_encrypted, secret)
+    let token: string
+    try {
+      token = (await decryptToken(cred.token_encrypted, secret)).trim()
+    } catch {
+      return json(
+        {
+          error:
+            'Could not decrypt stored token. Remove the token in Settings and save a new PAT (GITHUB_TOKEN_SECRET may have changed).',
+        },
+        400,
+      )
+    }
+    if (!token) return json({ error: 'Stored GitHub token is empty' }, 400)
+
     const body = await req.json().catch(() => ({}))
     const action = body.action as string
 
     if (action === 'test') {
-      const me = await ghJson<{ login: string }>(token, '/user')
-      return json({ ok: true, login: me.login })
+      try {
+        const me = await ghJson<{ login: string }>(token, '/user')
+        return json({ ok: true, login: me.login })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'test failed'
+        return json(
+          {
+            error: msg.includes('401')
+              ? 'GitHub rejected the token (401). Use a classic PAT with repo scope, or a fine-grained PAT with repository access + Issues read/write.'
+              : msg,
+          },
+          400,
+        )
+      }
     }
 
     if (action === 'list_repos') {
-      const repos: Array<{ id: number; name: string; owner: { login: string }; full_name: string }> =
-        []
-      let page = 1
-      while (page <= 5) {
-        const batch = await ghJson<typeof repos>(
-          token,
-          `/user/repos?per_page=100&page=${page}&sort=updated`,
-        )
-        repos.push(...batch)
-        if (batch.length < 100) break
-        page += 1
+      try {
+        type RepoRaw = {
+          id: number
+          name: string
+          owner: { login: string } | string
+          full_name: string
+        }
+        const repos: RepoRaw[] = []
+        let page = 1
+        // affiliation covers owner + collab + org for classic and most fine-grained tokens
+        while (page <= 5) {
+          const batch = await ghJson<RepoRaw[]>(
+            token,
+            `/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
+          )
+          repos.push(...batch)
+          if (batch.length < 100) break
+          page += 1
+        }
+        return json({
+          repositories: repos.map((r) => ({
+            id: r.id,
+            name: r.name,
+            owner: typeof r.owner === 'string' ? r.owner : r.owner.login,
+            full_name: r.full_name,
+          })),
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'list_repos failed'
+        return json({ error: msg }, 400)
       }
-      return json({
-        repositories: repos.map((r) => ({
-          id: r.id,
-          name: r.name,
-          owner: r.owner.login,
-          full_name: r.full_name,
-        })),
-      })
     }
 
     if (action === 'list_milestones') {
       const owner = String(body.owner ?? '')
       const repo = String(body.repo ?? '')
       if (!owner || !repo) return json({ error: 'owner and repo required' }, 400)
-      const milestones = await ghJson<
-        Array<{ number: number; title: string; due_on: string | null; state: string }>
-      >(token, `/repos/${owner}/${repo}/milestones?state=all&per_page=100`)
-      return json({
-        milestones: milestones.map((m) => ({
-          number: m.number,
-          title: m.title,
-          due_on: m.due_on,
-          state: m.state,
-        })),
-      })
+      try {
+        const milestones = await ghJson<
+          Array<{ number: number; title: string; due_on: string | null; state: string }>
+        >(token, `/repos/${owner}/${repo}/milestones?state=all&per_page=100`)
+        return json({
+          milestones: milestones.map((m) => ({
+            number: m.number,
+            title: m.title,
+            due_on: m.due_on,
+            state: m.state,
+          })),
+        })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'list_milestones failed' }, 400)
+      }
     }
 
     if (action === 'list_projects') {
-      // Projects v2 via GraphQL (best-effort)
       const owner = String(body.owner ?? '')
       if (!owner) return json({ error: 'owner required' }, 400)
       const query = `
@@ -180,15 +226,13 @@ Deno.serve(async (req) => {
       const res = await fetch('https://api.github.com/graphql', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: authHeader(token),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, variables: { login: owner } }),
       })
       const payload = await res.json()
-      const nodes =
-        payload?.data?.repositoryOwner?.projectsV2?.nodes ??
-        []
+      const nodes = payload?.data?.repositoryOwner?.projectsV2?.nodes ?? []
       return json({
         projects: nodes
           .filter((n: { closed?: boolean } | null) => n && !n.closed)
@@ -201,23 +245,62 @@ Deno.serve(async (req) => {
       })
     }
 
-    async function loadScopeConfig(scopeId: string): Promise<ScopeConfig | null> {
-      const { data } = await admin
+    /** One project → one repo: owner’s active config, else latest active. */
+    async function loadCanonicalScopeConfig(scopeId: string): Promise<ScopeConfig | null> {
+      const { data: scope } = await admin.from('scopes').select('owner_id').eq('id', scopeId).maybeSingle()
+      const { data: configs } = await admin
         .from('scope_github_configs')
         .select('*')
         .eq('scope_id', scopeId)
-        .eq('user_id', user!.id)
-        .maybeSingle()
-      return data as ScopeConfig | null
+      const list = (configs ?? []) as ScopeConfig[]
+      const active = list.filter(
+        (c) => c.github_integration_enabled && c.github_repo_owner && c.github_repo_name,
+      )
+      if (active.length === 0) {
+        // Fallback: current user's row even if partially filled
+        const mine = list.find((c) => c.user_id === user!.id)
+        return mine ?? null
+      }
+      if (scope?.owner_id) {
+        const ownerCfg = active.find((c) => c.user_id === scope.owner_id)
+        if (ownerCfg) return ownerCfg
+      }
+      return (
+        [...active].sort((a, b) =>
+          String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')),
+        )[0] ?? null
+      )
     }
 
-    async function upsertTaskConfig(taskId: string, patch: Record<string, unknown>) {
+    async function loadTaskLink(taskId: string) {
+      const { data: mine } = await admin
+        .from('task_github_configs')
+        .select('*')
+        .eq('task_id', taskId)
+        .eq('user_id', user!.id)
+        .maybeSingle()
+      if (mine?.github_issue_number) return mine
+
+      const { data: anyLink } = await admin
+        .from('task_github_configs')
+        .select('*')
+        .eq('task_id', taskId)
+        .not('github_issue_number', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return anyLink ?? mine ?? null
+    }
+
+    async function upsertTaskConfig(
+      taskId: string,
+      patch: Record<string, unknown>,
+      rowUserId?: string,
+    ) {
+      const uid = rowUserId ?? user!.id
       const { data, error } = await admin
         .from('task_github_configs')
-        .upsert(
-          { task_id: taskId, user_id: user!.id, ...patch },
-          { onConflict: 'task_id,user_id' },
-        )
+        .upsert({ task_id: taskId, user_id: uid, ...patch }, { onConflict: 'task_id,user_id' })
         .select('*')
         .single()
       if (error) throw new Error(error.message)
@@ -234,45 +317,98 @@ Deno.serve(async (req) => {
       })
     }
 
+    async function ensureLabel(owner: string, repo: string, label: string) {
+      const check = await gh(token, `/repos/${owner}/${repo}/labels/${encodeURIComponent(label)}`)
+      if (check.ok) return
+      if (check.status === 404) {
+        const create = await gh(token, `/repos/${owner}/${repo}/labels`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name: label,
+            color: '0E8A16',
+            description: 'Projects Manager',
+          }),
+        })
+        if (!create.ok && create.status !== 422) {
+          const t = await create.text()
+          console.warn('ensureLabel failed', create.status, t.slice(0, 200))
+        }
+      }
+    }
+
     if (action === 'create_issue') {
       const taskId = String(body.taskId ?? '')
       if (!taskId) return json({ error: 'taskId required' }, 400)
 
-      const { data: task, error: taskErr } = await admin
-        .from('tasks')
-        .select('*')
-        .eq('id', taskId)
-        .single()
+      const existing = await loadTaskLink(taskId)
+      if (existing?.github_issue_number) {
+        return json({
+          error: `Task already linked to issue #${existing.github_issue_number}`,
+          config: existing,
+        }, 400)
+      }
+
+      const { data: task, error: taskErr } = await admin.from('tasks').select('*').eq('id', taskId).single()
       if (taskErr || !task) return json({ error: 'Task not found' }, 404)
 
-      const scopeCfg = await loadScopeConfig(task.scope_id)
-      if (!scopeCfg?.github_integration_enabled || !scopeCfg.github_repo_owner || !scopeCfg.github_repo_name) {
-        return json({ error: 'GitHub repo not configured for this scope' }, 400)
+      const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json(
+          {
+            error:
+              'GitHub repo not configured for this project. Open project → GitHub and select a repository.',
+          },
+          400,
+        )
       }
 
       const owner = scopeCfg.github_repo_owner
       const repo = scopeCfg.github_repo_name
       const labels: string[] = []
-      if (scopeCfg.github_label_name) labels.push(scopeCfg.github_label_name)
-
-      const issueBody = {
-        title: String(body.title ?? task.name),
-        body: String(body.body ?? task.description ?? ''),
-        labels: labels.length ? labels : undefined,
-        milestone: scopeCfg.github_milestone_number ?? undefined,
+      if (scopeCfg.github_label_name) {
+        try {
+          await ensureLabel(owner, repo, scopeCfg.github_label_name)
+          labels.push(scopeCfg.github_label_name)
+        } catch {
+          /* continue without label */
+        }
       }
 
+      const issueBody: Record<string, unknown> = {
+        title: String(body.title ?? task.name),
+        body: String(body.body ?? task.description ?? ''),
+      }
+      if (labels.length) issueBody.labels = labels
+      if (scopeCfg.github_milestone_number) issueBody.milestone = scopeCfg.github_milestone_number
+
       try {
-        const issue = await ghJson<{
+        let issue: {
           id: number
           node_id: string
           number: number
           html_url: string
           state: string
-        }>(token, `/repos/${owner}/${repo}/issues`, {
-          method: 'POST',
-          body: JSON.stringify(issueBody),
-        })
+        }
+        try {
+          issue = await ghJson(token, `/repos/${owner}/${repo}/issues`, {
+            method: 'POST',
+            body: JSON.stringify(issueBody),
+          })
+        } catch (first) {
+          // Retry without labels/milestone if GitHub rejects optional fields
+          const msg = first instanceof Error ? first.message : ''
+          if (msg.includes('422') || msg.includes('Label') || msg.includes('milestone')) {
+            issue = await ghJson(token, `/repos/${owner}/${repo}/issues`, {
+              method: 'POST',
+              body: JSON.stringify({
+                title: issueBody.title,
+                body: issueBody.body,
+              }),
+            })
+          } else {
+            throw first
+          }
+        }
 
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
@@ -301,20 +437,15 @@ Deno.serve(async (req) => {
       const taskId = String(body.taskId ?? '')
       if (!taskId) return json({ error: 'taskId required' }, 400)
 
-      const { data: cfg } = await admin
-        .from('task_github_configs')
-        .select('*')
-        .eq('task_id', taskId)
-        .eq('user_id', user.id)
-        .maybeSingle()
-
+      const cfg = await loadTaskLink(taskId)
       if (!cfg?.github_issue_number || !cfg.github_repo_owner || !cfg.github_repo_name) {
-        return json({ config: null, error: 'No linked issue' }, 400)
+        return json({ config: null, error: 'No linked issue for this task' }, 400)
       }
 
-      const owner = cfg.github_repo_owner
-      const repo = cfg.github_repo_name
-      const number = cfg.github_issue_number
+      const owner = cfg.github_repo_owner as string
+      const repo = cfg.github_repo_name as string
+      const number = cfg.github_issue_number as number
+      const rowUser = (cfg.user_id as string) || user.id
 
       try {
         if (action === 'close_issue') {
@@ -328,14 +459,14 @@ Deno.serve(async (req) => {
             method: 'PATCH',
             body: JSON.stringify({ state: 'closed' }),
           })
-          const config = await upsertTaskConfig(taskId, {
-            github_issue_state: issue.state,
-            github_issue_url: issue.html_url,
-          })
-          await admin
-            .from('tasks')
-            .update({ completed: true, completed_date: new Date().toISOString() })
-            .eq('id', taskId)
+          const config = await upsertTaskConfig(
+            taskId,
+            {
+              github_issue_state: issue.state,
+              github_issue_url: issue.html_url,
+            },
+            rowUser,
+          )
           await logSync(taskId, 'close_issue', 'success')
           return json({ config })
         }
@@ -350,13 +481,17 @@ Deno.serve(async (req) => {
           body: string | null
         }>(token, `/repos/${owner}/${repo}/issues/${number}`)
 
-        const config = await upsertTaskConfig(taskId, {
-          github_issue_id: issue.id,
-          github_issue_node_id: issue.node_id,
-          github_issue_number: issue.number,
-          github_issue_url: issue.html_url,
-          github_issue_state: issue.state,
-        })
+        const config = await upsertTaskConfig(
+          taskId,
+          {
+            github_issue_id: issue.id,
+            github_issue_node_id: issue.node_id,
+            github_issue_number: issue.number,
+            github_issue_url: issue.html_url,
+            github_issue_state: issue.state,
+          },
+          rowUser,
+        )
 
         if (issue.state === 'closed') {
           await admin

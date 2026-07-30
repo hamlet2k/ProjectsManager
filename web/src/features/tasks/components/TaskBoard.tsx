@@ -417,12 +417,13 @@ export function TaskBoard({
     onReorder([...nextVisible, ...hiddenIds])
   }
 
+  const collapseFiltersIfMobile = () => {
+    if (isMobile && filtersOpen) closeFilters()
+  }
+
   const toggleTag = (id: string) => {
     setActiveTagIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-    // Mobile: collapse filters after a tag pick so the list is usable
-    if (isMobile && filtersOpen) {
-      closeFilters()
-    }
+    collapseFiltersIfMobile()
   }
 
   const resetQuick = () => {
@@ -544,8 +545,8 @@ export function TaskBoard({
                         e.preventDefault()
                         setSearch('')
                       }
-                      if (e.key === 'Enter' && isMobile && filtersOpen) {
-                        closeFilters()
+                      if (e.key === 'Enter') {
+                        collapseFiltersIfMobile()
                       }
                     }}
                   />
@@ -555,7 +556,10 @@ export function TaskBoard({
                   <select
                     className="field-input"
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortMode)}
+                    onChange={(e) => {
+                      setSortBy(e.target.value as SortMode)
+                      collapseFiltersIfMobile()
+                    }}
                   >
                     <option value="rank">Rank</option>
                     <option value="name">Name</option>
@@ -569,7 +573,10 @@ export function TaskBoard({
                     type="checkbox"
                     className="h-4 w-8 accent-[var(--color-primary)]"
                     checked={showCompleted}
-                    onChange={(e) => setShowCompleted(e.target.checked)}
+                    onChange={(e) => {
+                      setShowCompleted(e.target.checked)
+                      collapseFiltersIfMobile()
+                    }}
                   />
                   Show completed
                 </label>
@@ -1116,22 +1123,17 @@ function SortableTaskRow({
           >
             <Icons.Tag />
           </button>
-          {githubVisible && (githubEnabled || github?.github_issue_number) ? (
+          {/* Linked: sync only (issue # pill opens GitHub). Unlinked: create issue. */}
+          {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
             <button
               type="button"
-              className={cn('icon-btn', !githubEnabled && 'opacity-50')}
-              title={
-                !githubEnabled
-                  ? 'GitHub actions need integration enabled in Settings'
-                  : github?.github_issue_number
-                    ? 'Sync GitHub issue'
-                    : 'Create GitHub issue'
-              }
-              disabled={!canEdit || !githubEnabled || ghBusy}
+              className="icon-btn"
+              title="Create GitHub issue"
+              disabled={ghBusy}
               onClick={async () => {
                 setGhBusy(true)
                 try {
-                  await onGithub(github?.github_issue_number ? 'sync' : 'create')
+                  await onGithub('create')
                 } finally {
                   setGhBusy(false)
                 }
@@ -1144,6 +1146,31 @@ function SortableTaskRow({
                 />
               ) : (
                 <Icons.Github />
+              )}
+            </button>
+          ) : null}
+          {githubVisible && github?.github_issue_number && githubEnabled && canEdit ? (
+            <button
+              type="button"
+              className={cn('icon-btn', ghBusy && 'opacity-70')}
+              title={`Sync with GitHub #${github.github_issue_number}`}
+              disabled={ghBusy}
+              onClick={async () => {
+                setGhBusy(true)
+                try {
+                  await onGithub('sync')
+                } finally {
+                  setGhBusy(false)
+                }
+              }}
+            >
+              {ghBusy ? (
+                <span
+                  className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                  aria-hidden
+                />
+              ) : (
+                <Icons.Refresh />
               )}
             </button>
           ) : null}

@@ -239,18 +239,20 @@ export function ScopePage() {
         onToggleComplete={async (task, completed) => {
           try {
             await toggleComplete.mutateAsync({ taskId: task.id, completed })
-            // Optional complete → close GitHub issue
+            // Complete → close when setting is on (default true if column unset)
+            const closeOnComplete = binding?.close_issue_on_complete !== false
+            const link = githubByTask.get(task.id)
             if (
               completed &&
               ghCaps.canMutate &&
-              binding?.close_issue_on_complete &&
-              githubByTask.get(task.id)?.github_issue_number &&
-              githubByTask.get(task.id)?.github_issue_state !== 'closed'
+              closeOnComplete &&
+              link?.github_issue_number &&
+              link.github_issue_state !== 'closed'
             ) {
               try {
                 await closeIssueForTask(task.id)
                 await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
-                toast.push('Task completed and GitHub issue closed', 'success')
+                toast.push(`Task completed · closed GitHub #${link.github_issue_number}`, 'success')
               } catch (e) {
                 toast.push(
                   e instanceof Error
@@ -548,6 +550,7 @@ export function ScopePage() {
                       github_repo_id: repo?.id ?? null,
                       github_repo_owner: owner ?? null,
                       github_repo_name: name ?? null,
+                      close_issue_on_complete: true,
                     })
                   }}
                 >
@@ -619,10 +622,10 @@ export function ScopePage() {
                     <input
                       type="checkbox"
                       className="mt-0.5"
-                      checked={Boolean(
-                        myScopeConfig?.close_issue_on_complete ??
-                          binding?.close_issue_on_complete,
-                      )}
+                      checked={
+                        (myScopeConfig?.close_issue_on_complete ??
+                          binding?.close_issue_on_complete) !== false
+                      }
                       onChange={(e) => {
                         saveGhConfig.mutate({ close_issue_on_complete: e.target.checked })
                       }}
@@ -630,7 +633,7 @@ export function ScopePage() {
                     <span>
                       When I complete a linked task, close the GitHub issue
                       <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
-                        Only applies when your integration is on and you complete the task.
+                        On by default. Uses your PAT under Settings.
                       </span>
                     </span>
                   </label>

@@ -12,6 +12,7 @@ export function SignupPage() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -40,6 +41,16 @@ export function SignupPage() {
           setError(null)
           setInfo(null)
           try {
+            if (password !== confirmPassword) {
+              setError('Passwords do not match')
+              setBusy(false)
+              return
+            }
+            if (password.length < 8) {
+              setError('Password must be at least 8 characters')
+              setBusy(false)
+              return
+            }
             await signUp({ email, password, name, username })
             setInfo(
               'Account created. If email confirmation is on, check your inbox; otherwise you can sign in now.',
@@ -52,7 +63,7 @@ export function SignupPage() {
         }}
       >
         <Field label="Name" htmlFor="name">
-          <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+          <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
         </Field>
         <Field label="Username" htmlFor="username">
           <Input
@@ -61,6 +72,8 @@ export function SignupPage() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             pattern="[A-Za-z0-9_\-\.]{2,80}"
+            autoComplete="username"
+            title="2–80 characters: letters, numbers, _ - ."
           />
         </Field>
         <Field label="Email" htmlFor="email">
@@ -70,6 +83,7 @@ export function SignupPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
           />
         </Field>
         <Field label="Password" htmlFor="password">
@@ -80,6 +94,19 @@ export function SignupPage() {
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          <p className="mt-1 text-xs text-[var(--color-muted)]">At least 8 characters.</p>
+        </Field>
+        <Field label="Confirm password" htmlFor="confirm-password">
+          <Input
+            id="confirm-password"
+            type="password"
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
           />
         </Field>
         {error ? <p className="text-sm text-[var(--color-danger)]">{error}</p> : null}
