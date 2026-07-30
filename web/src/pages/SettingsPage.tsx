@@ -4,8 +4,10 @@ import { useTheme } from '@/app/providers/ThemeProvider'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import {
   deleteGitHubToken,
+  disableMyGitHubScopeConfigs,
   getGitHubTokenStatus,
   saveGitHubToken,
   testGitHubConnection,
@@ -16,6 +18,7 @@ export function SettingsPage() {
   const { profile, updateProfile, updatePassword } = useAuth()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
+  const confirm = useConfirm()
 
   const [name, setName] = useState(profile?.name ?? '')
   const [username, setUsername] = useState(profile?.username ?? '')
@@ -175,12 +178,34 @@ export function SettingsPage() {
             type="checkbox"
             checked={Boolean(profile?.github_integration_enabled)}
             onChange={async (e) => {
+              const next = e.target.checked
+              if (!next) {
+                const ok = await confirm({
+                  title: 'Disable GitHub integration?',
+                  message:
+                    'This turns off GitHub actions for you on all projects. Linked issue numbers and repos stay visible as read-only where a project is still integrated. Your token and project settings are kept. Projects you had linked will need to be linked again after you re-enable.',
+                  confirmLabel: 'Disable',
+                  cancelLabel: 'Cancel',
+                  danger: true,
+                })
+                if (!ok) return
+              }
               try {
-                await updateProfile({ github_integration_enabled: e.target.checked })
-                toast.push(
-                  e.target.checked ? 'GitHub integration enabled' : 'GitHub integration disabled',
-                  'success',
-                )
+                await updateProfile({ github_integration_enabled: next })
+                if (!next) {
+                  const n = await disableMyGitHubScopeConfigs()
+                  toast.push(
+                    n > 0
+                      ? `GitHub disabled (soft-disabled ${n} project link${n === 1 ? '' : 's'})`
+                      : 'GitHub integration disabled',
+                    'success',
+                  )
+                } else {
+                  toast.push(
+                    'GitHub integration enabled. Link a repository on each project to use create/sync.',
+                    'success',
+                  )
+                }
               } catch (err) {
                 toast.push(err instanceof Error ? err.message : 'Update failed', 'error')
               }
@@ -189,11 +214,16 @@ export function SettingsPage() {
           Enable GitHub integration
         </label>
         <p className="text-xs text-[var(--color-muted)]">
+          User-level switch: actions need this ON + a PAT. Project-level link is separate (Project →
+          GitHub). See docs/github-integration-matrix.md.
+        </p>
+        <p className="text-xs text-[var(--color-muted)]">
           Status:{' '}
           {tokenStatus?.configured
             ? `Token saved${tokenStatus.token_hint ? ` (…${tokenStatus.token_hint})` : ''}`
             : 'No token configured'}
-          . Tokens are stored encrypted and only used by Edge Functions.
+          . Tokens are stored encrypted and only used by Edge Functions (not deleted when you disable
+          the toggle).
         </p>
         <Field label="Personal access token (classic or fine-grained)">
           <Input

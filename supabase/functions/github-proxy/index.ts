@@ -364,13 +364,29 @@ Deno.serve(async (req) => {
 
       const owner = scopeCfg.github_repo_owner
       const repo = scopeCfg.github_repo_name
+
+      // App task tags → GitHub labels (skip system "github" tag)
+      const { data: taskTagRows } = await admin
+        .from('task_tags')
+        .select('tag_id, tags(name)')
+        .eq('task_id', taskId)
+      const tagNames: string[] = []
+      for (const row of (taskTagRows ?? []) as { tags: { name: string } | null }[]) {
+        const n = row.tags?.name?.trim()
+        if (n && n.toLowerCase() !== 'github') tagNames.push(n)
+      }
+
       const labels: string[] = []
-      if (scopeCfg.github_label_name) {
+      const labelCandidates = [
+        ...tagNames,
+        ...(scopeCfg.github_label_name ? [scopeCfg.github_label_name] : []),
+      ]
+      for (const lab of [...new Set(labelCandidates)]) {
         try {
-          await ensureLabel(owner, repo, scopeCfg.github_label_name)
-          labels.push(scopeCfg.github_label_name)
+          await ensureLabel(owner, repo, lab)
+          labels.push(lab)
         } catch {
-          /* continue without label */
+          /* skip bad labels */
         }
       }
 
@@ -395,7 +411,6 @@ Deno.serve(async (req) => {
             body: JSON.stringify(issueBody),
           })
         } catch (first) {
-          // Retry without labels/milestone if GitHub rejects optional fields
           const msg = first instanceof Error ? first.message : ''
           if (msg.includes('422') || msg.includes('Label') || msg.includes('milestone')) {
             issue = await ghJson(token, `/repos/${owner}/${repo}/issues`, {
@@ -408,6 +423,32 @@ Deno.serve(async (req) => {
           } else {
             throw first
           }
+        }
+
+        // Ensure app-only system tag "github" on the task
+        try {
+          let { data: ghTag } = await admin
+            .from('tags')
+            .select('id')
+            .eq('scope_id', task.scope_id)
+            .ilike('name', 'github')
+            .maybeSingle()
+          if (!ghTag) {
+            const ins = await admin
+              .from('tags')
+              .insert({ scope_id: task.scope_id, name: 'github' })
+              .select('id')
+              .single()
+            ghTag = ins.data
+          }
+          if (ghTag?.id) {
+            await admin.from('task_tags').upsert(
+              { task_id: taskId, tag_id: ghTag.id },
+              { onConflict: 'task_id,tag_id' },
+            )
+          }
+        } catch (e) {
+          console.warn('ensure github system tag', e)
         }
 
         const config = await upsertTaskConfig(taskId, {
@@ -446,9 +487,30 @@ Deno.serve(async (req) => {
       const repo = cfg.github_repo_name as string
       const number = cfg.github_issue_number as number
       const rowUser = (cfg.user_id as string) || user.id
+      // Legacy clients may send pull/push; we use last-write-wins (LWW) unless forced.
+      const forceMode = body.mode === 'pull' || body.mode === 'push' ? String(body.mode) : null
 
       try {
         if (action === 'close_issue') {
+          // Require an active project-level GitHub binding (soft-disable must stop closes)
+          const { data: taskRow } = await admin
+            .from('tasks')
+            .select('scope_id')
+            .eq('id', taskId)
+            .maybeSingle()
+          if (taskRow?.scope_id) {
+            const active = await loadCanonicalScopeConfig(taskRow.scope_id as string)
+            if (!active?.github_repo_owner || !active.github_integration_enabled) {
+              return json(
+                {
+                  error:
+                    'GitHub is disabled for this project. Completing a task will not close the issue until you link a repository again.',
+                },
+                400,
+              )
+            }
+          }
+
           const issue = await ghJson<{
             id: number
             node_id: string
@@ -471,7 +533,12 @@ Deno.serve(async (req) => {
           return json({ config })
         }
 
-        const issue = await ghJson<{
+        const { data: task } = await admin.from('tasks').select('*').eq('id', taskId).single()
+        if (!task) return json({ error: 'Task not found' }, 404)
+
+        const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+
+        type IssueFull = {
           id: number
           node_id: string
           number: number
@@ -479,7 +546,116 @@ Deno.serve(async (req) => {
           state: string
           title: string
           body: string | null
-        }>(token, `/repos/${owner}/${repo}/issues/${number}`)
+          updated_at?: string
+          labels?: Array<{ name: string } | string>
+        }
+
+        // Always fetch GH first to compare timestamps
+        const remote = await ghJson<IssueFull>(token, `/repos/${owner}/${repo}/issues/${number}`)
+        const ghMs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
+        const appMs = task.updated_at ? new Date(task.updated_at as string).getTime() : 0
+        // GitHub wins on tie (remote edits often need to surface after soft expand)
+        const mode: 'pull' | 'push' =
+          forceMode === 'push' || forceMode === 'pull'
+            ? (forceMode as 'pull' | 'push')
+            : ghMs >= appMs
+              ? 'pull'
+              : 'push'
+
+        let issue: IssueFull = remote
+
+        async function applyGithubLabelsToTask(issueIn: IssueFull) {
+          const ghLabelNames = (issueIn.labels ?? [])
+            .map((l) => (typeof l === 'string' ? l : l.name))
+            .filter(Boolean)
+            .filter((n) => n.toLowerCase() !== 'github')
+            .filter((n) => n !== (scopeCfg?.github_label_name ?? ''))
+
+          const scopeId = task.scope_id as string
+          const tagIds: string[] = []
+          for (const name of ghLabelNames) {
+            let { data: existing } = await admin
+              .from('tags')
+              .select('id')
+              .eq('scope_id', scopeId)
+              .eq('name', name)
+              .maybeSingle()
+            if (!existing) {
+              const ins = await admin
+                .from('tags')
+                .insert({ scope_id: scopeId, name })
+                .select('id')
+                .single()
+              existing = ins.data
+            }
+            if (existing?.id) tagIds.push(existing.id)
+          }
+          let { data: ghTag } = await admin
+            .from('tags')
+            .select('id')
+            .eq('scope_id', scopeId)
+            .ilike('name', 'github')
+            .maybeSingle()
+          if (!ghTag) {
+            const ins = await admin
+              .from('tags')
+              .insert({ scope_id: scopeId, name: 'github' })
+              .select('id')
+              .single()
+            ghTag = ins.data
+          }
+          if (ghTag?.id) tagIds.push(ghTag.id)
+
+          await admin.from('task_tags').delete().eq('task_id', taskId)
+          if (tagIds.length) {
+            await admin.from('task_tags').insert(tagIds.map((tag_id) => ({ task_id: taskId, tag_id })))
+          }
+        }
+
+        if (mode === 'push') {
+          // App is newer → write to GitHub
+          const { data: taskTagRows } = await admin
+            .from('task_tags')
+            .select('tag_id, tags(name)')
+            .eq('task_id', taskId)
+          const tagNames: string[] = []
+          for (const row of (taskTagRows ?? []) as { tags: { name: string } | null }[]) {
+            const n = row.tags?.name?.trim()
+            if (n && n.toLowerCase() !== 'github') tagNames.push(n)
+          }
+          const labels: string[] = []
+          const candidates = [
+            ...tagNames,
+            ...(scopeCfg?.github_label_name ? [scopeCfg.github_label_name] : []),
+          ]
+          for (const lab of [...new Set(candidates)]) {
+            try {
+              await ensureLabel(owner, repo, lab)
+              labels.push(lab)
+            } catch {
+              /* skip */
+            }
+          }
+          issue = await ghJson<IssueFull>(token, `/repos/${owner}/${repo}/issues/${number}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              title: task.name,
+              body: task.description ?? '',
+              labels,
+              state: task.completed ? 'closed' : 'open',
+            }),
+          })
+        } else {
+          // GitHub is newer → write to app
+          await admin
+            .from('tasks')
+            .update({
+              name: issue.title?.slice(0, 500) || task.name,
+              description: issue.body ?? null,
+            })
+            .eq('id', taskId)
+          await applyGithubLabelsToTask(issue)
+        }
 
         const config = await upsertTaskConfig(
           taskId,
@@ -499,10 +675,16 @@ Deno.serve(async (req) => {
             .update({ completed: true, completed_date: new Date().toISOString() })
             .eq('id', taskId)
             .eq('completed', false)
+        } else if (mode === 'pull' && issue.state === 'open') {
+          await admin
+            .from('tasks')
+            .update({ completed: false, completed_date: null })
+            .eq('id', taskId)
+            .eq('completed', true)
         }
 
-        await logSync(taskId, 'sync_task', 'success')
-        return json({ config })
+        await logSync(taskId, `sync_task_${mode}`, 'success', `LWW ${mode} gh=${ghMs} app=${appMs}`)
+        return json({ config, mode, githubUpdatedAt: remote.updated_at, taskUpdatedAt: task.updated_at })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'sync failed'
         await logSync(taskId, action, 'error', msg)

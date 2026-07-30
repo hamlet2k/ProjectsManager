@@ -85,6 +85,30 @@ export function repoLabel(c: ScopeGitHubConfig | null | undefined): string | nul
 }
 
 /**
+ * Repo fields stored even when soft-disabled (for re-enable without re-picking).
+ * Prefer current user, then owner, then latest updated.
+ */
+export function getStoredRepoLabel(
+  configs: ScopeGitHubConfig[],
+  ownerId?: string | null,
+  currentUserId?: string | null,
+): string | null {
+  const withRepo = configs.filter((c) => c.github_repo_owner && c.github_repo_name)
+  if (withRepo.length === 0) return null
+  if (currentUserId) {
+    const mine = withRepo.find((c) => c.user_id === currentUserId)
+    if (mine) return repoLabel(mine)
+  }
+  if (ownerId) {
+    const owner = withRepo.find((c) => c.user_id === ownerId)
+    if (owner) return repoLabel(owner)
+  }
+  return repoLabel(
+    [...withRepo].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0],
+  )
+}
+
+/**
  * One issue link per task (scope-global): prefer current user's row, else any with an issue number.
  */
 export function pickTaskGitHubConfig<T extends { user_id: string; task_id: string; github_issue_number: number | null }>(

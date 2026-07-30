@@ -24,7 +24,7 @@ export function NotificationsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Share invites and collaboration updates.
+          Share invites, GitHub project link changes, and collaboration updates.
         </p>
       </div>
 

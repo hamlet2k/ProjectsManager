@@ -1,6 +1,9 @@
 export type ShareRole = 'viewer' | 'editor'
 export type ShareStatus = 'pending' | 'accepted' | 'revoked' | 'rejected'
-export type NotificationType = 'scope_share_invite' | 'scope_share_response'
+export type NotificationType =
+  | 'scope_share_invite'
+  | 'scope_share_response'
+  | 'github_binding_changed'
 export type NotificationStatus = 'pending' | 'accepted' | 'rejected' | 'read'
 export type AppRole = 'user' | 'admin'
 export type ThemePref = 'light' | 'dark' | 'system'
@@ -271,6 +274,23 @@ export type Database = {
       is_scope_owner: {
         Args: { p_scope_id: string }
         Returns: boolean
+      }
+      notify_github_binding_change: {
+        Args: {
+          p_scope_id: string
+          p_title: string
+          p_message: string
+          p_payload?: Record<string, unknown>
+        }
+        Returns: undefined
+      }
+      disable_my_github_scope_configs: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      disable_scope_github_binding: {
+        Args: { p_scope_id: string }
+        Returns: undefined
       }
     }
     Enums: {

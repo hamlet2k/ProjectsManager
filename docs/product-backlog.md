@@ -1,6 +1,6 @@
 # Product backlog (Supabase + React stack)
 
-_Last updated 2026-07-29._
+_Last updated 2026-07-30._
 
 Source: agreed integration design + user’s master task list + classic GitHub issues context  
 (https://github.com/hamlet2k/ProjectsManager/issues).
@@ -74,9 +74,10 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 
 ### P2 — GitHub depth
 
-- [ ] I4 Owner override + notifications (+ optional lock)
+- [x] I4 Owner override + notifications (confirm + notify members on link/change/disable)
+- [x] User vs project enable/disable matrix (issue #35 adapted) — see `docs/github-integration-matrix.md`
 - [ ] Link existing issue / import task from GitHub
-- [ ] Ensure label; add issue to Project on create
+- [ ] Ensure label; add issue to Project board on create (label ensure already on create/sync)
 - [ ] Blocked-by issue pill (red) from GitHub relationships
 - [ ] Webhooks for two-way without manual sync
 - [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)
@@ -95,7 +96,9 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [ ] Testing strategy (unit + e2e) for new stack
 - [ ] Donation, naming, deploy plans, desktop/LAN executable
 - [ ] Offline SQLite → sync (long-term; different architecture)
-- [ ] Help index + navbar help
+- [ ] **Comprehensive help site/page** explaining the app and features (GitHub matrix, share roles, tags, sync LWW, etc.)
+- [ ] Contextual **Help links** from Settings / GitHub modal / Share / empty states into the right help section
+- [ ] Help index entry in navbar (once help content exists)
 - [ ] Advanced import/export configuration
 - [x] Rename scopes → projects in UI (internal DB still `scopes`)
 
@@ -125,8 +128,6 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 
 ## How we’ll use this
 
-1. **Next engineering focus:** Integration phases **I1–I3** (+ complete↔close if you want it in the same slice).  
-2. Your long list stays context; this file is the **authoritative** backlog for the new repo.  
-3. Chatbot/AI and multi-provider stay **after** GitHub contract is implemented and stable.
-
-When you say go, start with **I1–I3** (visibility, badges, single binding, restrictions).
+1. **Next engineering focus:** remaining P2 (link existing issue, Project board on create), then help system, then polish/AI.  
+2. Integration enable/disable matrix: **`docs/github-integration-matrix.md`** (issue #35 adapted).  
+3. Your long list stays context; this file is the **authoritative** backlog for the new repo.

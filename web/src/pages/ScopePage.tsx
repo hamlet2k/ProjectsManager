@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { useScope, useScopeShares } from '@/features/scopes/hooks'
@@ -10,6 +10,7 @@ import {
   useToggleTaskComplete,
   useUpdateTask,
   useCreateTag,
+  useDeleteTag,
 } from '@/features/tasks/hooks'
 import { TaskBoard } from '@/features/tasks/components/TaskBoard'
 import { TaskModal } from '@/features/tasks/components/TaskModal'
@@ -18,26 +19,31 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { PageLoader } from '@/components/ui/Spinner'
 import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { computeScopeAccess } from '@/lib/permissions'
 import type { Task } from '@/lib/supabase/types'
 import {
   closeIssueForTask,
   createIssueForTask,
+  disableScopeGitHubBinding,
   fetchScopeGitHubConfigs,
   fetchTaskGitHubConfigsForTasks,
   listGitHubMilestones,
   listGitHubProjects,
   listGitHubRepos,
+  notifyGitHubBindingChange,
   syncTaskWithGitHub,
   upsertScopeGitHubConfig,
 } from '@/features/github/api'
 import {
   computeGitHubCapabilities,
+  getStoredRepoLabel,
   mapTaskGitHubByTaskId,
   repoLabel,
 } from '@/features/github/visibility'
-import { setTaskTags } from '@/features/tasks/api'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { GITHUB_SYSTEM_TAG, isGithubSystemTag } from '@/features/github/systemTag'
+import { createTag as createTagApi, setTaskTags } from '@/features/tasks/api'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/Modal'
 import { Field } from '@/components/ui/Input'
 import { copyToClipboard } from '@/lib/utils'
@@ -47,6 +53,7 @@ export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
   const { user, profile } = useAuth()
   const toast = useToast()
+  const confirm = useConfirm()
   const qc = useQueryClient()
 
   const { data: scope, isLoading: scopeLoading, error: scopeError } = useScope(scopeId)
@@ -59,10 +66,20 @@ export function ScopePage() {
   const deleteTask = useDeleteTask(scopeId!)
   const reorderTasks = useReorderTasks(scopeId!)
   const createTag = useCreateTag(scopeId!)
+  const deleteTagMut = useDeleteTag(scopeId!)
 
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [githubOpen, setGithubOpen] = useState(false)
+  const [ghDraft, setGhDraft] = useState<{
+    linked: boolean
+    repoFull: string
+    milestone: string
+    projectId: string
+    label: string
+    closeOnComplete: boolean
+  } | null>(null)
+  const [ghSaving, setGhSaving] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
@@ -70,6 +87,8 @@ export function ScopePage() {
 
   const searchRef = useRef<HTMLInputElement>(null)
   const quickAddRef = useRef<HTMLInputElement>(null)
+  /** Throttle soft GitHub sync on expand (parity with classic app, without spam). */
+  const lastGhSyncAt = useRef<Map<string, number>>(new Map())
 
   const myShare = shares.find((s) => s.user_id === user?.id)
   const access = computeScopeAccess(scope, user?.id, myShare)
@@ -127,9 +146,45 @@ export function ScopePage() {
     retry: false,
   })
 
-  const repoOwner = binding?.github_repo_owner ?? myScopeConfig?.github_repo_owner ?? null
-  const repoName = binding?.github_repo_name ?? myScopeConfig?.github_repo_name ?? null
   const displayRepo = repoLabel(binding) ?? repoLabel(myScopeConfig)
+  const storedRepo = getStoredRepoLabel(
+    scopeGhConfigsQuery.data ?? [],
+    scope?.owner_id,
+    user?.id,
+  )
+
+  // Draft for GitHub modal (not live-save)
+  useEffect(() => {
+    if (!githubOpen) {
+      setGhDraft(null)
+      return
+    }
+    setGhDraft((prev) => {
+      if (prev) return prev
+      const src = myScopeConfig ?? binding
+      return {
+        linked: Boolean(ghCaps.scopeIntegrated),
+        repoFull: displayRepo || storedRepo || '',
+        milestone:
+          src?.github_milestone_number != null ? String(src.github_milestone_number) : '',
+        projectId: src?.github_project_id ?? '',
+        label: src?.github_label_name ?? '',
+        closeOnComplete: (src?.close_issue_on_complete ?? true) !== false,
+      }
+    })
+  }, [
+    githubOpen,
+    ghCaps.scopeIntegrated,
+    displayRepo,
+    storedRepo,
+    myScopeConfig,
+    binding,
+  ])
+
+  const draftRepoOwner = ghDraft?.repoFull ? ghDraft.repoFull.split('/')[0] : null
+  const draftRepoName = ghDraft?.repoFull ? ghDraft.repoFull.split('/')[1] : null
+  const repoOwner = draftRepoOwner || binding?.github_repo_owner || myScopeConfig?.github_repo_owner || null
+  const repoName = draftRepoName || binding?.github_repo_name || myScopeConfig?.github_repo_name || null
 
   const milestonesQuery = useQuery({
     queryKey: ['github-milestones', repoOwner, repoName],
@@ -145,16 +200,242 @@ export function ScopePage() {
     retry: false,
   })
 
-  const saveGhConfig = useMutation({
-    mutationFn: (patch: Parameters<typeof upsertScopeGitHubConfig>[2]) =>
-      upsertScopeGitHubConfig(scopeId!, user!.id, patch),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['scope-github-configs', scopeId] })
-      qc.invalidateQueries({ queryKey: ['scope-github-flags'] })
-      toast.push('GitHub settings saved', 'success')
+  const ghDraftDirty = useMemo(() => {
+    if (!ghDraft) return false
+    const src = myScopeConfig ?? binding
+    const baseline = {
+      linked: Boolean(ghCaps.scopeIntegrated),
+      repoFull: displayRepo || storedRepo || '',
+      milestone:
+        src?.github_milestone_number != null ? String(src.github_milestone_number) : '',
+      projectId: src?.github_project_id ?? '',
+      label: src?.github_label_name ?? '',
+      closeOnComplete: (src?.close_issue_on_complete ?? true) !== false,
+    }
+    return (
+      ghDraft.linked !== baseline.linked ||
+      ghDraft.repoFull !== baseline.repoFull ||
+      ghDraft.milestone !== baseline.milestone ||
+      ghDraft.projectId !== baseline.projectId ||
+      ghDraft.label !== baseline.label ||
+      ghDraft.closeOnComplete !== baseline.closeOnComplete
+    )
+  }, [
+    ghDraft,
+    myScopeConfig,
+    binding,
+    ghCaps.scopeIntegrated,
+    displayRepo,
+    storedRepo,
+  ])
+
+  const closeGithubModal = useCallback(async () => {
+    if (ghSaving) return
+    if (ghDraftDirty) {
+      const ok = await confirm({
+        title: 'Discard unsaved GitHub settings?',
+        message: 'You have unsaved changes. Close without saving?',
+        confirmLabel: 'Discard',
+        cancelLabel: 'Keep editing',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    setGithubOpen(false)
+    setGhDraft(null)
+  }, [ghSaving, ghDraftDirty, confirm])
+
+  const saveGithubDraft = useCallback(async () => {
+    if (!ghDraft || !scopeId || !user?.id || !scope) return
+    if (ghDraft.linked && !ghDraft.repoFull.trim()) {
+      toast.push('Select a repository to link this project', 'error')
+      return
+    }
+
+    const prevLinked = ghCaps.scopeIntegrated
+    const prevRepo = displayRepo || storedRepo || null
+    const nextRepo = ghDraft.linked ? ghDraft.repoFull.trim() : null
+    const [owner, name] = nextRepo ? nextRepo.split('/') : [null, null]
+
+    // Confirm disable
+    if (prevLinked && !ghDraft.linked) {
+      const ok = await confirm({
+        title: 'Disable GitHub for this project?',
+        message:
+          'GitHub data stays in the app as read-only. Issue links are kept, but create/sync/close stop until you link a repository again. Other members will be notified.',
+        confirmLabel: 'Disable for project',
+        cancelLabel: 'Cancel',
+        danger: true,
+      })
+      if (!ok) return
+    }
+
+    // Confirm repo change while linked (or switching to a different repo on re-enable)
+    if (
+      ghDraft.linked &&
+      prevRepo &&
+      nextRepo &&
+      prevRepo !== nextRepo &&
+      (prevLinked || prevRepo)
+    ) {
+      const ok = await confirm({
+        title: 'Change linked repository?',
+        message: `This project was linked to ${prevRepo}. Changing it to ${nextRepo} affects all members. Existing task↔issue links still point at the old repo until recreated. Other members will be notified.`,
+        confirmLabel: 'Change repository',
+        cancelLabel: 'Cancel',
+        danger: true,
+      })
+      if (!ok) return
+    }
+
+    setGhSaving(true)
+    try {
+      if (!ghDraft.linked) {
+        if (prevLinked) {
+          await disableScopeGitHubBinding(scopeId)
+          try {
+            await notifyGitHubBindingChange(
+              scopeId,
+              'GitHub unlinked on a project',
+              prevRepo
+                ? `GitHub was disabled for “${scope.name}” (was ${prevRepo}).`
+                : `GitHub was disabled for “${scope.name}”.`,
+              { scope_id: scopeId, previous_repo: prevRepo, action: 'disable' },
+            )
+          } catch {
+            /* non-fatal if notify RPC not migrated yet */
+          }
+          toast.push('GitHub disabled for this project (settings kept)', 'success')
+        } else {
+          toast.push('No changes to save', 'success')
+        }
+      } else {
+        const repo = reposQuery.data?.repositories.find(
+          (r) => r.owner === owner && r.name === name,
+        )
+        const milestoneNum = ghDraft.milestone ? Number(ghDraft.milestone) : null
+        const milestone = milestonesQuery.data?.milestones.find(
+          (m) => m.number === milestoneNum,
+        )
+        const project = projectsQuery.data?.projects.find((p) => p.id === ghDraft.projectId)
+
+        await upsertScopeGitHubConfig(scopeId, user.id, {
+          github_integration_enabled: true,
+          github_repo_id: repo?.id ?? myScopeConfig?.github_repo_id ?? null,
+          github_repo_owner: owner ?? null,
+          github_repo_name: name ?? null,
+          github_milestone_number: milestoneNum,
+          github_milestone_title: milestone?.title ?? null,
+          github_project_id: ghDraft.projectId || null,
+          github_project_name: project?.title ?? null,
+          github_label_name: ghDraft.label.trim() || null,
+          close_issue_on_complete: ghDraft.closeOnComplete,
+        })
+
+        try {
+          if (prevLinked && prevRepo && nextRepo && prevRepo !== nextRepo) {
+            await notifyGitHubBindingChange(
+              scopeId,
+              'GitHub repository changed',
+              `“${scope.name}” is now linked to ${nextRepo} (was ${prevRepo}).`,
+              {
+                scope_id: scopeId,
+                previous_repo: prevRepo,
+                new_repo: nextRepo,
+                action: 'override',
+              },
+            )
+          } else if (!prevLinked && nextRepo) {
+            await notifyGitHubBindingChange(
+              scopeId,
+              'GitHub linked on a project',
+              `“${scope.name}” is now linked to ${nextRepo}.`,
+              { scope_id: scopeId, new_repo: nextRepo, action: 'link' },
+            )
+          }
+        } catch {
+          /* ignore notify failures */
+        }
+
+        toast.push(
+          prevLinked && prevRepo === nextRepo
+            ? 'GitHub settings saved'
+            : prevLinked
+              ? `Default repository set to ${nextRepo}`
+              : `Project linked to ${nextRepo}`,
+          'success',
+        )
+      }
+
+      await qc.invalidateQueries({ queryKey: ['scope-github-configs', scopeId] })
+      await qc.invalidateQueries({ queryKey: ['scope-github-flags'] })
+      setGithubOpen(false)
+      setGhDraft(null)
+    } catch (err) {
+      toast.push(err instanceof Error ? err.message : 'Could not save GitHub settings', 'error')
+    } finally {
+      setGhSaving(false)
+    }
+  }, [
+    ghDraft,
+    scopeId,
+    user?.id,
+    scope,
+    ghCaps.scopeIntegrated,
+    displayRepo,
+    storedRepo,
+    confirm,
+    toast,
+    qc,
+    reposQuery.data,
+    milestonesQuery.data,
+    projectsQuery.data,
+    myScopeConfig,
+  ])
+
+  const scrollToTask = useCallback((taskId: string) => {
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`task-row-${taskId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }, [])
+
+  // Soft background sync when opening details — LWW, once per 90s per task
+  const onExpandTask = useCallback(
+    (task: Task) => {
+      if (!ghCaps.canMutate || !ghCaps.scopeIntegrated) return
+      const link = githubByTask.get(task.id)
+      if (!link?.github_issue_number) return
+      const now = Date.now()
+      const last = lastGhSyncAt.current.get(task.id) ?? 0
+      if (now - last < 90_000) return
+      lastGhSyncAt.current.set(task.id, now)
+      void syncTaskWithGitHub(task.id)
+        .then(() => qc.invalidateQueries({ queryKey: ['task-github', scopeId] }))
+        .then(() => qc.invalidateQueries({ queryKey: ['tasks', scopeId] }))
+        .then(() => qc.invalidateQueries({ queryKey: ['task-tags', scopeId] }))
+        .then(() => qc.invalidateQueries({ queryKey: ['tags', scopeId] }))
+        .then(() => scrollToTask(task.id))
+        .catch(() => {
+          /* silent — user can still tap Refresh */
+        })
     },
-    onError: (e) => toast.push(e instanceof Error ? e.message : 'Save failed', 'error'),
-  })
+    [ghCaps.canMutate, ghCaps.scopeIntegrated, githubByTask, qc, scopeId, scrollToTask],
+  )
+
+  async function ensureGithubSystemTagOnTask(taskId: string) {
+    let ghTag = tags.find((t) => isGithubSystemTag(t.name))
+    if (!ghTag) {
+      ghTag = await createTagApi(scopeId!, GITHUB_SYSTEM_TAG)
+      await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+    }
+    const current = taskTags.filter((tt) => tt.task_id === taskId).map((tt) => tt.tag_id)
+    if (!current.includes(ghTag.id)) {
+      await setTaskTags(taskId, [...current, ghTag.id])
+      await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+    }
+  }
 
   // Shortcuts for add/search live in TaskBoard; keep page free of conflicts.
 
@@ -211,16 +492,35 @@ export function ScopePage() {
             </Button>
           ) : null}
           {access.canManageShares ? (
-            <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={
+                shares.filter((s) => s.status === 'accepted').length > 0 ? 'btn-pressed' : undefined
+              }
+              title={
+                shares.filter((s) => s.status === 'accepted').length > 0
+                  ? `Shared with ${shares.filter((s) => s.status === 'accepted').length} member(s) — click to manage`
+                  : 'Share this project'
+              }
+              onClick={() => setShareOpen(true)}
+            >
               <Icons.Share size={14} /> Share
             </Button>
           ) : null}
           {ghCaps.canSee ? (
-            <Button variant="secondary" size="sm" onClick={() => setGithubOpen(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={ghCaps.scopeIntegrated ? 'btn-pressed' : undefined}
+              title={
+                displayRepo
+                  ? `Default for new tasks: ${displayRepo}`
+                  : 'Configure GitHub for this project'
+              }
+              onClick={() => setGithubOpen(true)}
+            >
               <Icons.Github size={14} /> GitHub
-              {ghCaps.scopeIntegrated && displayRepo ? (
-                <span className="ml-1 opacity-70">· linked</span>
-              ) : null}
             </Button>
           ) : null}
         </div>
@@ -234,16 +534,19 @@ export function ScopePage() {
         canEdit={access.canEdit}
         githubVisible={ghCaps.canSee}
         githubEnabled={ghCaps.canMutate && ghCaps.scopeIntegrated}
+        defaultGithubRepo={displayRepo}
         searchInputRef={searchRef}
         quickAddRef={quickAddRef}
         onToggleComplete={async (task, completed) => {
           try {
             await toggleComplete.mutateAsync({ taskId: task.id, completed })
-            // Complete → close when setting is on (default true if column unset)
+            // Complete → close only when project binding is ACTIVE and user can mutate.
+            // Soft-disabled project (or preference off) must not call GitHub.
             const closeOnComplete = binding?.close_issue_on_complete !== false
             const link = githubByTask.get(task.id)
             if (
               completed &&
+              ghCaps.scopeIntegrated &&
               ghCaps.canMutate &&
               closeOnComplete &&
               link?.github_issue_number &&
@@ -302,8 +605,31 @@ export function ScopePage() {
           await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
         }}
         onCreateTag={async (name) => {
+          if (isGithubSystemTag(name)) {
+            throw new Error('“github” is a reserved system tag')
+          }
           const tag = await createTag.mutateAsync(name)
           return tag
+        }}
+        onDeleteTag={async (tag) => {
+          if (isGithubSystemTag(tag.name)) {
+            toast.push('The #github system tag cannot be deleted', 'error')
+            return
+          }
+          const ok = await confirm({
+            title: 'Remove tag from project?',
+            message: `Delete #${tag.name}? It will be removed from every task that uses it.`,
+            confirmLabel: 'Delete tag',
+            cancelLabel: 'Cancel',
+            danger: true,
+          })
+          if (!ok) return
+          try {
+            await deleteTagMut.mutateAsync(tag.id)
+            toast.push(`Tag #${tag.name} removed`, 'success')
+          } catch (e) {
+            toast.push(e instanceof Error ? e.message : 'Could not delete tag', 'error')
+          }
         }}
         onGithubAction={async (task, action) => {
           if (!ghCaps.canMutate || !ghCaps.scopeIntegrated) {
@@ -317,16 +643,33 @@ export function ScopePage() {
                 title: task.name,
                 body: task.description ?? undefined,
               })
+              await ensureGithubSystemTagOnTask(task.id)
               toast.push('GitHub issue created', 'success')
             } else {
-              await syncTaskWithGitHub(task.id)
-              toast.push('Synced with GitHub', 'success')
+              // Manual sync: last-write-wins (same as expand)
+              const res = await syncTaskWithGitHub(task.id)
+              toast.push(
+                res?.mode === 'pull'
+                  ? 'Synced from GitHub → app'
+                  : res?.mode === 'push'
+                    ? 'Synced from app → GitHub'
+                    : 'Synced with GitHub',
+                'success',
+              )
             }
             await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+            await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+            await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+            await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+            scrollToTask(task.id)
           } catch (e) {
             toast.push(e instanceof Error ? e.message : 'GitHub action failed', 'error')
           }
         }}
+        onExpandTask={onExpandTask}
+        onOpenGithubSettings={
+          ghCaps.canConfigure ? () => setGithubOpen(true) : undefined
+        }
       />
 
       <TaskModal
@@ -419,14 +762,44 @@ export function ScopePage() {
         />
       </Modal>
 
-      <Modal open={githubOpen} onClose={() => setGithubOpen(false)} title="GitHub for this project" size="lg">
+      <Modal
+        open={githubOpen}
+        onClose={() => void closeGithubModal()}
+        title="GitHub for this project"
+        size="lg"
+        footer={
+          ghCaps.canConfigure ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={ghSaving}
+                onClick={() => void closeGithubModal()}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={ghSaving || !ghDraft || !ghDraftDirty}
+                onClick={() => void saveGithubDraft()}
+              >
+                {ghSaving ? 'Saving…' : 'Save changes'}
+              </Button>
+            </>
+          ) : (
+            <Button type="button" variant="secondary" onClick={() => void closeGithubModal()}>
+              Close
+            </Button>
+          )
+        }
+      >
         <div className="space-y-4">
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">
                 {ghCaps.scopeIntegrated && displayRepo ? (
                   <>
-                    Linked:{' '}
+                    Default for new tasks:{' '}
                     <a
                       className="underline"
                       href={`https://github.com/${displayRepo}`}
@@ -436,18 +809,36 @@ export function ScopePage() {
                       {displayRepo}
                     </a>
                   </>
+                ) : storedRepo ? (
+                  <>
+                    Previous repository (not linked):{' '}
+                    <span className="text-[var(--color-text)]">{storedRepo}</span>
+                  </>
                 ) : (
-                  'No repository linked yet'
+                  'No default repository (new create/link is off)'
                 )}
               </span>
-              {saveGhConfig.isPending ? (
-                <span className="text-xs text-[var(--color-muted)]">Saving…</span>
+              {ghDraftDirty ? (
+                <span className="text-xs font-medium text-[var(--color-warning,var(--color-muted))]">
+                  Unsaved changes
+                </span>
               ) : null}
             </div>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">
+              Changes apply only when you click <strong>Save changes</strong>. Existing task↔issue
+              links keep their original repo (color-coded on the list).
+            </p>
             {ghCaps.readOnly ? (
               <p className="mt-1 text-xs text-[var(--color-muted)]">
                 Read-only for you. Enable GitHub under Settings (and ensure you can edit this
                 project) to create/sync issues.
+              </p>
+            ) : null}
+            {!ghCaps.scopeIntegrated &&
+            [...githubByTask.values()].some((c) => c.github_issue_number) ? (
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                Project GitHub is off, but some tasks still have issue links (read-only). Completing a
+                task will not close those issues until you link a default repo again.
               </p>
             ) : null}
           </div>
@@ -476,39 +867,40 @@ export function ScopePage() {
             <p className="text-sm text-[var(--color-muted)]">
               You can view this project’s GitHub link but need editor access to change it.
             </p>
-          ) : (
+          ) : ghDraft ? (
             <>
               <p className="text-xs text-[var(--color-muted)]">
                 One repository per project. Owner or editors can set the link; the owner’s binding
-                wins if both exist.
+                wins if both exist. Uncheck soft-disables the link (repo fields kept for re-enable).
               </p>
 
               <label className="flex items-start gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   className="mt-0.5"
-                  checked={Boolean(
-                    (myScopeConfig?.github_integration_enabled &&
-                      myScopeConfig?.github_repo_owner &&
-                      myScopeConfig?.github_repo_name) ||
-                      (ghCaps.scopeIntegrated && !myScopeConfig),
-                  )}
+                  checked={ghDraft.linked}
+                  disabled={ghSaving}
                   onChange={(e) => {
-                    if (!e.target.checked) {
-                      saveGhConfig.mutate({
-                        github_integration_enabled: false,
-                        github_repo_id: null,
-                        github_repo_name: null,
-                        github_repo_owner: null,
-                      })
-                    }
-                    // Turning on: user picks a repo below (enables on select)
+                    const linked = e.target.checked
+                    setGhDraft((d) => {
+                      if (!d) return d
+                      // Re-enable with previous repo when available — no forced re-pick
+                      const repoFull =
+                        d.repoFull || displayRepo || storedRepo || ''
+                      return { ...d, linked, repoFull }
+                    })
                   }}
                 />
                 <span>
                   Link this project to GitHub
                   <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
-                    Uncheck to clear <em>your</em> binding. Pick a repository below to enable.
+                    {ghDraft.linked
+                      ? ghDraft.repoFull
+                        ? `Will use ${ghDraft.repoFull} as the default for new issues.`
+                        : 'Pick a repository below, then save.'
+                      : storedRepo || displayRepo
+                        ? `Previously linked to ${storedRepo || displayRepo}. Re-check and save to restore.`
+                        : 'Check this, pick a repository, then save.'}
                   </span>
                 </span>
               </label>
@@ -524,34 +916,21 @@ export function ScopePage() {
                 ) : null}
                 <select
                   className="field-input mt-1"
-                  disabled={reposQuery.isLoading || saveGhConfig.isPending}
-                  value={
-                    (myScopeConfig?.github_repo_owner && myScopeConfig?.github_repo_name
-                      ? `${myScopeConfig.github_repo_owner}/${myScopeConfig.github_repo_name}`
-                      : displayRepo) ?? ''
-                  }
+                  disabled={reposQuery.isLoading || ghSaving || !ghDraft.linked}
+                  value={ghDraft.repoFull}
                   onChange={(e) => {
                     const full = e.target.value
-                    if (!full) {
-                      saveGhConfig.mutate({
-                        github_integration_enabled: false,
-                        github_repo_id: null,
-                        github_repo_name: null,
-                        github_repo_owner: null,
-                      })
-                      return
-                    }
-                    const [owner, name] = full.split('/')
-                    const repo = reposQuery.data?.repositories.find(
-                      (r) => r.owner === owner && r.name === name,
+                    setGhDraft((d) =>
+                      d
+                        ? {
+                            ...d,
+                            repoFull: full,
+                            // Reset milestone/project when repo changes (ids may not apply)
+                            milestone: full === d.repoFull ? d.milestone : '',
+                            projectId: full === d.repoFull ? d.projectId : '',
+                          }
+                        : d,
                     )
-                    saveGhConfig.mutate({
-                      github_integration_enabled: true,
-                      github_repo_id: repo?.id ?? null,
-                      github_repo_owner: owner ?? null,
-                      github_repo_name: name ?? null,
-                      close_issue_on_complete: true,
-                    })
                   }}
                 >
                   <option value="">Select a repository…</option>
@@ -560,37 +939,33 @@ export function ScopePage() {
                       {r.full_name}
                     </option>
                   ))}
-                  {displayRepo &&
+                  {ghDraft.repoFull &&
                   !(reposQuery.data?.repositories ?? []).some(
-                    (r) => `${r.owner}/${r.name}` === displayRepo,
+                    (r) => `${r.owner}/${r.name}` === ghDraft.repoFull,
                   ) ? (
-                    <option value={displayRepo}>{displayRepo} (current)</option>
+                    <option value={ghDraft.repoFull}>{ghDraft.repoFull} (saved)</option>
                   ) : null}
                 </select>
+                {!ghDraft.linked ? (
+                  <p className="mt-1 text-xs text-[var(--color-muted)]">
+                    Enable the link above to change the default repository.
+                  </p>
+                ) : null}
               </Field>
-              {repoOwner && repoName ? (
+              {ghDraft.linked && draftRepoOwner && draftRepoName ? (
                 <>
                   <Field label="Default milestone">
                     <select
                       className="field-input mt-1"
-                      disabled={saveGhConfig.isPending}
-                      value={
-                        myScopeConfig?.github_milestone_number ??
-                        binding?.github_milestone_number ??
-                        ''
+                      disabled={ghSaving}
+                      value={ghDraft.milestone}
+                      onChange={(e) =>
+                        setGhDraft((d) => (d ? { ...d, milestone: e.target.value } : d))
                       }
-                      onChange={(e) => {
-                        const num = e.target.value ? Number(e.target.value) : null
-                        const m = milestonesQuery.data?.milestones.find((x) => x.number === num)
-                        saveGhConfig.mutate({
-                          github_milestone_number: num,
-                          github_milestone_title: m?.title ?? null,
-                        })
-                      }}
                     >
                       <option value="">None</option>
                       {(milestonesQuery.data?.milestones ?? []).map((m) => (
-                        <option key={m.number} value={m.number}>
+                        <option key={m.number} value={String(m.number)}>
                           {m.title}
                         </option>
                       ))}
@@ -599,16 +974,11 @@ export function ScopePage() {
                   <Field label="GitHub Project board (optional)">
                     <select
                       className="field-input mt-1"
-                      disabled={saveGhConfig.isPending}
-                      value={myScopeConfig?.github_project_id ?? binding?.github_project_id ?? ''}
-                      onChange={(e) => {
-                        const id = e.target.value || null
-                        const p = projectsQuery.data?.projects.find((x) => x.id === id)
-                        saveGhConfig.mutate({
-                          github_project_id: id,
-                          github_project_name: p?.title ?? null,
-                        })
-                      }}
+                      disabled={ghSaving}
+                      value={ghDraft.projectId}
+                      onChange={(e) =>
+                        setGhDraft((d) => (d ? { ...d, projectId: e.target.value } : d))
+                      }
                     >
                       <option value="">None</option>
                       {(projectsQuery.data?.projects ?? []).map((p) => (
@@ -622,13 +992,13 @@ export function ScopePage() {
                     <input
                       type="checkbox"
                       className="mt-0.5"
-                      checked={
-                        (myScopeConfig?.close_issue_on_complete ??
-                          binding?.close_issue_on_complete) !== false
+                      disabled={ghSaving}
+                      checked={ghDraft.closeOnComplete}
+                      onChange={(e) =>
+                        setGhDraft((d) =>
+                          d ? { ...d, closeOnComplete: e.target.checked } : d,
+                        )
                       }
-                      onChange={(e) => {
-                        saveGhConfig.mutate({ close_issue_on_complete: e.target.checked })
-                      }}
                     />
                     <span>
                       When I complete a linked task, close the GitHub issue
@@ -641,24 +1011,20 @@ export function ScopePage() {
               ) : null}
               <Field label="Sync label (optional)">
                 <Input
-                  defaultValue={
-                    myScopeConfig?.github_label_name ?? binding?.github_label_name ?? ''
-                  }
+                  value={ghDraft.label}
+                  disabled={ghSaving || !ghDraft.linked}
                   placeholder="projects-manager"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim()
-                    const prev =
-                      myScopeConfig?.github_label_name ?? binding?.github_label_name ?? ''
-                    if (v !== prev) {
-                      saveGhConfig.mutate({ github_label_name: v || null })
-                    }
-                  }}
+                  onChange={(e) =>
+                    setGhDraft((d) => (d ? { ...d, label: e.target.value } : d))
+                  }
                 />
               </Field>
               <p className="text-xs text-[var(--color-muted)]">
                 Use the GitHub button on a task row to create or sync an issue for that task.
               </p>
             </>
+          ) : (
+            <p className="text-sm text-[var(--color-muted)]">Loading settings…</p>
           )}
         </div>
       </Modal>

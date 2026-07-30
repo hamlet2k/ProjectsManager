@@ -23,7 +23,7 @@ import {
   useUpdateScope,
 } from '@/features/scopes/hooks'
 import { exportScopeTasksText, reorderScopes } from '@/features/scopes/api'
-import { fetchGitHubFlagsForScopes } from '@/features/github/api'
+import { fetchGitHubFlagsForScopes, fetchShareSummariesForScopes } from '@/features/github/api'
 import { ScopeFormModal } from '@/features/scopes/components/ScopeFormModal'
 import { ShareModal } from '@/features/scopes/components/ShareModal'
 import { Button } from '@/components/ui/Button'
@@ -65,6 +65,15 @@ export function DashboardPage() {
     staleTime: 30_000,
   })
   const githubIntegratedIds = ghFlagsQuery.data?.integratedIds ?? new Set<string>()
+  const repoLabelByScope = ghFlagsQuery.data?.repoLabelByScope ?? new Map<string, string>()
+
+  const shareSummaryQuery = useQuery({
+    queryKey: ['scope-share-summaries', user?.id, ownedIds.join(',')],
+    enabled: Boolean(user?.id && ownedIds.length),
+    queryFn: () => fetchShareSummariesForScopes(ownedIds),
+    staleTime: 30_000,
+  })
+  const shareSummaryByScope = shareSummaryQuery.data ?? new Map()
 
   const reorderMut = useMutation({
     mutationFn: (ids: string[]) => reorderScopes(ids),
@@ -143,6 +152,8 @@ export function DashboardPage() {
                   key={scope.id}
                   scope={scope as ScopeCard}
                   githubIntegrated={githubIntegratedIds.has(scope.id)}
+                  githubRepoLabel={repoLabelByScope.get(scope.id) ?? null}
+                  shareSummary={shareSummaryByScope.get(scope.id) ?? null}
                   onEdit={() => {
                     setEditing(scope)
                     setModalOpen(true)
@@ -218,6 +229,8 @@ export function DashboardPage() {
 function SortableScopeCard({
   scope,
   githubIntegrated,
+  githubRepoLabel,
+  shareSummary,
   onEdit,
   onShare,
   onDelete,
@@ -225,6 +238,8 @@ function SortableScopeCard({
 }: {
   scope: ScopeCard
   githubIntegrated: boolean
+  githubRepoLabel: string | null
+  shareSummary: { count: number; names: string[] } | null
   onEdit: () => void
   onShare: () => void
   onDelete: () => void
@@ -232,6 +247,7 @@ function SortableScopeCard({
 }) {
   const isOwner = scope.role === 'owner'
   const isShared = scope.role !== 'owner'
+  const hasShares = Boolean(shareSummary && shareSummary.count > 0)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scope.id,
     disabled: !isOwner,
@@ -240,6 +256,15 @@ function SortableScopeCard({
     transform: CSS.Transform.toString(transform),
     transition,
   }
+
+  const ghTitle = githubRepoLabel
+    ? `GitHub: ${githubRepoLabel}`
+    : 'Linked to a GitHub repository'
+  const shareTitle = isShared
+    ? `Shared with you as ${scope.role}`
+    : hasShares
+      ? `Shared with ${shareSummary!.names.join(', ')}${shareSummary!.count > shareSummary!.names.length ? '…' : ''}`
+      : 'Share project'
 
   return (
     <article
@@ -258,12 +283,16 @@ function SortableScopeCard({
             <Icons.Grip />
           </button>
           {githubIntegrated ? (
-            <span className="pill-badge" title="Linked to a GitHub repository">
+            <span className="pill-badge" title={ghTitle}>
               <Icons.Github size={12} /> GitHub
             </span>
           ) : null}
           {isShared ? (
-            <span className="pill-badge" title={`Shared with you as ${scope.role}`}>
+            <span className="pill-badge" title={shareTitle}>
+              Shared
+            </span>
+          ) : hasShares ? (
+            <span className="pill-badge" title={shareTitle}>
               Shared
             </span>
           ) : null}
@@ -273,7 +302,12 @@ function SortableScopeCard({
             <Icons.Clipboard />
           </button>
           {isOwner ? (
-            <button type="button" className="icon-btn" title="Share" onClick={onShare}>
+            <button
+              type="button"
+              className={cn('icon-btn', hasShares && 'btn-pressed')}
+              title={shareTitle}
+              onClick={onShare}
+            >
               <Icons.Share />
             </button>
           ) : null}
@@ -290,8 +324,8 @@ function SortableScopeCard({
         </div>
       </div>
 
-      <Link to={`/projects/${scope.id}`} className="mt-1 block min-w-0">
-        <h2 className="project-title truncate text-lg font-bold hover:underline">{scope.name}</h2>
+      <Link to={`/projects/${scope.id}`} className="project-title-link mt-1 block min-w-0 no-underline">
+        <h2 className="project-title truncate text-lg font-bold">{scope.name}</h2>
         {scope.description ? (
           <p className="mt-1 line-clamp-2 text-sm text-[var(--color-muted)]">{scope.description}</p>
         ) : (

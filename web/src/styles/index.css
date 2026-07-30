@@ -28,6 +28,11 @@
   --radius-sketch-sm: 125px 10px 115px 10px / 10px 115px 10px 125px;
   --shadow-sketch: 1px 1px 0 rgba(75, 85, 99, 0.18);
   --shadow-sketch-hover: 2px 2px 0 rgba(75, 85, 99, 0.22);
+  /* Shared selected/hover tones for filter chips + tag editor pills */
+  --color-tag-selected-bg: #5b6572;
+  --color-tag-selected-fg: #ffffff;
+  --color-tag-hover-bg: #e4e7ec;
+  --color-tag-hover-fg: #1f2937;
 }
 
 .dark {
@@ -45,6 +50,11 @@
   --color-warning: #ffd43b;
   --shadow-sketch: 1px 1px 0 rgba(200, 205, 215, 0.15);
   --shadow-sketch-hover: 2px 2px 0 rgba(200, 205, 215, 0.2);
+  /* Mid slate — clearer than surface-2, softer than full primary fill */
+  --color-tag-selected-bg: #6d7684;
+  --color-tag-selected-fg: #f8fafc;
+  --color-tag-hover-bg: #3f4652;
+  --color-tag-hover-fg: #f8fafc;
 }
 
 html,
@@ -140,32 +150,90 @@ h3,
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   user-select: none;
 }
 
 .tag-chip:hover {
-  background: var(--color-surface-2);
-}
-
-.tag-chip.active {
-  background: var(--color-primary);
+  background: var(--color-tag-hover-bg);
+  color: var(--color-tag-hover-fg);
   border-color: var(--color-border-strong);
-  color: var(--color-primary-fg);
 }
 
-/* Dark mode: selected tags less “neon” — grey border, muted fill */
-.dark .tag-chip.active {
-  background: var(--color-surface-2);
-  border-color: color-mix(in srgb, var(--color-muted) 55%, var(--color-border-strong));
-  color: var(--color-text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-muted) 25%, transparent);
+/* Selected filter tags — same tokens as editor pills */
+.tag-chip.active {
+  background: var(--color-tag-selected-bg);
+  border-color: var(--color-border-strong);
+  color: var(--color-tag-selected-fg);
+  font-weight: 600;
+}
+
+.tag-chip.active:hover {
+  background: var(--color-tag-selected-bg);
+  color: var(--color-tag-selected-fg);
+  filter: brightness(1.08);
 }
 
 .project-title {
   font-family: var(--font-sans, inherit);
   font-weight: 700;
   letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.scope-card a:hover .project-title,
+a.project-title-link:hover .project-title,
+a:hover .project-title {
+  text-decoration: none !important;
+}
+
+.tag-chip.system-tag {
+  cursor: default;
+  opacity: 0.9;
+  border-style: dashed;
+}
+
+/* Delete control: only when filter chip is selected + hovered */
+.tag-chip .tag-chip-remove {
+  display: none;
+  margin-left: 0.2rem;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.tag-chip.active:hover .tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tag-chip .tag-chip-remove:hover {
+  opacity: 1;
+}
+
+/* Tag editor pills — share selected/hover tokens with filter chips */
+.pill-badge.is-toggle {
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.pill-badge.is-toggle:hover {
+  background: var(--color-tag-hover-bg) !important;
+  color: var(--color-tag-hover-fg) !important;
+  border-color: var(--color-border-strong) !important;
+}
+
+.pill-badge.is-selected {
+  background: var(--color-tag-selected-bg) !important;
+  color: var(--color-tag-selected-fg) !important;
+  border-color: var(--color-border-strong) !important;
+  font-weight: 600;
+}
+
+.pill-badge.is-toggle.is-selected:hover {
+  background: var(--color-tag-selected-bg) !important;
+  color: var(--color-tag-selected-fg) !important;
+  filter: brightness(1.08);
+  opacity: 1;
 }
 
 .task-sortable {
@@ -178,23 +246,41 @@ h3,
   touch-action: none;
 }
 
+/* Outer card: one sketchy shell; drawers slide open inside it */
+.task-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch);
+  overflow: hidden;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.task-card:hover {
+  box-shadow: var(--shadow-sketch-hover);
+}
+
+.task-card.is-open {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sketch-hover);
+}
+
+.task-card.is-dragging {
+  opacity: 0.92;
+  border-color: var(--color-border-strong);
+}
+
 .task-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 0.45rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sketch-sm);
-  background: var(--color-surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   padding: 0.45rem 0.55rem;
   min-height: 2.75rem;
-  box-shadow: var(--shadow-sketch);
-  /* Prefer box-shadow for hover — avoid transform here so it never fights dnd-kit */
-  transition: box-shadow 0.12s ease, border-color 0.12s ease;
-}
-
-.task-row:hover {
-  box-shadow: var(--shadow-sketch-hover);
+  box-shadow: none;
 }
 
 .task-row.completed .task-title {
@@ -203,11 +289,10 @@ h3,
 }
 
 .task-row.dragging {
-  opacity: 0.92;
-  box-shadow: var(--shadow-sketch-hover);
-  border-color: var(--color-border-strong);
+  /* dragging styles live on .task-card */
 }
 
+.task-card.flash-new,
 .task-row.flash-new {
   animation: task-flash-new 2s ease;
 }
@@ -335,35 +420,68 @@ h3,
   opacity: 0.85;
 }
 
-/* Expanded task body (details under the row) */
-.task-expand {
+/*
+ * In-card drawers (details + tags): smooth height animation, no nested sketchy frame.
+ * Rolls down from the main row as part of the same card.
+ */
+.task-drawer {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 0.28s ease;
+  transition: grid-template-rows 0.3s ease;
 }
 
-.task-expand.open {
+.task-drawer.open {
   grid-template-rows: 1fr;
 }
 
-.task-expand-inner {
+.task-drawer-inner {
   overflow: hidden;
   min-height: 0;
 }
 
+.task-drawer-body {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, var(--color-surface));
+  padding: 0.7rem 0.85rem 0.85rem;
+}
+
+.task-drawer-body.tags {
+  /* Slightly softer band so tags feel like a toolbar, not a second card */
+  background: color-mix(in srgb, var(--color-surface-2) 70%, var(--color-surface));
+}
+
+.dark .task-drawer-body {
+  background: color-mix(in srgb, var(--color-surface-2) 80%, #000 8%);
+}
+
+/* legacy class names kept as aliases if any remain */
+.task-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.task-expand.open {
+  grid-template-rows: 1fr;
+}
+.task-expand-inner {
+  overflow: hidden;
+  min-height: 0;
+}
 .task-expand-body {
-  margin-top: 0.35rem;
-  margin-left: 0.25rem;
-  padding: 0.75rem 0.9rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sketch-sm);
-  background: var(--color-surface-2);
-  box-shadow: var(--shadow-sketch);
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, var(--color-surface));
+  padding: 0.7rem 0.85rem 0.85rem;
 }
 
 .task-row.expanded-row {
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-sketch-hover);
+  /* open state on .task-card */
+}
+
+/* Pressed / selected toolbar buttons (Share / GitHub when active) */
+.btn-pressed {
+  background: var(--color-primary) !important;
+  color: var(--color-primary-fg) !important;
+  border-color: var(--color-border-strong) !important;
 }
 
 .icon-btn {
@@ -411,6 +529,72 @@ h3,
   white-space: nowrap;
   text-decoration: none;
   flex-shrink: 0;
+}
+
+/* Multi-repo task links: pastel accent set inline; keep readable on hover */
+.pill-badge.gh-repo-pill {
+  max-width: 15rem;
+  gap: 0.25rem;
+}
+
+.pill-badge.gh-repo-pill .gh-repo-short {
+  max-width: 5.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill-badge.gh-repo-pill:hover {
+  filter: brightness(0.97);
+  background: inherit;
+  color: inherit;
+  border-color: inherit;
+}
+
+.dark .pill-badge.gh-repo-pill:hover {
+  filter: brightness(1.08);
+}
+
+/* Dot marks “not the project default” (legacy link) */
+.gh-legacy-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.gh-default-mark {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin-left: 0.15rem;
+}
+
+.github-repo-legend .gh-swatch {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.github-repo-legend .pill-badge.gh-repo-default {
+  font-weight: 700;
+}
+
+/* Selected repo filter in legend — keep accent visible while selected */
+.github-repo-legend .pill-badge.gh-repo-filter-on,
+.github-repo-legend .pill-badge.is-toggle.is-selected {
+  box-shadow: 0 0 0 2px var(--color-primary);
+  font-weight: 700;
+}
+
+.github-repo-legend .pill-badge.is-toggle {
+  cursor: pointer;
 }
 
 .pill-badge:hover {
