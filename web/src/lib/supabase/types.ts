@@ -110,6 +110,15 @@ export type ScopeGitHubConfig = {
   updated_at: string
 }
 
+/** Cached from GitHub issue dependencies (blocked_by). */
+export type GitHubBlockedByRef = {
+  number: number
+  title: string
+  html_url: string
+  state: string
+  repo?: string | null
+}
+
 export type TaskGitHubConfig = {
   id: string
   task_id: string
@@ -127,6 +136,8 @@ export type TaskGitHubConfig = {
   github_milestone_number: number | null
   github_milestone_title: string | null
   github_milestone_due_on: string | null
+  /** Issues that block this task's linked issue (from GitHub). */
+  github_blocked_by?: GitHubBlockedByRef[] | null
   legacy_id: number | null
   created_at: string
   updated_at: string

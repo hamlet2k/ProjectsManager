@@ -531,6 +531,21 @@ a:hover .project-title {
   flex-shrink: 0;
 }
 
+/* GitHub “blocked by” dependency (left of issue pill) */
+.pill-badge.gh-blocked-by {
+  background: #fde8e8;
+  border-color: #c97a7a;
+  color: #8b2e2e;
+  font-weight: 700;
+  max-width: 8rem;
+}
+
+.dark .pill-badge.gh-blocked-by {
+  background: rgba(200, 80, 80, 0.22);
+  border-color: #a85c5c;
+  color: #f0c0c0;
+}
+
 /* Multi-repo task links: pastel accent set inline; keep readable on hover */
 .pill-badge.gh-repo-pill {
   max-width: 15rem;

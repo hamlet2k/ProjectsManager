@@ -613,6 +613,62 @@ Deno.serve(async (req) => {
       }
     }
 
+    type BlockedByRef = {
+      number: number
+      title: string
+      html_url: string
+      state: string
+      repo?: string | null
+    }
+
+    /**
+     * GitHub issue dependencies: issues that block this one.
+     * GET /repos/{owner}/{repo}/issues/{n}/dependencies/blocked_by
+     * Non-fatal if API unavailable (older GH / missing permission).
+     */
+    async function fetchBlockedBy(
+      owner: string,
+      repo: string,
+      issueNumber: number,
+    ): Promise<BlockedByRef[]> {
+      try {
+        const res = await gh(
+          token,
+          `/repos/${owner}/${repo}/issues/${issueNumber}/dependencies/blocked_by?per_page=20`,
+        )
+        if (!res.ok) {
+          // 404/410 = feature not available or no access — ignore
+          if (res.status === 404 || res.status === 410 || res.status === 403) return []
+          console.warn('blocked_by', res.status, (await res.text()).slice(0, 120))
+          return []
+        }
+        const issues = (await res.json()) as Array<{
+          number: number
+          title: string
+          html_url: string
+          state: string
+          repository_url?: string
+        }>
+        return (issues ?? []).map((i) => {
+          let repoLabel: string | null = null
+          if (i.repository_url) {
+            const m = i.repository_url.match(/repos\/([^/]+\/[^/]+)$/)
+            repoLabel = m?.[1] ?? null
+          }
+          return {
+            number: i.number,
+            title: i.title,
+            html_url: i.html_url,
+            state: i.state,
+            repo: repoLabel,
+          }
+        })
+      } catch (e) {
+        console.warn('fetchBlockedBy', e)
+        return []
+      }
+    }
+
     /** Add issue/PR to a Projects V2 board (non-fatal if missing permission). */
     async function addIssueToProjectV2(
       projectId: string | null | undefined,
@@ -794,6 +850,8 @@ Deno.serve(async (req) => {
 
         await ensureGithubSystemTag(task.scope_id as string, taskId)
 
+        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
           github_issue_node_id: issue.node_id,
@@ -809,6 +867,7 @@ Deno.serve(async (req) => {
             issue.milestone?.number ?? scopeCfg.github_milestone_number,
           github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
           github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: blockedBy,
         })
 
         const projectAdd = await addIssueToProjectV2(
@@ -950,6 +1009,8 @@ Deno.serve(async (req) => {
 
         await ensureGithubSystemTag(scopeId, task.id)
 
+        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+
         const config = await upsertTaskConfig(task.id, {
           github_issue_id: issue.id,
           github_issue_node_id: issue.node_id,
@@ -965,6 +1026,7 @@ Deno.serve(async (req) => {
             issue.milestone?.number ?? scopeCfg.github_milestone_number,
           github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
           github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: blockedBy,
         })
 
         const projectAdd = await addIssueToProjectV2(
@@ -1076,6 +1138,7 @@ Deno.serve(async (req) => {
 
         await ensureGithubSystemTag(task.scope_id as string, taskId)
 
+        // New issues have no blockers yet; still store empty array
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
           github_issue_node_id: issue.node_id,
@@ -1089,6 +1152,7 @@ Deno.serve(async (req) => {
           github_project_name: scopeCfg.github_project_name,
           github_milestone_number: scopeCfg.github_milestone_number,
           github_milestone_title: scopeCfg.github_milestone_title,
+          github_blocked_by: [],
         })
 
         // Optional: add new issue to the project's GitHub Project board
@@ -1298,6 +1362,8 @@ Deno.serve(async (req) => {
           await applyGithubLabelsToTask(issue)
         }
 
+        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+
         const config = await upsertTaskConfig(
           taskId,
           {
@@ -1306,6 +1372,7 @@ Deno.serve(async (req) => {
             github_issue_number: issue.number,
             github_issue_url: issue.html_url,
             github_issue_state: issue.state,
+            github_blocked_by: blockedBy,
           },
           rowUser,
         )

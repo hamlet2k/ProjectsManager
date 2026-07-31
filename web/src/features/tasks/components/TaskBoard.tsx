@@ -1282,6 +1282,28 @@ function SortableTaskRow({
               {task.name}
             </button>
 
+            {githubVisible &&
+            github?.github_issue_number &&
+            Array.isArray(github.github_blocked_by) &&
+            github.github_blocked_by.some((b) => b.state === 'open')
+              ? github.github_blocked_by
+                  .filter((b) => b.state === 'open')
+                  .slice(0, 3)
+                  .map((b) => (
+                    <a
+                      key={`block-${b.number}-${b.html_url}`}
+                      className="pill-badge gh-blocked-by"
+                      href={b.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Blocked by #${b.number}: ${b.title}${b.repo ? ` (${b.repo})` : ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      ⛔ #{b.number}
+                    </a>
+                  ))
+              : null}
+
             {githubVisible && github?.github_issue_number ? (
               <a
                 className={cn(
@@ -1303,6 +1325,13 @@ function SortableTaskRow({
                         ? 'Project GitHub is off — link is read-only'
                         : null,
                     githubEnabled ? 'Open issue' : 'Read-only',
+                    Array.isArray(github.github_blocked_by) &&
+                    github.github_blocked_by.some((b) => b.state === 'open')
+                      ? `Blocked by ${github.github_blocked_by
+                          .filter((b) => b.state === 'open')
+                          .map((b) => `#${b.number}`)
+                          .join(', ')}`
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')

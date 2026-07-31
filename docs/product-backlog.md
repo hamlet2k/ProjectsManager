@@ -78,7 +78,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] User vs project enable/disable matrix (issue #35 adapted) — see `docs/github-integration-matrix.md`
 - [x] Link existing issue / import task from GitHub (picker + From GitHub button)
 - [x] Ensure label; add issue to Project board on create/link/import when project board is set
-- [ ] Blocked-by issue pill (red) from GitHub relationships
+- [x] Blocked-by issue pill (red) from GitHub relationships (sync/link/import refresh `github_blocked_by`)
 - [ ] Webhooks for two-way without manual sync
 - [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)
 
