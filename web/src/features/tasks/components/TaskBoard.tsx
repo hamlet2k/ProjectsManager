@@ -1451,7 +1451,10 @@ function SortableTaskRow({
                     ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
                 }}
               >
-                ⛔ {b.name.length > 18 ? `${b.name.slice(0, 16)}…` : b.name}
+                <span className="pill-badge-label" aria-hidden>
+                  ⛔
+                </span>
+                <span className="pill-badge-text">{b.name}</span>
               </button>
             ))}
 
@@ -1469,7 +1472,10 @@ function SortableTaskRow({
                     ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
                 }}
               >
-                🔒 blocks {b.name.length > 14 ? `${b.name.slice(0, 12)}…` : b.name}
+                <span className="pill-badge-label" aria-hidden>
+                  🔒
+                </span>
+                <span className="pill-badge-text">{b.name}</span>
               </button>
             ))}
 
@@ -1491,7 +1497,10 @@ function SortableTaskRow({
                       title={`Blocked by GitHub #${b.number}: ${b.title}${b.repo ? ` (${b.repo})` : ''}`}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      ⛔ #{b.number}
+                      <span className="pill-badge-label" aria-hidden>
+                        ⛔
+                      </span>
+                      <span className="pill-badge-text">#{b.number}</span>
                     </a>
                   ))
               : null}
@@ -1614,11 +1623,23 @@ function SortableTaskRow({
             {canEdit && onOpenDependencies ? (
               <button
                 type="button"
-                className={cn('icon-btn', depCount > 0 && 'text-[var(--color-text)]')}
+                className={cn(
+                  'icon-btn dep-status-btn',
+                  openAppBlockers.length > 0 ||
+                    (githubVisible &&
+                      Array.isArray(github?.github_blocked_by) &&
+                      github.github_blocked_by.some((b) => b.state === 'open'))
+                    ? 'dep-status-blocked'
+                    : openAppBlocking.length > 0
+                      ? 'dep-status-blocking'
+                      : 'dep-status-none',
+                )}
                 title={
-                  depCount > 0
-                    ? `Dependencies (${appBlockers.length} blockers, blocks ${appBlocking.length})`
-                    : 'Manage dependencies (blockers / blocks)'
+                  openAppBlockers.length > 0
+                    ? `Blocked by ${openAppBlockers.length} task(s) — manage dependencies`
+                    : openAppBlocking.length > 0
+                      ? `Blocks ${openAppBlocking.length} task(s) — manage dependencies`
+                      : 'Manage dependencies'
                 }
                 onClick={() => onOpenDependencies('blocked_by')}
               >
@@ -1644,91 +1665,79 @@ function SortableTaskRow({
         <div className={cn('task-drawer', expanded && 'open')} aria-hidden={!expanded}>
           <div className="task-drawer-inner">
             <div className="task-drawer-body space-y-3">
-              {/* Dependencies summary */}
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Dependencies summary (manage via row diagram icon) */}
+              {appBlockers.length > 0 || appBlocking.length > 0 ? (
+                <div className="space-y-1.5">
                   <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     Dependencies
-                  </div>
-                  {canEdit && onOpenDependencies ? (
-                    <div className="flex flex-wrap gap-1">
-                      <Button
+                    {canEdit && onOpenDependencies ? (
+                      <button
                         type="button"
-                        size="sm"
-                        variant="secondary"
+                        className="ml-2 normal-case tracking-normal font-medium underline decoration-wavy"
                         onClick={() => onOpenDependencies('blocked_by')}
                       >
-                        <Icons.Dependencies size="0.9em" /> Blocked by…
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => onOpenDependencies('blocks')}
-                      >
-                        Blocks…
-                      </Button>
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                  {appBlockers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
+                        Blocked by
+                      </span>
+                      {appBlockers.map(({ task: b }) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className="pill-badge gh-blocked-by"
+                          title={`Blocked by: ${b.name}${b.completed ? ' (done)' : ''}`}
+                          onClick={() =>
+                            document
+                              .getElementById(`task-row-${b.id}`)
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                          }
+                        >
+                          <span className="pill-badge-label" aria-hidden>
+                            ⛔
+                          </span>
+                          <span className="pill-badge-text">
+                            {b.name}
+                            {b.completed ? ' ✓' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {appBlocking.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
+                        Blocks
+                      </span>
+                      {appBlocking.map(({ task: b }) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          className="pill-badge gh-blocking"
+                          title={`Blocks: ${b.name}${b.completed ? ' (done)' : ''}`}
+                          onClick={() =>
+                            document
+                              .getElementById(`task-row-${b.id}`)
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                          }
+                        >
+                          <span className="pill-badge-label" aria-hidden>
+                            🔒
+                          </span>
+                          <span className="pill-badge-text">
+                            {b.name}
+                            {b.completed ? ' ✓' : ''}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   ) : null}
                 </div>
-                {appBlockers.length === 0 && appBlocking.length === 0 ? (
-                  <p className="text-xs text-[var(--color-muted)]">
-                    No blockers or blocked tasks yet.
-                    {canEdit && onOpenDependencies
-                      ? ' Use the buttons above to set relationships.'
-                      : ''}
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {appBlockers.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
-                          Blocked by
-                        </span>
-                        {appBlockers.map(({ task: b }) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            className="pill-badge gh-blocked-by"
-                            title={b.name}
-                            onClick={() =>
-                              document
-                                .getElementById(`task-row-${b.id}`)
-                                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                            }
-                          >
-                            ⛔ {b.name}
-                            {b.completed ? ' (done)' : ''}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {appBlocking.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
-                          Blocks
-                        </span>
-                        {appBlocking.map(({ task: b }) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            className="pill-badge gh-blocking"
-                            title={b.name}
-                            onClick={() =>
-                              document
-                                .getElementById(`task-row-${b.id}`)
-                                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                            }
-                          >
-                            🔒 {b.name}
-                            {b.completed ? ' (done)' : ''}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
+              ) : null}
 
               {/*
                 Tags: view mode = only tags on this task (no #github).

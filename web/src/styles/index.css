@@ -531,13 +531,37 @@ a:hover .project-title {
   flex-shrink: 0;
 }
 
-/* “Blocked by” dependency (app or GitHub) */
+/* Dependency pills: fixed max width + truncate (no “blocks” prefix in label) */
+.pill-badge.gh-blocked-by,
+.pill-badge.gh-blocking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 9.5rem;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+}
+
+.pill-badge.gh-blocked-by .pill-badge-label,
+.pill-badge.gh-blocking .pill-badge-label {
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.pill-badge.gh-blocked-by .pill-badge-text,
+.pill-badge.gh-blocking .pill-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* “Blocked by” (this task waits on another) */
 .pill-badge.gh-blocked-by {
   background: #fde8e8;
   border-color: #c97a7a;
   color: #8b2e2e;
-  font-weight: 700;
-  max-width: 12rem;
 }
 
 .dark .pill-badge.gh-blocked-by {
@@ -551,14 +575,37 @@ a:hover .project-title {
   background: #fff3e0;
   border-color: #c9a06a;
   color: #7a4e12;
-  font-weight: 700;
-  max-width: 14rem;
 }
 
 .dark .pill-badge.gh-blocking {
   background: rgba(200, 150, 60, 0.2);
   border-color: #a88a4a;
   color: #f0d8a0;
+}
+
+/* Row action: single dependencies control, status-colored */
+.icon-btn.dep-status-btn.dep-status-none {
+  color: var(--color-muted);
+}
+
+.icon-btn.dep-status-btn.dep-status-blocked {
+  color: #b33a3a;
+  background: rgba(200, 80, 80, 0.12);
+}
+
+.icon-btn.dep-status-btn.dep-status-blocking {
+  color: #a66b1a;
+  background: rgba(200, 150, 60, 0.14);
+}
+
+.dark .icon-btn.dep-status-btn.dep-status-blocked {
+  color: #f0a0a0;
+  background: rgba(200, 80, 80, 0.2);
+}
+
+.dark .icon-btn.dep-status-btn.dep-status-blocking {
+  color: #f0d090;
+  background: rgba(200, 150, 60, 0.18);
 }
 
 /* Multi-repo task links: pastel accent set inline; keep readable on hover */
