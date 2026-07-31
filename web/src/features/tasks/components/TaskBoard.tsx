@@ -35,6 +35,7 @@ import { Icons } from '@/components/icons'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { MarkdownView } from '@/lib/markdown'
+import { TaskDependenciesModal } from '@/features/tasks/components/TaskDependenciesModal'
 
 export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
 
@@ -163,6 +164,10 @@ export function TaskBoard({
 
   const [tagEditTaskId, setTagEditTaskId] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  const [depsModal, setDepsModal] = useState<{
+    task: Task
+    tab: 'blocked_by' | 'blocks'
+  } | null>(null)
   /** Temporary highlight after a task is created */
   const [flashTaskId, setFlashTaskId] = useState<string | null>(null)
   const knownTaskIds = useRef<Set<string> | null>(null)
@@ -1157,7 +1162,6 @@ export function TaskBoard({
                       task={task}
                       tags={tagsByTask.get(task.id) ?? []}
                       allTags={tags}
-                      allTasks={tasks}
                       github={githubVisible ? githubByTask.get(task.id) : undefined}
                       appBlockers={blockersByTask.get(task.id) ?? []}
                       appBlocking={blockingByTask.get(task.id) ?? []}
@@ -1178,8 +1182,11 @@ export function TaskBoard({
                       }}
                       onToggleComplete={onToggleComplete}
                       onEdit={onEdit}
-                      onAddBlocker={onAddBlocker}
-                      onRemoveBlocker={onRemoveBlocker}
+                      onOpenDependencies={
+                        canEdit && onAddBlocker && onRemoveBlocker
+                          ? (tab) => setDepsModal({ task, tab })
+                          : undefined
+                      }
                       onConfirmDelete={async (task) => {
                         const ok = await confirm({
                           title: 'Delete task?',
@@ -1264,6 +1271,18 @@ export function TaskBoard({
         )}
       </section>
 
+      {depsModal && onAddBlocker && onRemoveBlocker ? (
+        <TaskDependenciesModal
+          open={Boolean(depsModal)}
+          onClose={() => setDepsModal(null)}
+          task={depsModal.task}
+          allTasks={tasks}
+          dependencies={dependencies}
+          initialTab={depsModal.tab}
+          onAddBlocker={onAddBlocker}
+          onRemoveBlocker={onRemoveBlocker}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1286,7 +1305,6 @@ function SortableTaskRow({
   task,
   tags,
   allTags,
-  allTasks,
   github,
   appBlockers,
   appBlocking,
@@ -1307,13 +1325,11 @@ function SortableTaskRow({
   onToggleTagEdit,
   onSetTags,
   onCreateTag,
-  onAddBlocker,
-  onRemoveBlocker,
+  onOpenDependencies,
 }: {
   task: Task
   tags: Tag[]
   allTags: Tag[]
-  allTasks: Task[]
   github?: TaskGitHubConfig
   appBlockers: { dep: TaskDependency; task: Task }[]
   appBlocking: { dep: TaskDependency; task: Task }[]
@@ -1333,8 +1349,7 @@ function SortableTaskRow({
   onGithub: (action: 'create' | 'sync' | 'link' | 'choose') => Promise<void>
   onToggleTagEdit: () => void
   onSetTags: (ids: string[]) => Promise<void>
-  onAddBlocker?: (blockedTaskId: string, blockerTaskId: string) => Promise<void>
-  onRemoveBlocker?: (dep: TaskDependency) => Promise<void>
+  onOpenDependencies?: (tab: 'blocked_by' | 'blocks') => void
   onCreateTag: (name: string) => Promise<Tag>
 }) {
   const {
@@ -1351,7 +1366,6 @@ function SortableTaskRow({
   })
   const [newTag, setNewTag] = useState('')
   const [ghBusy, setGhBusy] = useState(false)
-  const [depBusy, setDepBusy] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1373,7 +1387,7 @@ function SortableTaskRow({
 
   const openAppBlockers = appBlockers.filter((b) => !b.task.completed)
   const openAppBlocking = appBlocking.filter((b) => !b.task.completed)
-  const blockerIds = new Set(appBlockers.map((b) => b.task.id))
+  const depCount = appBlockers.length + appBlocking.length
 
   const cardOpen = expanded || tagEditOpen
   const taskRepo = repoKey(github?.github_repo_owner, github?.github_repo_name)
@@ -1597,6 +1611,20 @@ function SortableTaskRow({
                 )}
               </button>
             ) : null}
+            {canEdit && onOpenDependencies ? (
+              <button
+                type="button"
+                className={cn('icon-btn', depCount > 0 && 'text-[var(--color-text)]')}
+                title={
+                  depCount > 0
+                    ? `Dependencies (${appBlockers.length} blockers, blocks ${appBlocking.length})`
+                    : 'Manage dependencies (blockers / blocks)'
+                }
+                onClick={() => onOpenDependencies('blocked_by')}
+              >
+                <Icons.Dependencies />
+              </button>
+            ) : null}
             <button type="button" className="icon-btn" title="Edit" onClick={() => onEdit(task)}>
               <Icons.Edit />
             </button>
@@ -1616,72 +1644,90 @@ function SortableTaskRow({
         <div className={cn('task-drawer', expanded && 'open')} aria-hidden={!expanded}>
           <div className="task-drawer-inner">
             <div className="task-drawer-body space-y-3">
-              {/* Blocked by (app) */}
+              {/* Dependencies summary */}
               <div className="space-y-1.5">
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                  Blocked by
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    Dependencies
+                  </div>
+                  {canEdit && onOpenDependencies ? (
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => onOpenDependencies('blocked_by')}
+                      >
+                        <Icons.Dependencies size="0.9em" /> Blocked by…
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => onOpenDependencies('blocks')}
+                      >
+                        Blocks…
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-                {appBlockers.length === 0 ? (
-                  <p className="text-xs text-[var(--color-muted)]">No app blockers.</p>
-                ) : (
-                  <ul className="flex flex-wrap gap-1.5">
-                    {appBlockers.map(({ dep, task: b }) => (
-                      <li key={dep.id}>
-                        <span className="pill-badge gh-blocked-by inline-flex items-center gap-1">
-                          ⛔ {b.name}
-                          {b.completed ? ' (done)' : ''}
-                          {canEdit && onRemoveBlocker ? (
-                            <button
-                              type="button"
-                              className="ml-0.5 opacity-70 hover:opacity-100"
-                              title="Remove blocker"
-                              disabled={depBusy}
-                              onClick={() => {
-                                setDepBusy(true)
-                                void onRemoveBlocker(dep).finally(() => setDepBusy(false))
-                              }}
-                            >
-                              <Icons.X size="0.75em" />
-                            </button>
-                          ) : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {canEdit && onAddBlocker ? (
-                  <label className="block text-xs text-[var(--color-muted)]">
-                    Add blocker
-                    <select
-                      className="field-input mt-1 text-sm"
-                      disabled={depBusy}
-                      value=""
-                      onChange={(e) => {
-                        const id = e.target.value
-                        if (!id) return
-                        setDepBusy(true)
-                        void onAddBlocker(task.id, id).finally(() => setDepBusy(false))
-                        e.target.value = ''
-                      }}
-                    >
-                      <option value="">Select a task that blocks this one…</option>
-                      {allTasks
-                        .filter((t) => t.id !== task.id && !blockerIds.has(t.id))
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.completed ? '✓ ' : ''}
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                ) : null}
-                {appBlocking.length > 0 ? (
+                {appBlockers.length === 0 && appBlocking.length === 0 ? (
                   <p className="text-xs text-[var(--color-muted)]">
-                    This task blocks:{' '}
-                    {appBlocking.map(({ task: b }) => b.name).join(', ')}
+                    No blockers or blocked tasks yet.
+                    {canEdit && onOpenDependencies
+                      ? ' Use the buttons above to set relationships.'
+                      : ''}
                   </p>
-                ) : null}
+                ) : (
+                  <div className="space-y-1.5">
+                    {appBlockers.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
+                          Blocked by
+                        </span>
+                        {appBlockers.map(({ task: b }) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            className="pill-badge gh-blocked-by"
+                            title={b.name}
+                            onClick={() =>
+                              document
+                                .getElementById(`task-row-${b.id}`)
+                                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                            }
+                          >
+                            ⛔ {b.name}
+                            {b.completed ? ' (done)' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {appBlocking.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="w-full text-[10px] font-semibold uppercase text-[var(--color-muted)]">
+                          Blocks
+                        </span>
+                        {appBlocking.map(({ task: b }) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            className="pill-badge gh-blocking"
+                            title={b.name}
+                            onClick={() =>
+                              document
+                                .getElementById(`task-row-${b.id}`)
+                                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                            }
+                          >
+                            🔒 {b.name}
+                            {b.completed ? ' (done)' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               {/*

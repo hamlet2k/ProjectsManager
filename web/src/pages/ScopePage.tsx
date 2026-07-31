@@ -705,38 +705,18 @@ export function ScopePage() {
         onAddBlocker={
           access.canEdit
             ? async (blockedTaskId, blockerTaskId) => {
-                try {
-                  const res = await addDep.mutateAsync({ blockedTaskId, blockerTaskId })
-                  if (res.github?.github_synced) {
-                    toast.push('Blocker set · synced to GitHub', 'success')
-                  } else if (res.github?.reason) {
-                    toast.push(`Blocker set (${res.github.reason})`, 'success')
-                  } else {
-                    toast.push('Blocker set', 'success')
-                  }
-                } catch (e) {
-                  toast.push(e instanceof Error ? e.message : 'Could not set blocker', 'error')
-                }
+                await addDep.mutateAsync({ blockedTaskId, blockerTaskId })
               }
             : undefined
         }
         onRemoveBlocker={
           access.canEdit
             ? async (dep) => {
-                try {
-                  const res = await removeDep.mutateAsync({
-                    id: dep.id,
-                    blockedTaskId: dep.blocked_task_id,
-                    blockerTaskId: dep.blocker_task_id,
-                  })
-                  if (res.github?.github_synced) {
-                    toast.push('Blocker removed · GitHub updated', 'success')
-                  } else {
-                    toast.push('Blocker removed', 'success')
-                  }
-                } catch (e) {
-                  toast.push(e instanceof Error ? e.message : 'Could not remove blocker', 'error')
-                }
+                await removeDep.mutateAsync({
+                  id: dep.id,
+                  blockedTaskId: dep.blocked_task_id,
+                  blockerTaskId: dep.blocker_task_id,
+                })
               }
             : undefined
         }

@@ -64,6 +64,8 @@ export const Icons = {
   Issue: (p: IconProps) => <Bi name="record-circle" {...p} />,
   /** Link existing GitHub issue */
   Link: (p: IconProps) => <Bi name="link-45deg" {...p} />,
+  /** Task dependencies / blockers */
+  Dependencies: (p: IconProps) => <Bi name="diagram-3" {...p} />,
   List: (p: IconProps) => <Bi name="list-task" {...p} />,
   People: (p: IconProps) => <Bi name="people" {...p} />,
 }
