@@ -669,6 +669,185 @@ Deno.serve(async (req) => {
       }
     }
 
+    type TaskIssueLink = {
+      task_id: string
+      github_issue_number: number | null
+      github_issue_id: number | null
+      github_repo_owner: string | null
+      github_repo_name: string | null
+    }
+
+    /** Map issue numbers → task ids for a scope + repo (one task per issue number). */
+    async function loadScopeIssueIndex(
+      scopeId: string,
+      owner: string,
+      repo: string,
+    ): Promise<Map<number, TaskIssueLink>> {
+      const map = new Map<number, TaskIssueLink>()
+      const { data: tasksInScope } = await admin
+        .from('tasks')
+        .select('id')
+        .eq('scope_id', scopeId)
+      const taskIds = (tasksInScope ?? []).map((t) => t.id as string)
+      if (taskIds.length === 0) return map
+
+      const { data: links } = await admin
+        .from('task_github_configs')
+        .select('task_id, github_issue_number, github_issue_id, github_repo_owner, github_repo_name')
+        .in('task_id', taskIds)
+        .eq('github_repo_owner', owner)
+        .eq('github_repo_name', repo)
+        .not('github_issue_number', 'is', null)
+
+      for (const l of (links ?? []) as TaskIssueLink[]) {
+        const n = l.github_issue_number
+        if (n == null) continue
+        if (!map.has(n)) map.set(n, l)
+      }
+      return map
+    }
+
+    /**
+     * GitHub blocked_by → app task_dependencies (upsert only; never deletes app edges).
+     * Only when the blocking issue is also linked to a task in the same project+repo.
+     */
+    async function importGithubBlockersToApp(
+      scopeId: string,
+      blockedTaskId: string,
+      owner: string,
+      repo: string,
+      blockedBy: BlockedByRef[],
+    ): Promise<number> {
+      if (!blockedBy.length) return 0
+      const index = await loadScopeIssueIndex(scopeId, owner, repo)
+      let added = 0
+      for (const b of blockedBy) {
+        const blockerLink = index.get(b.number)
+        if (!blockerLink || blockerLink.task_id === blockedTaskId) continue
+        const { error } = await admin.from('task_dependencies').upsert(
+          {
+            scope_id: scopeId,
+            blocked_task_id: blockedTaskId,
+            blocker_task_id: blockerLink.task_id,
+            created_by: user.id,
+          },
+          { onConflict: 'blocked_task_id,blocker_task_id' },
+        )
+        if (!error) added += 1
+        else console.warn('importGithubBlockersToApp upsert', error.message)
+      }
+      return added
+    }
+
+    /** POST GitHub blocked_by (non-fatal). */
+    async function githubAddBlockedBy(
+      owner: string,
+      repo: string,
+      blockedIssueNumber: number,
+      blockerIssueId: number,
+    ): Promise<boolean> {
+      try {
+        const res = await fetch(
+          `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedIssueNumber}/dependencies/blocked_by`,
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/vnd.github+json',
+              Authorization: authHeader(token),
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ issue_id: blockerIssueId }),
+          },
+        )
+        // 201 created, 422 often "already exists"
+        if (res.ok || res.status === 422) return true
+        if (res.status === 404 || res.status === 403 || res.status === 410) return false
+        console.warn('githubAddBlockedBy', res.status, (await res.text()).slice(0, 120))
+        return false
+      } catch (e) {
+        console.warn('githubAddBlockedBy', e)
+        return false
+      }
+    }
+
+    /**
+     * App task_dependencies → GitHub (add missing only).
+     * Pushes edges where this task is blocked or is a blocker, both sides linked same repo.
+     */
+    async function pushAppDepsToGithub(
+      scopeId: string,
+      taskId: string,
+      owner: string,
+      repo: string,
+    ): Promise<number> {
+      const { data: deps } = await admin
+        .from('task_dependencies')
+        .select('blocked_task_id, blocker_task_id')
+        .eq('scope_id', scopeId)
+        .or(`blocked_task_id.eq.${taskId},blocker_task_id.eq.${taskId}`)
+
+      if (!deps?.length) return 0
+
+      const index = await loadScopeIssueIndex(scopeId, owner, repo)
+      // also index by task_id
+      const byTask = new Map<string, TaskIssueLink>()
+      for (const link of index.values()) {
+        byTask.set(link.task_id, link)
+      }
+
+      let pushed = 0
+      for (const d of deps as { blocked_task_id: string; blocker_task_id: string }[]) {
+        const blocked = byTask.get(d.blocked_task_id)
+        const blocker = byTask.get(d.blocker_task_id)
+        if (
+          !blocked?.github_issue_number ||
+          !blocker?.github_issue_id ||
+          blocked.github_repo_owner !== owner ||
+          blocked.github_repo_name !== repo ||
+          blocker.github_repo_owner !== owner ||
+          blocker.github_repo_name !== repo
+        ) {
+          continue
+        }
+        const ok = await githubAddBlockedBy(
+          owner,
+          repo,
+          blocked.github_issue_number,
+          blocker.github_issue_id,
+        )
+        if (ok) pushed += 1
+      }
+      return pushed
+    }
+
+    /** After any link/sync: import GH→app, push app→GH, refresh blocked_by cache. */
+    async function reconcileDependencies(input: {
+      scopeId: string
+      taskId: string
+      owner: string
+      repo: string
+      issueNumber: number
+      configUserId?: string
+    }): Promise<{ blockedBy: BlockedByRef[]; imported: number; pushed: number }> {
+      // Push app edges first so re-fetch includes them
+      const pushed = await pushAppDepsToGithub(
+        input.scopeId,
+        input.taskId,
+        input.owner,
+        input.repo,
+      )
+      const blockedBy = await fetchBlockedBy(input.owner, input.repo, input.issueNumber)
+      const imported = await importGithubBlockersToApp(
+        input.scopeId,
+        input.taskId,
+        input.owner,
+        input.repo,
+        blockedBy,
+      )
+      return { blockedBy, imported, pushed }
+    }
+
     /** Add issue/PR to a Projects V2 board (non-fatal if missing permission). */
     async function addIssueToProjectV2(
       projectId: string | null | undefined,
@@ -850,7 +1029,13 @@ Deno.serve(async (req) => {
 
         await ensureGithubSystemTag(task.scope_id as string, taskId)
 
-        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+        const depSync = await reconcileDependencies({
+          scopeId: task.scope_id as string,
+          taskId,
+          owner,
+          repo,
+          issueNumber: issue.number,
+        })
 
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
@@ -867,7 +1052,7 @@ Deno.serve(async (req) => {
             issue.milestone?.number ?? scopeCfg.github_milestone_number,
           github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
           github_milestone_due_on: issue.milestone?.due_on ?? null,
-          github_blocked_by: blockedBy,
+          github_blocked_by: depSync.blockedBy,
         })
 
         const projectAdd = await addIssueToProjectV2(
@@ -880,6 +1065,8 @@ Deno.serve(async (req) => {
           config,
           project_added: projectAdd.ok,
           project_error: projectAdd.error ?? null,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
         })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'link failed'
@@ -1009,7 +1196,32 @@ Deno.serve(async (req) => {
 
         await ensureGithubSystemTag(scopeId, task.id)
 
-        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+        // Upsert link first so index can see this task when importing deps
+        await upsertTaskConfig(task.id, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: [],
+        })
+
+        const depSync = await reconcileDependencies({
+          scopeId,
+          taskId: task.id,
+          owner,
+          repo,
+          issueNumber: issue.number,
+        })
 
         const config = await upsertTaskConfig(task.id, {
           github_issue_id: issue.id,
@@ -1026,7 +1238,7 @@ Deno.serve(async (req) => {
             issue.milestone?.number ?? scopeCfg.github_milestone_number,
           github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
           github_milestone_due_on: issue.milestone?.due_on ?? null,
-          github_blocked_by: blockedBy,
+          github_blocked_by: depSync.blockedBy,
         })
 
         const projectAdd = await addIssueToProjectV2(
@@ -1040,6 +1252,8 @@ Deno.serve(async (req) => {
           config,
           project_added: projectAdd.ok,
           project_error: projectAdd.error ?? null,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
         })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'import failed'
@@ -1496,7 +1710,27 @@ Deno.serve(async (req) => {
           await applyGithubLabelsToTask(issue)
         }
 
-        const blockedBy = await fetchBlockedBy(owner, repo, issue.number)
+        // Ensure link fields exist before dependency index lookup
+        await upsertTaskConfig(
+          taskId,
+          {
+            github_issue_id: issue.id,
+            github_issue_node_id: issue.node_id,
+            github_issue_number: issue.number,
+            github_issue_url: issue.html_url,
+            github_issue_state: issue.state,
+          },
+          rowUser,
+        )
+
+        const depSync = await reconcileDependencies({
+          scopeId: task.scope_id as string,
+          taskId,
+          owner,
+          repo,
+          issueNumber: issue.number,
+          configUserId: rowUser,
+        })
 
         const config = await upsertTaskConfig(
           taskId,
@@ -1506,7 +1740,7 @@ Deno.serve(async (req) => {
             github_issue_number: issue.number,
             github_issue_url: issue.html_url,
             github_issue_state: issue.state,
-            github_blocked_by: blockedBy,
+            github_blocked_by: depSync.blockedBy,
           },
           rowUser,
         )
@@ -1525,8 +1759,20 @@ Deno.serve(async (req) => {
             .eq('completed', true)
         }
 
-        await logSync(taskId, `sync_task_${mode}`, 'success', `LWW ${mode} gh=${ghMs} app=${appMs}`)
-        return json({ config, mode, githubUpdatedAt: remote.updated_at, taskUpdatedAt: task.updated_at })
+        await logSync(
+          taskId,
+          `sync_task_${mode}`,
+          'success',
+          `LWW ${mode} gh=${ghMs} app=${appMs} deps+${depSync.imported}/↑${depSync.pushed}`,
+        )
+        return json({
+          config,
+          mode,
+          githubUpdatedAt: remote.updated_at,
+          taskUpdatedAt: task.updated_at,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
+        })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'sync failed'
         await logSync(taskId, action, 'error', msg)
