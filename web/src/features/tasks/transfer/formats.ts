@@ -4,7 +4,8 @@
  */
 import type { Task, TaskGitHubConfig } from '@/lib/supabase/types'
 
-export type TransferFormat = 'plain' | 'checklist' | 'ai_backlog' | 'json' | 'csv'
+/** Export format family. Legacy prefs may still store `plain` | `checklist` → mapped to `text`. */
+export type TransferFormat = 'text' | 'ai_backlog' | 'json' | 'csv' | 'plain' | 'checklist'
 
 export type ExportTaskRow = {
   task: Task
@@ -20,10 +21,21 @@ export type ExportOptions = {
   /** Include due dates, tags, description, GitHub links, timestamps, rank */
   fullMetadata: boolean
   includeCompleted: boolean
+  /**
+   * Text format only: prefix lines with `[ ]` / `[x]` (and enable rich line metadata
+   * when fullMetadata is also on).
+   */
+  asChecklist: boolean
   /** Project / list title for headers */
   projectName: string
   /** Free-text instructions for AI backlog format */
   aiInstructions: string
+}
+
+export function normalizeTransferFormat(format: string | null | undefined): TransferFormat {
+  if (format === 'plain' || format === 'checklist' || format === 'text') return 'text'
+  if (format === 'ai_backlog' || format === 'json' || format === 'csv') return format
+  return 'text'
 }
 
 export type ParsedImportTask = {
@@ -42,20 +54,67 @@ export type ParseResult = {
 
 const LS_FORMAT = 'pm-transfer-format'
 const LS_META = 'pm-transfer-full-meta'
+const LS_CHECKLIST = 'pm-transfer-as-checklist'
 const LS_AI = 'pm-transfer-ai-instructions'
 const LS_ADVANCED = 'pm-advanced-export'
+
+/**
+ * Recommended checkboxes when the user picks a format (or first visit).
+ * - Text: checklist only
+ * - JSON: full metadata
+ * - CSV: nothing extra
+ * - AI backlog: full metadata (+ include completed handled in the modal)
+ */
+export function defaultsForFormat(format: TransferFormat): {
+  fullMetadata: boolean
+  asChecklist: boolean
+} {
+  switch (normalizeTransferFormat(format)) {
+    case 'json':
+      return { fullMetadata: true, asChecklist: false }
+    case 'csv':
+      return { fullMetadata: false, asChecklist: false }
+    case 'ai_backlog':
+      return { fullMetadata: true, asChecklist: false }
+    case 'text':
+    default:
+      return { fullMetadata: false, asChecklist: true }
+  }
+}
 
 export function loadTransferPrefs(): {
   format: TransferFormat
   fullMetadata: boolean
+  asChecklist: boolean
   aiInstructions: string
   advancedExport: boolean
 } {
-  const format = (localStorage.getItem(LS_FORMAT) as TransferFormat) || 'checklist'
-  const valid: TransferFormat[] = ['plain', 'checklist', 'ai_backlog', 'json', 'csv']
+  const raw = localStorage.getItem(LS_FORMAT)
+  const format = normalizeTransferFormat(raw)
+  const defaults = defaultsForFormat(format)
+
+  // First visit / unset keys use format defaults. Once the user has exported or
+  // toggled options, stored values win (remember previous selection).
+  const metaStored = localStorage.getItem(LS_META)
+  const checklistStored = localStorage.getItem(LS_CHECKLIST)
+
+  // Legacy: separate "checklist" format → text + checklist markers
+  const asChecklist =
+    checklistStored != null
+      ? checklistStored === 'true'
+      : raw === 'checklist'
+        ? true
+        : raw === 'plain'
+          ? false
+          : defaults.asChecklist
+
+  const fullMetadata =
+    metaStored != null ? metaStored === 'true' : defaults.fullMetadata
+
   return {
-    format: valid.includes(format) ? format : 'checklist',
-    fullMetadata: localStorage.getItem(LS_META) !== 'false',
+    format,
+    fullMetadata,
+    asChecklist,
     aiInstructions:
       localStorage.getItem(LS_AI) ||
       'Treat this list as a product backlog. Prioritize by order. For each task, implement or plan work, keep status accurate, and ask if requirements are ambiguous.',
@@ -66,11 +125,15 @@ export function loadTransferPrefs(): {
 export function saveTransferPrefs(partial: {
   format?: TransferFormat
   fullMetadata?: boolean
+  asChecklist?: boolean
   aiInstructions?: string
   advancedExport?: boolean
 }) {
-  if (partial.format != null) localStorage.setItem(LS_FORMAT, partial.format)
+  if (partial.format != null) {
+    localStorage.setItem(LS_FORMAT, normalizeTransferFormat(partial.format))
+  }
   if (partial.fullMetadata != null) localStorage.setItem(LS_META, String(partial.fullMetadata))
+  if (partial.asChecklist != null) localStorage.setItem(LS_CHECKLIST, String(partial.asChecklist))
   if (partial.aiInstructions != null) localStorage.setItem(LS_AI, partial.aiInstructions)
   if (partial.advancedExport != null) localStorage.setItem(LS_ADVANCED, String(partial.advancedExport))
 }
@@ -81,7 +144,7 @@ export function filterExportRows(rows: ExportTaskRow[], includeCompleted: boolea
 }
 
 export function exportFileExtension(format: TransferFormat): string {
-  switch (format) {
+  switch (normalizeTransferFormat(format)) {
     case 'json':
       return 'json'
     case 'csv':
@@ -94,7 +157,7 @@ export function exportFileExtension(format: TransferFormat): string {
 }
 
 export function exportMime(format: TransferFormat): string {
-  switch (format) {
+  switch (normalizeTransferFormat(format)) {
     case 'json':
       return 'application/json'
     case 'csv':
@@ -127,17 +190,17 @@ function githubRef(g: ExportTaskRow['github']): string {
 /** Serialize rows to the chosen format. */
 export function serializeTasks(rows: ExportTaskRow[], options: ExportOptions): string {
   const list = filterExportRows(rows, options.includeCompleted)
-  const { format, fullMetadata, projectName, aiInstructions } = options
+  const format = normalizeTransferFormat(options.format)
+  const { fullMetadata, asChecklist, projectName, aiInstructions } = options
 
-  if (format === 'plain') {
-    return list.map((r) => r.task.name).join('\n')
-  }
-
-  if (format === 'checklist') {
+  if (format === 'text') {
     const lines: string[] = []
     for (const r of list) {
-      const mark = r.task.completed ? '[x]' : '[ ]'
-      let line = `${mark} ${r.task.name}`
+      let line = r.task.name
+      if (asChecklist) {
+        const mark = r.task.completed ? '[x]' : '[ ]'
+        line = `${mark} ${r.task.name}`
+      }
       if (fullMetadata) {
         const tags = r.tagNames.filter(Boolean).map((n) => `#${n}`).join(' ')
         if (tags) line += ` ${tags}`
@@ -299,12 +362,11 @@ export function parseImportText(raw: string): ParseResult {
     if (tasks.length) return { tasks, format: 'ai_backlog', warnings }
   }
 
-  // Checklist / plain lines
-  const checklist = parseChecklistOrPlain(text)
-  const hasMarks = /^(\s*[-*]\s*)?\[[ xX]\]/m.test(text)
+  // Text lines (optional [ ] / [x] checklist markers, bullets, numbered, plain names)
+  const tasks = parseChecklistOrPlain(text)
   return {
-    tasks: checklist,
-    format: hasMarks ? 'checklist' : 'plain',
+    tasks,
+    format: 'text',
     warnings,
   }
 }

@@ -9,11 +9,13 @@ import type { Tag, Task, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
 import {
   type ExportTaskRow,
   type TransferFormat,
+  defaultsForFormat,
   downloadTextFile,
   exportFileExtension,
   exportMime,
   filterExportRows,
   loadTransferPrefs,
+  normalizeTransferFormat,
   parseImportText,
   saveTransferPrefs,
   serializeTasks,
@@ -43,11 +45,10 @@ type Props = {
 }
 
 const FORMAT_OPTIONS: { id: TransferFormat; label: string; hint: string }[] = [
-  { id: 'plain', label: 'Names only', hint: 'One title per line' },
-  { id: 'checklist', label: 'Checklist', hint: 'Markdown [ ] lines + tags' },
-  { id: 'ai_backlog', label: 'AI backlog', hint: 'Markdown for coding agents' },
+  { id: 'text', label: 'Text', hint: 'Plain lines; optional checklist markers' },
   { id: 'json', label: 'JSON', hint: 'Structured package' },
   { id: 'csv', label: 'CSV', hint: 'Spreadsheet-friendly' },
+  { id: 'ai_backlog', label: 'AI backlog', hint: 'Markdown for coding agents' },
 ]
 
 export function TaskTransferModal({
@@ -69,8 +70,9 @@ export function TaskTransferModal({
   const prefs = useMemo(() => loadTransferPrefs(), [open])
 
   const [mode, setMode] = useState<Mode>(initialMode)
-  const [format, setFormat] = useState<TransferFormat>(prefs.format)
+  const [format, setFormat] = useState<TransferFormat>(normalizeTransferFormat(prefs.format))
   const [fullMetadata, setFullMetadata] = useState(prefs.fullMetadata)
+  const [asChecklist, setAsChecklist] = useState(prefs.asChecklist)
   const [includeCompleted, setIncludeCompleted] = useState(true)
   const [aiInstructions, setAiInstructions] = useState(prefs.aiInstructions)
   const [busy, setBusy] = useState(false)
@@ -84,8 +86,9 @@ export function TaskTransferModal({
     if (!open) return
     const p = loadTransferPrefs()
     setMode(initialMode)
-    setFormat(p.format)
+    setFormat(normalizeTransferFormat(p.format))
     setFullMetadata(p.fullMetadata)
+    setAsChecklist(p.asChecklist)
     setAiInstructions(p.aiInstructions)
     setIncludeCompleted(true)
     setImportText('')
@@ -132,11 +135,12 @@ export function TaskTransferModal({
       serializeTasks(exportRows, {
         format,
         fullMetadata,
+        asChecklist,
         includeCompleted,
         projectName,
         aiInstructions,
       }),
-    [exportRows, format, fullMetadata, includeCompleted, projectName, aiInstructions],
+    [exportRows, format, fullMetadata, asChecklist, includeCompleted, projectName, aiInstructions],
   )
 
   const exportCount = filterExportRows(exportRows, includeCompleted).length
@@ -155,8 +159,35 @@ export function TaskTransferModal({
     setImportWarnings(result.warnings)
   }, [importText, mode])
 
-  const persistOptions = () => {
-    saveTransferPrefs({ format, fullMetadata, aiInstructions })
+  const persistOptions = (overrides?: {
+    format?: TransferFormat
+    fullMetadata?: boolean
+    asChecklist?: boolean
+    aiInstructions?: string
+  }) => {
+    saveTransferPrefs({
+      format: overrides?.format ?? format,
+      fullMetadata: overrides?.fullMetadata ?? fullMetadata,
+      asChecklist: overrides?.asChecklist ?? asChecklist,
+      aiInstructions: overrides?.aiInstructions ?? aiInstructions,
+    })
+  }
+
+  /** Switch format and apply that format’s recommended checkboxes (then remember). */
+  const selectFormat = (next: TransferFormat) => {
+    const n = normalizeTransferFormat(next)
+    if (n === format) return
+    const d = defaultsForFormat(n)
+    setFormat(n)
+    setFullMetadata(d.fullMetadata)
+    setAsChecklist(d.asChecklist)
+    // AI backlog: turn on every relevant option
+    if (n === 'ai_backlog') setIncludeCompleted(true)
+    persistOptions({
+      format: n,
+      fullMetadata: d.fullMetadata,
+      asChecklist: d.asChecklist,
+    })
   }
 
   const handleCopy = async () => {
@@ -197,11 +228,20 @@ export function TaskTransferModal({
     setImportText(text)
   }
 
+  const singleTaskExport = Boolean(initialTaskIds?.length === 1)
+  const subsetExport = Boolean(initialTaskIds?.length)
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Import / Export tasks"
+      title={
+        mode === 'export' && singleTaskExport
+          ? 'Export task'
+          : mode === 'export' && subsetExport
+            ? 'Export selected tasks'
+            : 'Import / Export tasks'
+      }
       size="lg"
       footer={
         mode === 'export' ? (
@@ -277,7 +317,7 @@ export function TaskTransferModal({
                         ? 'border-[var(--color-primary)] bg-[var(--color-surface-2)] font-semibold'
                         : 'border-[var(--color-border)]',
                     )}
-                    onClick={() => setFormat(f.id)}
+                    onClick={() => selectFormat(f.id)}
                     title={f.hint}
                   >
                     {f.label}
@@ -287,17 +327,43 @@ export function TaskTransferModal({
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {format === 'text' ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={asChecklist}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setAsChecklist(v)
+                      persistOptions({ asChecklist: v })
+                    }}
+                  />
+                  <span>
+                    Checklist markers
+                    <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                      Prefix lines with <code>[ ]</code> / <code>[x]</code> for open / completed
+                    </span>
+                  </span>
+                </label>
+              ) : null}
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
                   className="mt-0.5"
                   checked={fullMetadata}
-                  onChange={(e) => setFullMetadata(e.target.checked)}
+                  onChange={(e) => {
+                    const v = e.target.checked
+                    setFullMetadata(v)
+                    persistOptions({ fullMetadata: v })
+                  }}
                 />
                 <span>
                   Full task metadata
                   <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
-                    Due dates, tags, descriptions, GitHub issue refs, rank
+                    {format === 'text'
+                      ? 'Tags, due dates, GitHub refs; descriptions on indented lines'
+                      : 'Due dates, tags, descriptions, GitHub issue refs, rank'}
                   </span>
                 </span>
               </label>
@@ -310,16 +376,18 @@ export function TaskTransferModal({
                 />
                 <span>Include completed tasks</span>
               </label>
-              {initialTaskIds?.length ? (
+              {singleTaskExport ? (
                 <p className="text-xs text-[var(--color-muted)]">
-                  Exporting {initialTaskIds.length} selected task
-                  {initialTaskIds.length === 1 ? '' : 's'} (e.g. tag group).
+                  Exporting this task only. Choose format, then Copy or Download.
+                </p>
+              ) : initialTaskIds?.length ? (
+                <p className="text-xs text-[var(--color-muted)]">
+                  Exporting {initialTaskIds.length} selected tasks (e.g. tag group).
                 </p>
               ) : (
                 <p className="text-xs text-[var(--color-muted)]">
-                  Exports all tasks in this project. Use board filters first if you only want a
-                  subset visible, then open Import / Export from a tag group header for group-only
-                  export.
+                  Exports all tasks in this project. Use the copy icon on a task for one task, or
+                  open Import / Export from a tag group header for group-only export.
                 </p>
               )}
             </div>
@@ -350,9 +418,8 @@ export function TaskTransferModal({
         ) : (
           <>
             <p className="text-sm text-[var(--color-muted)]">
-              Paste a list, checklist, AI backlog markdown, JSON package, or CSV. Format is detected
-              automatically. Leading bullets and <code>[ ]</code> markers are stripped for plain
-              lists.
+              Paste a text list (optional <code>[ ]</code> / <code>[x]</code>), AI backlog markdown,
+              JSON package, or CSV. Format is detected automatically.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)]">
@@ -437,5 +504,6 @@ export function TaskTransferModal({
 }
 
 function formatLabel(f: TransferFormat): string {
-  return FORMAT_OPTIONS.find((x) => x.id === f)?.label ?? f
+  const n = normalizeTransferFormat(f)
+  return FORMAT_OPTIONS.find((x) => x.id === n)?.label ?? n
 }

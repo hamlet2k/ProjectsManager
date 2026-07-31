@@ -1243,12 +1243,18 @@ export function TaskBoard({
                         })
                         if (ok) onDelete(task)
                       }}
-                      onCopy={async () => {
-                        const ok = await copyToClipboard(task.name)
-                        toast.push(
-                          ok ? 'Task name copied' : 'Copy failed',
-                          ok ? 'success' : 'error',
-                        )
+                      onCopy={() => {
+                        if (onOpenTransfer) {
+                          onOpenTransfer([task.id], 'export')
+                          return
+                        }
+                        void (async () => {
+                          const ok = await copyToClipboard(task.name)
+                          toast.push(
+                            ok ? 'Task name copied' : 'Copy failed',
+                            ok ? 'success' : 'error',
+                          )
+                        })()
                       }}
                       onGithub={async (action) => {
                         try {
@@ -1612,7 +1618,12 @@ function SortableTaskRow({
             >
               <Icons.Check />
             </button>
-            <button type="button" className="icon-btn" title="Copy name" onClick={onCopy}>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Export / copy this task"
+              onClick={onCopy}
+            >
               <Icons.Copy />
             </button>
             {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
