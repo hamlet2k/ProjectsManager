@@ -32,10 +32,10 @@ import {
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Icons } from '@/components/icons'
-import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { MarkdownView } from '@/lib/markdown'
 import { TaskDependenciesModal } from '@/features/tasks/components/TaskDependenciesModal'
+import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
 
 export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
 
@@ -152,8 +152,6 @@ export function TaskBoard({
   const wantFiltersAtTop = useRef(!isMobile)
   const wantAddAtTop = useRef(!isMobile)
   const wasAtTop = useRef(true)
-  const [newScopeTag, setNewScopeTag] = useState('')
-
   // #4 Quick-add details accordion
   const [quickDetails, setQuickDetails] = useState(false)
   const [quickName, setQuickName] = useState('')
@@ -808,55 +806,72 @@ export function TaskBoard({
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {filterTags.length === 0 ? (
-                      <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
-                    ) : (
-                      filterTags.map((tag) => {
-                        const active = activeTagIds.includes(tag.id)
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            className={cn('tag-chip', active && 'active')}
-                            onClick={() => toggleTag(tag.id)}
-                            title={
-                              canEdit && onDeleteTag && active
-                                ? 'Click to unselect · hover for delete from project'
-                                : 'Filter by this tag'
-                            }
-                          >
-                            #{tag.name}
-                            {canEdit && onDeleteTag && active ? (
-                              <span
-                                role="button"
-                                tabIndex={0}
-                                className="tag-chip-remove"
-                                title="Delete tag from project"
-                                onClick={(e) => {
+                    {filterTags.map((tag) => {
+                      const active = activeTagIds.includes(tag.id)
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className={cn('tag-chip', active && 'active')}
+                          onClick={() => toggleTag(tag.id)}
+                          title={
+                            canEdit && onDeleteTag && active
+                              ? 'Click to unselect · hover for delete from project'
+                              : 'Filter by this tag'
+                          }
+                        >
+                          #{tag.name}
+                          {canEdit && onDeleteTag && active ? (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="tag-chip-remove"
+                              title="Delete tag from project"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void (async () => {
+                                  await onDeleteTag(tag)
+                                  setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
+                                })()
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
                                   e.stopPropagation()
                                   void (async () => {
                                     await onDeleteTag(tag)
                                     setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
                                   })()
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    void (async () => {
-                                      await onDeleteTag(tag)
-                                      setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
-                                    })()
-                                  }
-                                }}
-                              >
-                                <Icons.Trash size="0.7em" />
-                              </span>
-                            ) : null}
-                          </button>
-                        )
-                      })
-                    )}
+                                }
+                              }}
+                            >
+                              <Icons.Trash size="0.7em" />
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                    {canEdit ? (
+                      <InlineTagAdd
+                        onCreate={async (name) => {
+                          try {
+                            const tag = await onCreateTag(name)
+                            setActiveTagIds((ids) =>
+                              ids.includes(tag.id) ? ids : [...ids, tag.id],
+                            )
+                            toast.push(`Tag #${tag.name} created`, 'success')
+                          } catch (e) {
+                            toast.push(
+                              e instanceof Error ? e.message : 'Could not create tag',
+                              'error',
+                            )
+                            throw e
+                          }
+                        }}
+                      />
+                    ) : filterTags.length === 0 ? (
+                      <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1048,10 +1063,9 @@ export function TaskBoard({
                     <div>
                       <span className="mb-1 block text-sm text-[var(--color-muted)]">Tags</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {tags.length === 0 ? (
-                          <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
-                        ) : (
-                          tags.map((tag) => {
+                        {tags
+                          .filter((t) => !isGithubSystemTag(t.name))
+                          .map((tag) => {
                             const on = quickTagIds.includes(tag.id)
                             return (
                               <button
@@ -1067,38 +1081,25 @@ export function TaskBoard({
                                 #{tag.name}
                               </button>
                             )
-                          })
-                        )}
-                      </div>
-                      <form
-                        className="mt-2 flex flex-wrap gap-2"
-                        onSubmit={async (e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          const name = newScopeTag.trim().replace(/^#/, '')
-                          if (!name) return
-                          try {
-                            const tag = await onCreateTag(name)
-                            setQuickTagIds((prev) =>
-                              prev.includes(tag.id) ? prev : [...prev, tag.id],
-                            )
-                            setNewScopeTag('')
-                            toast.push(`Tag #${tag.name} created`, 'success')
-                          } catch {
-                            /* toast in parent */
-                          }
-                        }}
-                      >
-                        <input
-                          className="field-input min-w-[10rem] flex-1"
-                          placeholder="New tag name…"
-                          value={newScopeTag}
-                          onChange={(e) => setNewScopeTag(e.target.value)}
+                          })}
+                        <InlineTagAdd
+                          onCreate={async (name) => {
+                            try {
+                              const tag = await onCreateTag(name)
+                              setQuickTagIds((prev) =>
+                                prev.includes(tag.id) ? prev : [...prev, tag.id],
+                              )
+                              toast.push(`Tag #${tag.name} created`, 'success')
+                            } catch (e) {
+                              toast.push(
+                                e instanceof Error ? e.message : 'Could not create tag',
+                                'error',
+                              )
+                              throw e
+                            }
+                          }}
                         />
-                        <Button type="submit" size="sm" variant="secondary">
-                          <Icons.Plus size="0.9em" /> Add tag
-                        </Button>
-                      </form>
+                      </div>
                     </div>
                     <p className="text-xs text-[var(--color-muted)]">
                       Or open the full editor:{' '}
@@ -1403,7 +1404,6 @@ function SortableTaskRow({
     id: task.id,
     disabled: !canDrag,
   })
-  const [newTag, setNewTag] = useState('')
   const [ghBusy, setGhBusy] = useState(false)
 
   const style = {
@@ -1839,6 +1839,14 @@ function SortableTaskRow({
                             )
                           })
                       )}
+                      {canEdit ? (
+                        <InlineTagAdd
+                          variant="pill"
+                          onCreate={async (name) => {
+                            await onCreateTag(name)
+                          }}
+                        />
+                      ) : null}
                       <button
                         type="button"
                         className="icon-btn !h-7 !w-7 btn-pressed"
@@ -1851,32 +1859,6 @@ function SortableTaskRow({
                     </>
                   )}
                 </div>
-
-                {tagEditOpen && canEdit ? (
-                  <form
-                    className="flex flex-wrap gap-2"
-                    onSubmit={async (e) => {
-                      e.preventDefault()
-                      const name = newTag.trim().replace(/^#/, '')
-                      if (!name) return
-                      await onCreateTag(name)
-                      setNewTag('')
-                    }}
-                  >
-                    <input
-                      className="field-input min-w-[8rem] flex-1"
-                      placeholder="New tag…"
-                      value={newTag}
-                      onChange={(e) => setNewTag(e.target.value)}
-                    />
-                    <Button type="submit" size="sm" variant="secondary">
-                      Add
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={onToggleTagEdit}>
-                      Done
-                    </Button>
-                  </form>
-                ) : null}
               </div>
 
               {task.end_date ? (

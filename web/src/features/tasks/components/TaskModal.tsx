@@ -7,6 +7,8 @@ import type { Tag, Task } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 import { Icons } from '@/components/icons'
 import { isModKey, TASK_SHORTCUTS } from '@/lib/keyboardShortcuts'
+import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
+import { isGithubSystemTag } from '@/features/github/systemTag'
 
 type Props = {
   open: boolean
@@ -21,6 +23,8 @@ type Props = {
     tagIds: string[]
   }) => Promise<void>
   onDelete?: () => Promise<void>
+  /** Create a project tag (for inline + tag). */
+  onCreateTag?: (name: string) => Promise<Tag>
   /** New task only: create task from a GitHub issue instead. */
   onImportFromGithub?: () => void
 }
@@ -33,6 +37,7 @@ export function TaskModal({
   selectedTagIds = [],
   onSubmit,
   onDelete,
+  onCreateTag,
   onImportFromGithub,
 }: Props) {
   const confirm = useConfirm()
@@ -238,10 +243,11 @@ export function TaskModal({
             disabled={saving}
           />
         </Field>
-        {tags.length > 0 ? (
-          <Field label="Tags">
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => {
+        <Field label="Tags">
+          <div className="flex flex-wrap gap-2">
+            {tags
+              .filter((t) => !isGithubSystemTag(t.name))
+              .map((tag) => {
                 const active = tagIds.includes(tag.id)
                 return (
                   <button
@@ -259,9 +265,17 @@ export function TaskModal({
                   </button>
                 )
               })}
-            </div>
-          </Field>
-        ) : null}
+            {onCreateTag ? (
+              <InlineTagAdd
+                disabled={saving}
+                onCreate={async (n) => {
+                  const tag = await onCreateTag(n)
+                  setTagIds((prev) => (prev.includes(tag.id) ? prev : [...prev, tag.id]))
+                }}
+              />
+            ) : null}
+          </div>
+        </Field>
       </div>
     </Modal>
   )

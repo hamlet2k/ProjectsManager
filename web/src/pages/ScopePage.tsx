@@ -710,6 +710,15 @@ export function ScopePage() {
         initial={editingTask}
         tags={tags}
         selectedTagIds={selectedTagIds}
+        onCreateTag={
+          access.canEdit
+            ? async (name) => {
+                const tag = await createTag.mutateAsync(name)
+                toast.push(`Tag #${tag.name} created`, 'success')
+                return tag
+              }
+            : undefined
+        }
         onImportFromGithub={
           !editingTask && ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
             ? () => setIssuePicker({ mode: 'import' })
