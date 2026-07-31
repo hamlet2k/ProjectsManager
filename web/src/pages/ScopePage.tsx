@@ -28,6 +28,8 @@ import {
   disableScopeGitHubBinding,
   fetchScopeGitHubConfigs,
   fetchTaskGitHubConfigsForTasks,
+  importIssueAsTask,
+  linkIssueToTask,
   listGitHubMilestones,
   listGitHubProjects,
   listGitHubRepos,
@@ -35,6 +37,7 @@ import {
   syncTaskWithGitHub,
   upsertScopeGitHubConfig,
 } from '@/features/github/api'
+import { LinkIssueModal } from '@/features/github/components/LinkIssueModal'
 import {
   computeGitHubCapabilities,
   getStoredRepoLabel,
@@ -84,6 +87,11 @@ export function ScopePage() {
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<'export' | 'import'>('export')
   const [transferTaskIds, setTransferTaskIds] = useState<string[] | null>(null)
+  const [issuePicker, setIssuePicker] = useState<{
+    mode: 'link' | 'import'
+    taskId?: string
+    taskName?: string
+  } | null>(null)
 
   const searchRef = useRef<HTMLInputElement>(null)
   const quickAddRef = useRef<HTMLInputElement>(null)
@@ -483,6 +491,16 @@ export function ScopePage() {
           >
             <Icons.Clipboard size={14} /> Import / Export
           </Button>
+          {ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              title={`Import a GitHub issue from ${displayRepo} as a new task`}
+              onClick={() => setIssuePicker({ mode: 'import' })}
+            >
+              <Icons.Github size={14} /> From GitHub
+            </Button>
+          ) : null}
           {access.canManageShares ? (
             <Button
               variant="secondary"
@@ -628,15 +646,24 @@ export function ScopePage() {
             toast.push('Enable GitHub in Settings and link a repo for this project first', 'error')
             return
           }
+          if (action === 'link') {
+            setIssuePicker({ mode: 'link', taskId: task.id, taskName: task.name })
+            return
+          }
           try {
             if (action === 'create') {
-              await createIssueForTask({
+              const res = await createIssueForTask({
                 taskId: task.id,
                 title: task.name,
                 body: task.description ?? undefined,
               })
               await ensureGithubSystemTagOnTask(task.id)
-              toast.push('GitHub issue created', 'success')
+              toast.push(
+                res.project_added
+                  ? 'GitHub issue created and added to project board'
+                  : 'GitHub issue created',
+                'success',
+              )
             } else {
               // Manual sync: last-write-wins (same as expand)
               const res = await syncTaskWithGitHub(task.id)
@@ -709,6 +736,55 @@ export function ScopePage() {
 
       {access.canManageShares ? (
         <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} scopeId={scope.id} />
+      ) : null}
+
+      {issuePicker && displayRepo ? (
+        <LinkIssueModal
+          open={Boolean(issuePicker)}
+          onClose={() => setIssuePicker(null)}
+          mode={issuePicker.mode}
+          owner={displayRepo.split('/')[0]!}
+          repo={displayRepo.split('/')[1]!}
+          taskName={issuePicker.taskName}
+          onSelect={async (issue) => {
+            if (issuePicker.mode === 'link' && issuePicker.taskId) {
+              const res = await linkIssueToTask({
+                taskId: issuePicker.taskId,
+                issueNumber: issue.number,
+              })
+              await ensureGithubSystemTagOnTask(issuePicker.taskId)
+              toast.push(
+                res.project_added
+                  ? `Linked #${issue.number} (added to project board)`
+                  : `Linked issue #${issue.number}`,
+                'success',
+              )
+              await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+              scrollToTask(issuePicker.taskId)
+              return
+            }
+            if (issuePicker.mode === 'import') {
+              const res = await importIssueAsTask({
+                scopeId: scopeId!,
+                issueNumber: issue.number,
+              })
+              toast.push(
+                res.project_added
+                  ? `Imported #${issue.number} as task (on project board)`
+                  : `Imported issue #${issue.number} as task`,
+                'success',
+              )
+              await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+              await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+              if (res.task?.id) scrollToTask(res.task.id)
+            }
+          }}
+        />
       ) : null}
 
       <TaskTransferModal

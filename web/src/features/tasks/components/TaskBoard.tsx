@@ -62,7 +62,7 @@ type Props = {
   onCreateTag: (name: string) => Promise<Tag>
   /** Remove a tag from the project (cascades off all tasks). */
   onDeleteTag?: (tag: Tag) => Promise<void>
-  onGithubAction: (task: Task, action: 'create' | 'sync') => Promise<void>
+  onGithubAction: (task: Task, action: 'create' | 'sync' | 'link') => Promise<void>
   /** Soft GitHub refresh when details open (optional; parent throttles). */
   onExpandTask?: (task: Task) => void
   /** Open project GitHub settings (e.g. change default repo). */
@@ -1184,7 +1184,7 @@ function SortableTaskRow({
   onEdit: (task: Task) => void
   onConfirmDelete: (task: Task) => void
   onCopy: () => void
-  onGithub: (action: 'create' | 'sync') => Promise<void>
+  onGithub: (action: 'create' | 'sync' | 'link') => Promise<void>
   onToggleTagEdit: () => void
   onSetTags: (ids: string[]) => Promise<void>
   onCreateTag: (name: string) => Promise<Tag>
@@ -1331,29 +1331,40 @@ function SortableTaskRow({
               <Icons.Copy />
             </button>
             {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
-              <button
-                type="button"
-                className="icon-btn"
-                title="Create GitHub issue"
-                disabled={ghBusy}
-                onClick={async () => {
-                  setGhBusy(true)
-                  try {
-                    await onGithub('create')
-                  } finally {
-                    setGhBusy(false)
-                  }
-                }}
-              >
-                {ghBusy ? (
-                  <span
-                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-                    aria-hidden
-                  />
-                ) : (
-                  <Icons.Github />
-                )}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Create GitHub issue"
+                  disabled={ghBusy}
+                  onClick={async () => {
+                    setGhBusy(true)
+                    try {
+                      await onGithub('create')
+                    } finally {
+                      setGhBusy(false)
+                    }
+                  }}
+                >
+                  {ghBusy ? (
+                    <span
+                      className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                      aria-hidden
+                    />
+                  ) : (
+                    <Icons.Github />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Link existing GitHub issue"
+                  disabled={ghBusy}
+                  onClick={() => void onGithub('link')}
+                >
+                  <Icons.Link />
+                </button>
+              </>
             ) : null}
             {githubVisible && github?.github_issue_number && githubEnabled && canEdit ? (
               <button

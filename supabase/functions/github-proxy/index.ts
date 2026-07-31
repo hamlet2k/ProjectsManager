@@ -586,6 +586,405 @@ Deno.serve(async (req) => {
       }
     }
 
+    async function ensureGithubSystemTag(scopeId: string, taskId: string) {
+      try {
+        let { data: ghTag } = await admin
+          .from('tags')
+          .select('id')
+          .eq('scope_id', scopeId)
+          .ilike('name', 'github')
+          .maybeSingle()
+        if (!ghTag) {
+          const ins = await admin
+            .from('tags')
+            .insert({ scope_id: scopeId, name: 'github' })
+            .select('id')
+            .single()
+          ghTag = ins.data
+        }
+        if (ghTag?.id) {
+          await admin.from('task_tags').upsert(
+            { task_id: taskId, tag_id: ghTag.id },
+            { onConflict: 'task_id,tag_id' },
+          )
+        }
+      } catch (e) {
+        console.warn('ensure github system tag', e)
+      }
+    }
+
+    /** Add issue/PR to a Projects V2 board (non-fatal if missing permission). */
+    async function addIssueToProjectV2(
+      projectId: string | null | undefined,
+      contentNodeId: string | null | undefined,
+    ): Promise<{ ok: boolean; error?: string }> {
+      if (!projectId || !contentNodeId) return { ok: false, error: 'no project or node' }
+      const mutation = `
+        mutation($projectId: ID!, $contentId: ID!) {
+          addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+            item { id }
+          }
+        }`
+      try {
+        const res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: {
+            Authorization: authHeader(token),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: mutation,
+            variables: { projectId, contentId: contentNodeId },
+          }),
+        })
+        const payload = await res.json()
+        if (payload?.errors?.length) {
+          const msg = payload.errors.map((e: { message?: string }) => e.message).join('; ')
+          console.warn('addProjectV2ItemById', msg)
+          return { ok: false, error: msg }
+        }
+        return { ok: true }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'project add failed'
+        console.warn('addProjectV2ItemById', msg)
+        return { ok: false, error: msg }
+      }
+    }
+
+    if (action === 'list_issues') {
+      const owner = String(body.owner ?? '')
+      const repo = String(body.repo ?? '')
+      const q = String(body.q ?? body.query ?? '').trim()
+      const state = String(body.state ?? 'open') // open | closed | all
+      if (!owner || !repo) return json({ error: 'owner and repo required' }, 400)
+      try {
+        // Prefer search API when filtering; otherwise list endpoint
+        type IssueRaw = {
+          id: number
+          node_id: string
+          number: number
+          title: string
+          html_url: string
+          state: string
+          body?: string | null
+          pull_request?: unknown
+          labels?: Array<{ name: string } | string>
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }
+        let issues: IssueRaw[] = []
+        if (q) {
+          const searchQ = [
+            `repo:${owner}/${repo}`,
+            'is:issue',
+            state === 'all' ? '' : `is:${state}`,
+            q,
+          ]
+            .filter(Boolean)
+            .join(' ')
+          const data = await ghJson<{ items: IssueRaw[] }>(
+            token,
+            `/search/issues?q=${encodeURIComponent(searchQ)}&per_page=30`,
+          )
+          issues = data.items ?? []
+        } else {
+          const st = state === 'all' ? 'all' : state === 'closed' ? 'closed' : 'open'
+          issues = await ghJson<IssueRaw[]>(
+            token,
+            `/repos/${owner}/${repo}/issues?state=${st}&per_page=40&sort=updated`,
+          )
+          // REST lists PRs as issues — drop PRs
+          issues = issues.filter((i) => !i.pull_request)
+        }
+        return json({
+          issues: issues.map((i) => ({
+            id: i.id,
+            node_id: i.node_id,
+            number: i.number,
+            title: i.title,
+            html_url: i.html_url,
+            state: i.state,
+            body: i.body ?? null,
+            labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name)),
+            milestone: i.milestone
+              ? {
+                  number: i.milestone.number,
+                  title: i.milestone.title,
+                  due_on: i.milestone.due_on,
+                }
+              : null,
+          })),
+        })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'list_issues failed' }, 400)
+      }
+    }
+
+    if (action === 'link_issue') {
+      const taskId = String(body.taskId ?? '')
+      const issueNumber = Number(body.issueNumber ?? body.number ?? 0)
+      if (!taskId || !issueNumber) {
+        return json({ error: 'taskId and issueNumber required' }, 400)
+      }
+
+      const existing = await loadTaskLink(taskId)
+      if (existing?.github_issue_number) {
+        return json(
+          {
+            error: `Task already linked to issue #${existing.github_issue_number}`,
+            config: existing,
+          },
+          400,
+        )
+      }
+
+      const { data: task, error: taskErr } = await admin
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single()
+      if (taskErr || !task) return json({ error: 'Task not found' }, 404)
+
+      const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json(
+          {
+            error:
+              'GitHub repo not configured for this project. Open project → GitHub and select a repository.',
+          },
+          400,
+        )
+      }
+
+      const owner = scopeCfg.github_repo_owner
+      const repo = scopeCfg.github_repo_name
+
+      try {
+        const issue = await ghJson<{
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+          title: string
+          body: string | null
+          pull_request?: unknown
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }>(token, `/repos/${owner}/${repo}/issues/${issueNumber}`)
+
+        if (issue.pull_request) {
+          return json({ error: 'Cannot link a pull request; pick an issue.' }, 400)
+        }
+
+        // Optional: fill empty task fields from issue
+        const fillFromIssue = body.fillFromIssue !== false
+        if (fillFromIssue) {
+          const patch: Record<string, unknown> = {}
+          if (!String(task.name ?? '').trim() && issue.title) patch.name = issue.title
+          if (!String(task.description ?? '').trim() && issue.body) {
+            patch.description = issue.body
+          }
+          if (issue.state === 'closed' && !task.completed) {
+            patch.completed = true
+            patch.completed_date = new Date().toISOString()
+          }
+          if (Object.keys(patch).length) {
+            await admin.from('tasks').update(patch).eq('id', taskId)
+          }
+        }
+
+        await ensureGithubSystemTag(task.scope_id as string, taskId)
+
+        const config = await upsertTaskConfig(taskId, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+        })
+
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(taskId, 'link_issue', 'success', `Linked #${issue.number}`)
+        return json({
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'link failed'
+        await logSync(taskId, 'link_issue', 'error', msg)
+        return json({ error: msg }, 400)
+      }
+    }
+
+    if (action === 'import_issue') {
+      // Create a new task from a GitHub issue and link it
+      const scopeId = String(body.scopeId ?? '')
+      const issueNumber = Number(body.issueNumber ?? body.number ?? 0)
+      if (!scopeId || !issueNumber) {
+        return json({ error: 'scopeId and issueNumber required' }, 400)
+      }
+
+      const scopeCfg = await loadCanonicalScopeConfig(scopeId)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json({ error: 'GitHub repo not configured for this project.' }, 400)
+      }
+      const owner = scopeCfg.github_repo_owner
+      const repo = scopeCfg.github_repo_name
+
+      try {
+        const issue = await ghJson<{
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+          title: string
+          body: string | null
+          pull_request?: unknown
+          labels?: Array<{ name: string } | string>
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }>(token, `/repos/${owner}/${repo}/issues/${issueNumber}`)
+
+        if (issue.pull_request) {
+          return json({ error: 'Cannot import a pull request as a task.' }, 400)
+        }
+
+        // Avoid duplicate links to the same issue in this project
+        const { data: existingLinks } = await admin
+          .from('task_github_configs')
+          .select('task_id')
+          .eq('github_issue_number', issue.number)
+          .eq('github_repo_owner', owner)
+          .eq('github_repo_name', repo)
+        if (existingLinks?.length) {
+          const taskIds = existingLinks.map((r) => r.task_id as string)
+          const { data: sameScope } = await admin
+            .from('tasks')
+            .select('id')
+            .eq('scope_id', scopeId)
+            .in('id', taskIds)
+            .limit(1)
+            .maybeSingle()
+          if (sameScope?.id) {
+            return json(
+              {
+                error: `Issue #${issue.number} is already linked to a task in this project.`,
+                task_id: sameScope.id,
+              },
+              400,
+            )
+          }
+        }
+
+        const { data: maxRank } = await admin
+          .from('tasks')
+          .select('rank')
+          .eq('scope_id', scopeId)
+          .order('rank', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const rank = ((maxRank as { rank: number } | null)?.rank ?? -1) + 1
+
+        const { data: task, error: taskInsErr } = await admin
+          .from('tasks')
+          .insert({
+            scope_id: scopeId,
+            name: issue.title,
+            description: issue.body ?? null,
+            owner_id: user.id,
+            rank,
+            completed: issue.state === 'closed',
+            completed_date: issue.state === 'closed' ? new Date().toISOString() : null,
+            end_date: issue.milestone?.due_on ?? null,
+          })
+          .select('*')
+          .single()
+        if (taskInsErr || !task) {
+          return json({ error: taskInsErr?.message ?? 'Could not create task' }, 400)
+        }
+
+        // Map issue labels → tags
+        const labelNames = (issue.labels ?? [])
+          .map((l) => (typeof l === 'string' ? l : l.name))
+          .filter(Boolean)
+        for (const lab of labelNames) {
+          if (lab.toLowerCase() === 'github') continue
+          try {
+            let { data: tag } = await admin
+              .from('tags')
+              .select('id')
+              .eq('scope_id', scopeId)
+              .ilike('name', lab)
+              .maybeSingle()
+            if (!tag) {
+              const ins = await admin
+                .from('tags')
+                .insert({ scope_id: scopeId, name: lab })
+                .select('id')
+                .single()
+              tag = ins.data
+            }
+            if (tag?.id) {
+              await admin.from('task_tags').upsert(
+                { task_id: task.id, tag_id: tag.id },
+                { onConflict: 'task_id,tag_id' },
+              )
+            }
+          } catch {
+            /* skip label */
+          }
+        }
+
+        await ensureGithubSystemTag(scopeId, task.id)
+
+        const config = await upsertTaskConfig(task.id, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+        })
+
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(task.id, 'import_issue', 'success', `Imported #${issue.number}`)
+        return json({
+          task,
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'import failed'
+        return json({ error: msg }, 400)
+      }
+    }
+
     if (action === 'create_issue') {
       const taskId = String(body.taskId ?? '')
       if (!taskId) return json({ error: 'taskId required' }, 400)
@@ -675,31 +1074,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Ensure app-only system tag "github" on the task
-        try {
-          let { data: ghTag } = await admin
-            .from('tags')
-            .select('id')
-            .eq('scope_id', task.scope_id)
-            .ilike('name', 'github')
-            .maybeSingle()
-          if (!ghTag) {
-            const ins = await admin
-              .from('tags')
-              .insert({ scope_id: task.scope_id, name: 'github' })
-              .select('id')
-              .single()
-            ghTag = ins.data
-          }
-          if (ghTag?.id) {
-            await admin.from('task_tags').upsert(
-              { task_id: taskId, tag_id: ghTag.id },
-              { onConflict: 'task_id,tag_id' },
-            )
-          }
-        } catch (e) {
-          console.warn('ensure github system tag', e)
-        }
+        await ensureGithubSystemTag(task.scope_id as string, taskId)
 
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
@@ -715,8 +1090,24 @@ Deno.serve(async (req) => {
           github_milestone_number: scopeCfg.github_milestone_number,
           github_milestone_title: scopeCfg.github_milestone_title,
         })
-        await logSync(taskId, 'create_issue', 'success', `Issue #${issue.number}`)
-        return json({ config })
+
+        // Optional: add new issue to the project's GitHub Project board
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(
+          taskId,
+          'create_issue',
+          'success',
+          `Issue #${issue.number}${projectAdd.ok ? ' + project' : ''}`,
+        )
+        return json({
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+        })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'create failed'
         await logSync(taskId, 'create_issue', 'error', msg)

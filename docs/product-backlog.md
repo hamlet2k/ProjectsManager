@@ -76,8 +76,8 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 
 - [x] I4 Owner override + notifications (confirm + notify members on link/change/disable)
 - [x] User vs project enable/disable matrix (issue #35 adapted) — see `docs/github-integration-matrix.md`
-- [ ] Link existing issue / import task from GitHub
-- [ ] Ensure label; add issue to Project board on create (label ensure already on create/sync)
+- [x] Link existing issue / import task from GitHub (picker + From GitHub button)
+- [x] Ensure label; add issue to Project board on create/link/import when project board is set
 - [ ] Blocked-by issue pill (red) from GitHub relationships
 - [ ] Webhooks for two-way without manual sync
 - [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)

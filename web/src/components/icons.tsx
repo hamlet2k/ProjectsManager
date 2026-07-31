@@ -62,6 +62,8 @@ export const Icons = {
   Filter: (p: IconProps) => <Bi name="funnel" {...p} />,
   /** Create / sync issue affordance (circle + mark) */
   Issue: (p: IconProps) => <Bi name="record-circle" {...p} />,
+  /** Link existing GitHub issue */
+  Link: (p: IconProps) => <Bi name="link-45deg" {...p} />,
   List: (p: IconProps) => <Bi name="list-task" {...p} />,
   People: (p: IconProps) => <Bi name="people" {...p} />,
 }

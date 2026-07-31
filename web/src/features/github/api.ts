@@ -85,7 +85,58 @@ export async function createIssueForTask(input: {
   title?: string
   body?: string
 }) {
-  return invokeGitHubProxy<{ config: TaskGitHubConfig }>('create_issue', input)
+  return invokeGitHubProxy<{
+    config: TaskGitHubConfig
+    project_added?: boolean
+    project_error?: string | null
+  }>('create_issue', input)
+}
+
+export type GitHubIssueSummary = {
+  id: number
+  node_id: string
+  number: number
+  title: string
+  html_url: string
+  state: string
+  body: string | null
+  labels: string[]
+  milestone: { number: number; title: string; due_on: string | null } | null
+}
+
+export async function listGitHubIssues(input: {
+  owner: string
+  repo: string
+  q?: string
+  state?: 'open' | 'closed' | 'all'
+}) {
+  return invokeGitHubProxy<{ issues: GitHubIssueSummary[] }>('list_issues', input)
+}
+
+/** Link an existing issue to a task (same project repo). */
+export async function linkIssueToTask(input: {
+  taskId: string
+  issueNumber: number
+  fillFromIssue?: boolean
+}) {
+  return invokeGitHubProxy<{
+    config: TaskGitHubConfig
+    project_added?: boolean
+    project_error?: string | null
+  }>('link_issue', input)
+}
+
+/** Create a task from a GitHub issue and link it. */
+export async function importIssueAsTask(input: {
+  scopeId: string
+  issueNumber: number
+}) {
+  return invokeGitHubProxy<{
+    task: { id: string; name: string }
+    config: TaskGitHubConfig
+    project_added?: boolean
+    project_error?: string | null
+  }>('import_issue', input)
 }
 
 /**
