@@ -58,18 +58,18 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] Esc cancels task tag editor / closes expanded task details (modals already Esc)
 - [x] Auto-collapse filters after tag selection / search Enter on mobile
 - [x] Global + contextual keyboard shortcuts consolidated; titles + aria-keyshortcuts on keybound controls
-- [ ] Select which icons show collapsed vs expanded on task rows
+- [x] Select which icons show collapsed vs expanded on task rows (complete/GH/deps/edit always; export+delete when expanded)
 - [x] Rename UI “end date” → “due date” everywhere (labels already Due date)
 - [x] Clearer drag-reorder hints when sort is Tags / not Rank
-- [ ] Due-date group sort (today / tomorrow / …) if not fully parity
-- [ ] Delete tag from filter chips with confirm when in use
+- [x] Due-date group sort (today / tomorrow / next week / month / future / none)
+- [x] Delete tag from filter chips with confirm when in use (usage count in confirm)
 - [x] Search also matches GitHub issue numbers / milestones when GH active
-- [ ] Navbar: home icon; less “back”; edit-project affordance if desired
+- [x] Navbar: home icon; less “back”; edit-project affordance if desired
 - [x] Spinner on GitHub create/sync task actions
 - [x] Signup/login polish (OAuth Google/GitHub, password recovery)
 - [x] Project title font bolder (not hollow sketch font only)
 - [x] Dark mode: selected-tag border greyer (not bright blue)
-- [ ] Markdown help file + link from description UI
+- [x] Markdown help cheatsheet from description UI (modal + quick-add)
 - [x] Token/help links in Settings
 
 ### P2 — GitHub depth

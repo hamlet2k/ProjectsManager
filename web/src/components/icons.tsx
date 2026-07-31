@@ -56,6 +56,7 @@ export const Icons = {
   System: (p: IconProps) => <Bi name="circle-half" {...p} />,
   Logout: (p: IconProps) => <Bi name="box-arrow-right" {...p} />,
   Back: (p: IconProps) => <Bi name="arrow-left" {...p} />,
+  Home: (p: IconProps) => <Bi name="house" {...p} />,
   Feedback: (p: IconProps) => <Bi name="chat-dots" {...p} />,
   Flag: (p: IconProps) => <Bi name="flag" {...p} />,
   Tag: (p: IconProps) => <Bi name="tags" {...p} />,
@@ -68,4 +69,6 @@ export const Icons = {
   Dependencies: (p: IconProps) => <Bi name="diagram-3" {...p} />,
   List: (p: IconProps) => <Bi name="list-task" {...p} />,
   People: (p: IconProps) => <Bi name="people" {...p} />,
+  Help: (p: IconProps) => <Bi name="question-circle" {...p} />,
+  Markdown: (p: IconProps) => <Bi name="markdown" {...p} />,
 }

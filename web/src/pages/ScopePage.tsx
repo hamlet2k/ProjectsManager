@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '@/app/providers/AuthProvider'
-import { useScope, useScopeShares } from '@/features/scopes/hooks'
+import { useScope, useScopeShares, useUpdateScope } from '@/features/scopes/hooks'
 import {
   useCreateTask,
   useDeleteTask,
@@ -52,6 +52,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Field } from '@/components/ui/Input'
 import { Icons } from '@/components/icons'
 import { TaskTransferModal } from '@/features/tasks/components/TaskTransferModal'
+import { ScopeFormModal } from '@/features/scopes/components/ScopeFormModal'
 
 export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
@@ -65,6 +66,7 @@ export function ScopePage() {
   const { tasksQuery, tagsQuery, taskTagsQuery, depsQuery } = useScopeTasks(scopeId)
   const addDep = useAddTaskDependency(scopeId!)
   const removeDep = useRemoveTaskDependency(scopeId!)
+  const updateScope = useUpdateScope()
 
   const createTask = useCreateTask(scopeId!)
   const updateTask = useUpdateTask(scopeId!)
@@ -75,6 +77,7 @@ export function ScopePage() {
   const deleteTagMut = useDeleteTag(scopeId!)
 
   const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [editProjectOpen, setEditProjectOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [githubOpen, setGithubOpen] = useState(false)
   const [ghDraft, setGhDraft] = useState<{
@@ -463,14 +466,21 @@ export function ScopePage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2 text-sm text-[var(--color-muted)]">
-            <Link to="/" className="hover:underline">
-              Projects
-            </Link>
-            <span>/</span>
-            <span className="truncate">{scope.name}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="project-title truncate text-2xl font-bold tracking-tight">
+              {scope.name}
+            </h1>
+            {access.isOwner ? (
+              <button
+                type="button"
+                className="icon-btn shrink-0"
+                title="Edit project name and description"
+                onClick={() => setEditProjectOpen(true)}
+              >
+                <Icons.Edit size="0.9em" />
+              </button>
+            ) : null}
           </div>
-          <h1 className="project-title text-2xl font-bold tracking-tight">{scope.name}</h1>
           {scope.description ? (
             <p className="mt-1 text-sm text-[var(--color-muted)]">{scope.description}</p>
           ) : null}
@@ -606,9 +616,13 @@ export function ScopePage() {
           return tag
         }}
         onDeleteTag={async (tag) => {
+          const usage = taskTags.filter((tt) => tt.tag_id === tag.id).length
           const ok = await confirm({
             title: 'Remove tag from project?',
-            message: `Delete #${tag.name}? It will be removed from every task that uses it.`,
+            message:
+              usage > 0
+                ? `Delete #${tag.name}? It is on ${usage} task${usage === 1 ? '' : 's'} and will be removed from all of them.`
+                : `Delete #${tag.name}? No tasks currently use this tag.`,
             confirmLabel: 'Delete tag',
             cancelLabel: 'Cancel',
             danger: true,
@@ -887,6 +901,22 @@ export function ScopePage() {
           }}
         />
       ) : null}
+
+      <ScopeFormModal
+        open={editProjectOpen}
+        initial={scope}
+        onClose={() => setEditProjectOpen(false)}
+        onSubmit={async (values) => {
+          await updateScope.mutateAsync({
+            id: scope.id,
+            name: values.name,
+            description: values.description || null,
+          })
+          toast.push('Project updated', 'success')
+          await qc.invalidateQueries({ queryKey: ['scope', scopeId] })
+          await qc.invalidateQueries({ queryKey: ['scopes'] })
+        }}
+      />
 
       <TaskTransferModal
         open={transferOpen}

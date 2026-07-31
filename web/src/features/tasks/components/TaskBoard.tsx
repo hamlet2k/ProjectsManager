@@ -36,6 +36,7 @@ import { Textarea } from '@/components/ui/Input'
 import { MarkdownView } from '@/lib/markdown'
 import { TaskDependenciesModal } from '@/features/tasks/components/TaskDependenciesModal'
 import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
+import { MarkdownHelp } from '@/components/ui/MarkdownHelp'
 
 export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
 
@@ -404,15 +405,46 @@ export function TaskBoard({
     githubRepoFilter,
   ])
 
-  // #6 Tag groups
+  // Tag groups, due-date buckets (classic parity), or flat list
   const groups: TaskGroup[] = useMemo(() => {
+    if (sortBy === 'due') {
+      const buckets: { key: string; title: string; tasks: Task[] }[] = [
+        { key: 'today', title: 'Today', tasks: [] },
+        { key: 'tomorrow', title: 'Tomorrow', tasks: [] },
+        { key: 'next_week', title: 'Next week', tasks: [] },
+        { key: 'next_month', title: 'Next month', tasks: [] },
+        { key: 'future', title: 'Future', tasks: [] },
+        { key: 'without_due', title: 'Without due date', tasks: [] },
+      ]
+      const byKey = new Map(buckets.map((b) => [b.key, b]))
+      for (const task of filtered) {
+        const day = task.end_date?.slice(0, 10) ?? null
+        if (!day) {
+          byKey.get('without_due')!.tasks.push(task)
+          continue
+        }
+        const delta = daysFromTodayLocal(day)
+        // Overdue + today share "Today" (classic app parity)
+        if (delta <= 0) byKey.get('today')!.tasks.push(task)
+        else if (delta === 1) byKey.get('tomorrow')!.tasks.push(task)
+        else if (delta <= 7) byKey.get('next_week')!.tasks.push(task)
+        else if (delta <= 30) byKey.get('next_month')!.tasks.push(task)
+        else byKey.get('future')!.tasks.push(task)
+      }
+      const result = buckets
+        .filter((b) => b.tasks.length > 0)
+        .map((b) => ({ key: b.key, title: b.title, tagId: null, tasks: b.tasks }))
+      return result.length
+        ? result
+        : [{ key: 'empty', title: 'Tasks', tagId: null, tasks: [] }]
+    }
+
     if (sortBy !== 'tags') {
       return [{ key: 'all', title: 'Tasks', tagId: null, tasks: filtered }]
     }
 
     const byTag = new Map<string, Task[]>()
     const untagged: Task[] = []
-    const assigned = new Set<string>()
 
     // Prefer active tag filters as group order; else all scope tags (skip legacy #github)
     const tagOrder =
@@ -435,7 +467,6 @@ export function TaskBoard({
       for (const tag of tagOrder) {
         if (ttags.some((x) => x.id === tag.id)) {
           byTag.get(tag.id)!.push(task)
-          assigned.add(task.id)
           placed = true
           break
         }
@@ -446,7 +477,6 @@ export function TaskBoard({
     const result: TaskGroup[] = []
     for (const tag of tagOrder) {
       const list = byTag.get(tag.id) ?? []
-      if (list.length === 0 && activeTagIds.length === 0) continue
       if (list.length === 0) continue
       result.push({ key: tag.id, title: `#${tag.name}`, tagId: tag.id, tasks: list })
     }
@@ -771,7 +801,7 @@ export function TaskBoard({
                   >
                     <option value="rank">Rank</option>
                     <option value="name">Name</option>
-                    <option value="due">Due date</option>
+                    <option value="due">Due date (groups)</option>
                     <option value="created">Created</option>
                     <option value="tags">Tags (groups)</option>
                   </select>
@@ -808,6 +838,7 @@ export function TaskBoard({
                   <div className="flex flex-wrap gap-1.5">
                     {filterTags.map((tag) => {
                       const active = activeTagIds.includes(tag.id)
+                      const usage = taskTags.filter((tt) => tt.tag_id === tag.id).length
                       return (
                         <button
                           key={tag.id}
@@ -815,18 +846,22 @@ export function TaskBoard({
                           className={cn('tag-chip', active && 'active')}
                           onClick={() => toggleTag(tag.id)}
                           title={
-                            canEdit && onDeleteTag && active
-                              ? 'Click to unselect · hover for delete from project'
-                              : 'Filter by this tag'
+                            canEdit && onDeleteTag
+                              ? `Filter by #${tag.name} · trash removes it from the project${usage ? ` (${usage} task${usage === 1 ? '' : 's'})` : ''}`
+                              : `Filter by #${tag.name}`
                           }
                         >
                           #{tag.name}
-                          {canEdit && onDeleteTag && active ? (
+                          {canEdit && onDeleteTag ? (
                             <span
                               role="button"
                               tabIndex={0}
                               className="tag-chip-remove"
-                              title="Delete tag from project"
+                              title={
+                                usage > 0
+                                  ? `Delete #${tag.name} from project (used on ${usage} task${usage === 1 ? '' : 's'})`
+                                  : `Delete #${tag.name} from project`
+                              }
                               onClick={(e) => {
                                 e.stopPropagation()
                                 void (async () => {
@@ -945,6 +980,12 @@ export function TaskBoard({
                     Grouped by tag. To change priority order, set sort to <strong>Rank</strong> and
                     drag the ⋮⋮ handle.
                   </p>
+                ) : sortBy === 'due' ? (
+                  <p className="mt-2 text-xs text-[var(--color-muted)]">
+                    Grouped by due date (today, tomorrow, next week…). Overdue tasks appear under{' '}
+                    <strong>Today</strong>. Drag reorder is off — use <strong>Rank</strong> to
+                    prioritize.
+                  </p>
                 ) : !canDrag && canEdit ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
                     Drag reorder needs sort <strong>Rank</strong> and no search/tag filters. Use the
@@ -1043,7 +1084,10 @@ export function TaskBoard({
                 {quickDetails ? (
                   <div className="space-y-2 rounded-[var(--radius-sketch-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3">
                     <label className="block text-sm">
-                      <span className="mb-1 block text-[var(--color-muted)]">Description</span>
+                      <span className="mb-1 flex items-center justify-between gap-2 text-[var(--color-muted)]">
+                        Description
+                        <MarkdownHelp />
+                      </span>
                       <Textarea
                         className="min-h-[72px] bg-[var(--color-surface)]"
                         value={quickDescription}
@@ -1129,10 +1173,10 @@ export function TaskBoard({
 
       {/* Task list — flat or tag groups */}
       <section className="space-y-4">
-        {canEdit && sortBy === 'tags' ? (
+        {canEdit && (sortBy === 'tags' || sortBy === 'due') ? (
           <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
-            Sorted by <strong>Tags (groups)</strong> — drag-to-reorder priority is off. Switch sort
-            to <strong>Rank</strong> to drag tasks with the ⋮⋮ handle.
+            Sorted by <strong>{sortBy === 'due' ? 'Due date' : 'Tags'}</strong> groups — drag
+            reorder is off. Switch sort to <strong>Rank</strong> to drag tasks with the ⋮⋮ handle.
           </p>
         ) : null}
         {filtered.length === 0 ? (
@@ -1142,7 +1186,7 @@ export function TaskBoard({
         ) : (
           groups.map((group) => (
             <div key={group.key} className="space-y-2">
-              {sortBy === 'tags' ? (
+              {sortBy === 'tags' || sortBy === 'due' ? (
                 <div className="task-group-header sticky z-10 flex flex-wrap items-center gap-2 bg-[var(--color-bg)]/95 py-1.5 backdrop-blur-sm">
                   <h3 className="task-group-title text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     {group.title}
@@ -1345,6 +1389,19 @@ function useMediaQuery(query: string) {
     return () => mq.removeEventListener('change', fn)
   }, [query])
   return matches
+}
+
+/** Calendar-day delta from local today for YYYY-MM-DD (negative = overdue). */
+function daysFromTodayLocal(isoDay: string): number {
+  const now = new Date()
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  const parts = isoDay.split('-').map((x) => Number(x))
+  const y = parts[0]
+  const m = parts[1]
+  const d = parts[2]
+  if (!y || !m || !d) return 0
+  const dueUtc = Date.UTC(y, m - 1, d)
+  return Math.round((dueUtc - todayUtc) / 86_400_000)
 }
 
 function SortableTaskRow({
@@ -1609,6 +1666,7 @@ function SortableTaskRow({
           </div>
 
           <div className="task-row-actions">
+            {/* Collapsed: complete · GH · deps · edit. Expanded also: export · delete */}
             <button
               type="button"
               className="icon-btn"
@@ -1617,14 +1675,6 @@ function SortableTaskRow({
               onClick={() => onToggleComplete(task, !task.completed)}
             >
               <Icons.Check />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              title="Export / copy this task"
-              onClick={onCopy}
-            >
-              <Icons.Copy />
             </button>
             {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
               <button
@@ -1700,7 +1750,15 @@ function SortableTaskRow({
             </button>
             <button
               type="button"
-              className="icon-btn danger"
+              className="icon-btn task-action-when-open"
+              title="Export / copy this task"
+              onClick={onCopy}
+            >
+              <Icons.Copy />
+            </button>
+            <button
+              type="button"
+              className="icon-btn danger task-action-when-open"
               title="Delete"
               disabled={!canEdit}
               onClick={() => onConfirmDelete(task)}

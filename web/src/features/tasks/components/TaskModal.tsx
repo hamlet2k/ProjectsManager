@@ -9,6 +9,7 @@ import { Icons } from '@/components/icons'
 import { isModKey, TASK_SHORTCUTS } from '@/lib/keyboardShortcuts'
 import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
 import { isGithubSystemTag } from '@/features/github/systemTag'
+import { MarkdownHelp } from '@/components/ui/MarkdownHelp'
 
 type Props = {
   open: boolean
@@ -225,6 +226,9 @@ export function TaskModal({
           </div>
         </Field>
         <Field label="Description (Markdown)" htmlFor="task-desc">
+          <div className="mb-1.5 flex justify-end">
+            <MarkdownHelp />
+          </div>
           <Textarea
             id="task-desc"
             value={description}

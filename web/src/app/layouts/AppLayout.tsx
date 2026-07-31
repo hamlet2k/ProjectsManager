@@ -117,15 +117,21 @@ export function AppLayout() {
   return (
     <div className="notebook-shell">
       <header className="notebook-nav mx-4 flex items-center justify-between gap-2 px-3 py-2 sm:mx-auto sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+          {scopeId ? (
+            <Link to="/" className={iconBtn} title="All projects">
+              <Icons.Home />
+            </Link>
+          ) : null}
           <Link
             to="/"
-            className="flex items-center gap-2 rounded-full px-2 py-1 font-semibold tracking-tight"
+            className="flex min-w-0 items-center gap-2 rounded-full px-2 py-1 font-semibold tracking-tight"
+            title="Projects home"
           >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-primary)] text-sm text-[var(--color-primary-fg)]">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-sm text-[var(--color-primary-fg)]">
               PM
             </span>
-            <span className="hidden sm:inline">Projects Manager</span>
+            <span className="hidden truncate sm:inline">Projects Manager</span>
           </Link>
         </div>
 
