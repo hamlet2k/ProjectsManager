@@ -79,6 +79,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] Link existing issue / import task from GitHub (picker + From GitHub button)
 - [x] Ensure label; add issue to Project board on create/link/import when project board is set
 - [x] Blocked-by issue pill (red) from GitHub relationships (sync/link/import refresh `github_blocked_by`)
+- [x] App-native task blockers (`task_dependencies`) + optional GitHub sync when both tasks linked
 - [ ] Webhooks for two-way without manual sync
 - [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)
 

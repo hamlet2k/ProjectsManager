@@ -87,6 +87,19 @@ export type TaskTag = {
   tag_id: string
 }
 
+/**
+ * App dependency: blocker_task_id blocks blocked_task_id
+ * (same meaning as GitHub "blocked by").
+ */
+export type TaskDependency = {
+  id: string
+  scope_id: string
+  blocked_task_id: string
+  blocker_task_id: string
+  created_by: string | null
+  created_at: string
+}
+
 export type ScopeGitHubConfig = {
   id: string
   scope_id: string

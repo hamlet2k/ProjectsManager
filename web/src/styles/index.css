@@ -531,19 +531,34 @@ a:hover .project-title {
   flex-shrink: 0;
 }
 
-/* GitHub “blocked by” dependency (left of issue pill) */
+/* “Blocked by” dependency (app or GitHub) */
 .pill-badge.gh-blocked-by {
   background: #fde8e8;
   border-color: #c97a7a;
   color: #8b2e2e;
   font-weight: 700;
-  max-width: 8rem;
+  max-width: 12rem;
 }
 
 .dark .pill-badge.gh-blocked-by {
   background: rgba(200, 80, 80, 0.22);
   border-color: #a85c5c;
   color: #f0c0c0;
+}
+
+/* This task is a blocker for others */
+.pill-badge.gh-blocking {
+  background: #fff3e0;
+  border-color: #c9a06a;
+  color: #7a4e12;
+  font-weight: 700;
+  max-width: 14rem;
+}
+
+.dark .pill-badge.gh-blocking {
+  background: rgba(200, 150, 60, 0.2);
+  border-color: #a88a4a;
+  color: #f0d8a0;
 }
 
 /* Multi-repo task links: pastel accent set inline; keep readable on hover */

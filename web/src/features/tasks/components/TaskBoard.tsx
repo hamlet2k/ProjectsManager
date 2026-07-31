@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { Tag, Task, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
+import type { Tag, Task, TaskDependency, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
 import { isGithubSystemTag } from '@/features/github/systemTag'
 import {
   repoAccentStyle,
@@ -50,6 +50,8 @@ type Props = {
   tags: Tag[]
   taskTags: TaskTag[]
   githubByTask: Map<string, TaskGitHubConfig>
+  /** App-level blocked_by edges for this project */
+  dependencies?: TaskDependency[]
   canEdit: boolean
   /** Show GitHub badges/chrome (preference ON or scope integrated). */
   githubVisible: boolean
@@ -79,6 +81,9 @@ type Props = {
   onOpenTransfer?: (taskIds: string[], mode?: 'export' | 'import') => void
   /** Import a GitHub issue as a new task (same as From GitHub). */
   onImportFromGithub?: () => void
+  /** Mark task as blocked by another task (and sync GitHub if both linked). */
+  onAddBlocker?: (blockedTaskId: string, blockerTaskId: string) => Promise<void>
+  onRemoveBlocker?: (dep: TaskDependency) => Promise<void>
   searchInputRef?: React.RefObject<HTMLInputElement | null>
   quickAddRef?: React.RefObject<HTMLInputElement | null>
 }
@@ -95,6 +100,7 @@ export function TaskBoard({
   tags,
   taskTags,
   githubByTask,
+  dependencies = [],
   canEdit,
   githubVisible,
   githubEnabled,
@@ -113,6 +119,8 @@ export function TaskBoard({
   onOpenGithubSettings,
   onOpenTransfer,
   onImportFromGithub,
+  onAddBlocker,
+  onRemoveBlocker,
   searchInputRef,
   quickAddRef,
 }: Props) {
@@ -290,6 +298,34 @@ export function TaskBoard({
     }
     return m
   }, [tags, taskTags])
+
+  /** taskId → tasks that block it (app deps) */
+  const blockersByTask = useMemo(() => {
+    const m = new Map<string, { dep: TaskDependency; task: Task }[]>()
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    for (const d of dependencies) {
+      const blocker = byId.get(d.blocker_task_id)
+      if (!blocker) continue
+      const list = m.get(d.blocked_task_id) ?? []
+      list.push({ dep: d, task: blocker })
+      m.set(d.blocked_task_id, list)
+    }
+    return m
+  }, [dependencies, tasks])
+
+  /** taskId → tasks this one blocks */
+  const blockingByTask = useMemo(() => {
+    const m = new Map<string, { dep: TaskDependency; task: Task }[]>()
+    const byId = new Map(tasks.map((t) => [t.id, t]))
+    for (const d of dependencies) {
+      const blocked = byId.get(d.blocked_task_id)
+      if (!blocked) continue
+      const list = m.get(d.blocker_task_id) ?? []
+      list.push({ dep: d, task: blocked })
+      m.set(d.blocker_task_id, list)
+    }
+    return m
+  }, [dependencies, tasks])
 
   /** Only show #github filter when at least one task is linked. */
   const hasGithubLinkedTask = useMemo(() => {
@@ -1121,7 +1157,10 @@ export function TaskBoard({
                       task={task}
                       tags={tagsByTask.get(task.id) ?? []}
                       allTags={tags}
+                      allTasks={tasks}
                       github={githubVisible ? githubByTask.get(task.id) : undefined}
+                      appBlockers={blockersByTask.get(task.id) ?? []}
+                      appBlocking={blockingByTask.get(task.id) ?? []}
                       canEdit={canEdit}
                       canDrag={canDrag}
                       githubVisible={githubVisible}
@@ -1139,6 +1178,8 @@ export function TaskBoard({
                       }}
                       onToggleComplete={onToggleComplete}
                       onEdit={onEdit}
+                      onAddBlocker={onAddBlocker}
+                      onRemoveBlocker={onRemoveBlocker}
                       onConfirmDelete={async (task) => {
                         const ok = await confirm({
                           title: 'Delete task?',
@@ -1245,7 +1286,10 @@ function SortableTaskRow({
   task,
   tags,
   allTags,
+  allTasks,
   github,
+  appBlockers,
+  appBlocking,
   canEdit,
   canDrag,
   githubVisible,
@@ -1263,11 +1307,16 @@ function SortableTaskRow({
   onToggleTagEdit,
   onSetTags,
   onCreateTag,
+  onAddBlocker,
+  onRemoveBlocker,
 }: {
   task: Task
   tags: Tag[]
   allTags: Tag[]
+  allTasks: Task[]
   github?: TaskGitHubConfig
+  appBlockers: { dep: TaskDependency; task: Task }[]
+  appBlocking: { dep: TaskDependency; task: Task }[]
   canEdit: boolean
   canDrag: boolean
   githubVisible: boolean
@@ -1284,6 +1333,8 @@ function SortableTaskRow({
   onGithub: (action: 'create' | 'sync' | 'link' | 'choose') => Promise<void>
   onToggleTagEdit: () => void
   onSetTags: (ids: string[]) => Promise<void>
+  onAddBlocker?: (blockedTaskId: string, blockerTaskId: string) => Promise<void>
+  onRemoveBlocker?: (dep: TaskDependency) => Promise<void>
   onCreateTag: (name: string) => Promise<Tag>
 }) {
   const {
@@ -1300,6 +1351,7 @@ function SortableTaskRow({
   })
   const [newTag, setNewTag] = useState('')
   const [ghBusy, setGhBusy] = useState(false)
+  const [depBusy, setDepBusy] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1311,8 +1363,17 @@ function SortableTaskRow({
 
   const selected = new Set(tags.map((t) => t.id))
   const hasDetails = Boolean(
-    task.description?.trim() || task.end_date || tags.length > 0 || github?.github_issue_number,
+    task.description?.trim() ||
+      task.end_date ||
+      tags.length > 0 ||
+      github?.github_issue_number ||
+      appBlockers.length > 0 ||
+      appBlocking.length > 0,
   )
+
+  const openAppBlockers = appBlockers.filter((b) => !b.task.completed)
+  const openAppBlocking = appBlocking.filter((b) => !b.task.completed)
+  const blockerIds = new Set(appBlockers.map((b) => b.task.id))
 
   const cardOpen = expanded || tagEditOpen
   const taskRepo = repoKey(github?.github_repo_owner, github?.github_repo_name)
@@ -1362,6 +1423,43 @@ function SortableTaskRow({
               {task.name}
             </button>
 
+            {/* App: this task is blocked by others */}
+            {openAppBlockers.slice(0, 3).map(({ task: b }) => (
+              <button
+                key={`app-block-${b.id}`}
+                type="button"
+                className="pill-badge gh-blocked-by"
+                title={`Blocked by: ${b.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  document
+                    .getElementById(`task-row-${b.id}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }}
+              >
+                ⛔ {b.name.length > 18 ? `${b.name.slice(0, 16)}…` : b.name}
+              </button>
+            ))}
+
+            {/* App: this task blocks others */}
+            {openAppBlocking.slice(0, 2).map(({ task: b }) => (
+              <button
+                key={`app-blocking-${b.id}`}
+                type="button"
+                className="pill-badge gh-blocking"
+                title={`Blocks: ${b.name}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  document
+                    .getElementById(`task-row-${b.id}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }}
+              >
+                🔒 blocks {b.name.length > 14 ? `${b.name.slice(0, 12)}…` : b.name}
+              </button>
+            ))}
+
+            {/* GitHub-only blockers (issue # without an app task edge) */}
             {githubVisible &&
             github?.github_issue_number &&
             Array.isArray(github.github_blocked_by) &&
@@ -1376,7 +1474,7 @@ function SortableTaskRow({
                       href={b.html_url}
                       target="_blank"
                       rel="noreferrer"
-                      title={`Blocked by #${b.number}: ${b.title}${b.repo ? ` (${b.repo})` : ''}`}
+                      title={`Blocked by GitHub #${b.number}: ${b.title}${b.repo ? ` (${b.repo})` : ''}`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       ⛔ #{b.number}
@@ -1518,6 +1616,74 @@ function SortableTaskRow({
         <div className={cn('task-drawer', expanded && 'open')} aria-hidden={!expanded}>
           <div className="task-drawer-inner">
             <div className="task-drawer-body space-y-3">
+              {/* Blocked by (app) */}
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  Blocked by
+                </div>
+                {appBlockers.length === 0 ? (
+                  <p className="text-xs text-[var(--color-muted)]">No app blockers.</p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {appBlockers.map(({ dep, task: b }) => (
+                      <li key={dep.id}>
+                        <span className="pill-badge gh-blocked-by inline-flex items-center gap-1">
+                          ⛔ {b.name}
+                          {b.completed ? ' (done)' : ''}
+                          {canEdit && onRemoveBlocker ? (
+                            <button
+                              type="button"
+                              className="ml-0.5 opacity-70 hover:opacity-100"
+                              title="Remove blocker"
+                              disabled={depBusy}
+                              onClick={() => {
+                                setDepBusy(true)
+                                void onRemoveBlocker(dep).finally(() => setDepBusy(false))
+                              }}
+                            >
+                              <Icons.X size="0.75em" />
+                            </button>
+                          ) : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canEdit && onAddBlocker ? (
+                  <label className="block text-xs text-[var(--color-muted)]">
+                    Add blocker
+                    <select
+                      className="field-input mt-1 text-sm"
+                      disabled={depBusy}
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value
+                        if (!id) return
+                        setDepBusy(true)
+                        void onAddBlocker(task.id, id).finally(() => setDepBusy(false))
+                        e.target.value = ''
+                      }}
+                    >
+                      <option value="">Select a task that blocks this one…</option>
+                      {allTasks
+                        .filter((t) => t.id !== task.id && !blockerIds.has(t.id))
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.completed ? '✓ ' : ''}
+                            {t.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ) : null}
+                {appBlocking.length > 0 ? (
+                  <p className="text-xs text-[var(--color-muted)]">
+                    This task blocks:{' '}
+                    {appBlocking.map(({ task: b }) => b.name).join(', ')}
+                  </p>
+                ) : null}
+              </div>
+
               {/*
                 Tags: view mode = only tags on this task (no #github).
                 Edit mode = one list of all project tags (pill style), selected highlighted.

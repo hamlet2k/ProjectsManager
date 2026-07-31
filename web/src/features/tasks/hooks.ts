@@ -3,18 +3,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSupabase } from '@/lib/supabase/client'
 import { useAuth } from '@/app/providers/AuthProvider'
 import {
+  addTaskDependency,
   createTag,
   createTask,
   deleteTag,
   deleteTask,
   fetchTags,
+  fetchTaskDependencies,
   fetchTaskTags,
   fetchTasks,
+  removeTaskDependency,
   reorderTasks,
   setTaskCompleted,
   setTaskTags,
   updateTask,
 } from './api'
+import { syncTaskDependencyOnGitHub } from '@/features/github/api'
 import type { Task } from '@/lib/supabase/types'
 
 export function useScopeTasks(scopeId: string | undefined) {
@@ -38,6 +42,12 @@ export function useScopeTasks(scopeId: string | undefined) {
     queryFn: () => fetchTaskTags(scopeId!),
   })
 
+  const depsQuery = useQuery({
+    queryKey: ['task-deps', scopeId],
+    enabled: Boolean(scopeId),
+    queryFn: () => fetchTaskDependencies(scopeId!),
+  })
+
   useEffect(() => {
     if (!scopeId) return
     const supabase = getSupabase()
@@ -59,13 +69,81 @@ export function useScopeTasks(scopeId: string | undefined) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_tags' }, () => {
         qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
       })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'task_dependencies',
+          filter: `scope_id=eq.${scopeId}`,
+        },
+        () => qc.invalidateQueries({ queryKey: ['task-deps', scopeId] }),
+      )
       .subscribe()
     return () => {
       void supabase.removeChannel(channel)
     }
   }, [scopeId, qc])
 
-  return { tasksQuery, tagsQuery, taskTagsQuery }
+  return { tasksQuery, tagsQuery, taskTagsQuery, depsQuery }
+}
+
+export function useAddTaskDependency(scopeId: string) {
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { blockedTaskId: string; blockerTaskId: string }) => {
+      const row = await addTaskDependency({
+        scopeId,
+        blockedTaskId: input.blockedTaskId,
+        blockerTaskId: input.blockerTaskId,
+        createdBy: user?.id,
+      })
+      let github: { github_synced: boolean; reason?: string | null } | null = null
+      try {
+        github = await syncTaskDependencyOnGitHub({
+          blockedTaskId: input.blockedTaskId,
+          blockerTaskId: input.blockerTaskId,
+          mode: 'add',
+        })
+      } catch {
+        github = { github_synced: false, reason: 'GitHub sync failed' }
+      }
+      return { row, github }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+    },
+  })
+}
+
+export function useRemoveTaskDependency(scopeId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      id: string
+      blockedTaskId: string
+      blockerTaskId: string
+    }) => {
+      await removeTaskDependency(input.id)
+      let github: { github_synced: boolean; reason?: string | null } | null = null
+      try {
+        github = await syncTaskDependencyOnGitHub({
+          blockedTaskId: input.blockedTaskId,
+          blockerTaskId: input.blockerTaskId,
+          mode: 'remove',
+        })
+      } catch {
+        github = { github_synced: false, reason: 'GitHub sync failed' }
+      }
+      return { github }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+    },
+  })
 }
 
 export function useCreateTask(scopeId: string) {

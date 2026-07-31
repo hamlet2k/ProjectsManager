@@ -11,6 +11,8 @@ import {
   useUpdateTask,
   useCreateTag,
   useDeleteTag,
+  useAddTaskDependency,
+  useRemoveTaskDependency,
 } from '@/features/tasks/hooks'
 import { TaskBoard } from '@/features/tasks/components/TaskBoard'
 import { TaskModal } from '@/features/tasks/components/TaskModal'
@@ -61,7 +63,9 @@ export function ScopePage() {
 
   const { data: scope, isLoading: scopeLoading, error: scopeError } = useScope(scopeId)
   const { data: shares = [] } = useScopeShares(scopeId)
-  const { tasksQuery, tagsQuery, taskTagsQuery } = useScopeTasks(scopeId)
+  const { tasksQuery, tagsQuery, taskTagsQuery, depsQuery } = useScopeTasks(scopeId)
+  const addDep = useAddTaskDependency(scopeId!)
+  const removeDep = useRemoveTaskDependency(scopeId!)
 
   const createTask = useCreateTask(scopeId!)
   const updateTask = useUpdateTask(scopeId!)
@@ -107,6 +111,7 @@ export function ScopePage() {
   const tasks = tasksQuery.data ?? []
   const tags = tagsQuery.data ?? []
   const taskTags = taskTagsQuery.data ?? []
+  const dependencies = depsQuery.data ?? []
 
   const selectedTagIds = useMemo(() => {
     if (!editingTask) return []
@@ -694,6 +699,45 @@ export function ScopePage() {
         onImportFromGithub={
           ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
             ? () => setIssuePicker({ mode: 'import' })
+            : undefined
+        }
+        dependencies={dependencies}
+        onAddBlocker={
+          access.canEdit
+            ? async (blockedTaskId, blockerTaskId) => {
+                try {
+                  const res = await addDep.mutateAsync({ blockedTaskId, blockerTaskId })
+                  if (res.github?.github_synced) {
+                    toast.push('Blocker set · synced to GitHub', 'success')
+                  } else if (res.github?.reason) {
+                    toast.push(`Blocker set (${res.github.reason})`, 'success')
+                  } else {
+                    toast.push('Blocker set', 'success')
+                  }
+                } catch (e) {
+                  toast.push(e instanceof Error ? e.message : 'Could not set blocker', 'error')
+                }
+              }
+            : undefined
+        }
+        onRemoveBlocker={
+          access.canEdit
+            ? async (dep) => {
+                try {
+                  const res = await removeDep.mutateAsync({
+                    id: dep.id,
+                    blockedTaskId: dep.blocked_task_id,
+                    blockerTaskId: dep.blocker_task_id,
+                  })
+                  if (res.github?.github_synced) {
+                    toast.push('Blocker removed · GitHub updated', 'success')
+                  } else {
+                    toast.push('Blocker removed', 'success')
+                  }
+                } catch (e) {
+                  toast.push(e instanceof Error ? e.message : 'Could not remove blocker', 'error')
+                }
+              }
             : undefined
         }
       />

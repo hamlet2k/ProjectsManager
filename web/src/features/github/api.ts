@@ -140,6 +140,26 @@ export async function importIssueAsTask(input: {
 }
 
 /**
+ * Push/remove a "blocked by" relationship on GitHub when both tasks are linked.
+ * non-fatal for the app DB row — returns github_synced flag.
+ */
+export async function syncTaskDependencyOnGitHub(input: {
+  blockedTaskId: string
+  blockerTaskId: string
+  mode: 'add' | 'remove'
+}) {
+  return invokeGitHubProxy<{
+    ok: boolean
+    github_synced: boolean
+    reason?: string | null
+  }>('sync_task_dependency', {
+    blockedTaskId: input.blockedTaskId,
+    blockerTaskId: input.blockerTaskId,
+    mode: input.mode,
+  })
+}
+
+/**
  * Sync linked issue. Without mode, server uses last-write-wins (compare updated_at).
  * mode 'pull' | 'push' forces a direction when needed.
  */

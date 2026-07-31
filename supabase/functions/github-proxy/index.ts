@@ -1047,6 +1047,140 @@ Deno.serve(async (req) => {
       }
     }
 
+    /**
+     * Sync app task dependency to GitHub issue dependencies API.
+     * blockedTask is blocked by blockerTask (GitHub POST .../blocked_by { issue_id: blocker }).
+     */
+    if (action === 'sync_task_dependency') {
+      const blockedTaskId = String(body.blockedTaskId ?? '')
+      const blockerTaskId = String(body.blockerTaskId ?? '')
+      // body.action is the proxy route name; use mode for add|remove
+      const mode =
+        String(body.mode ?? 'add').toLowerCase() === 'remove' ? 'remove' : 'add'
+      if (!blockedTaskId || !blockerTaskId) {
+        return json({ error: 'blockedTaskId and blockerTaskId required' }, 400)
+      }
+
+      const loadLink = async (taskId: string) => {
+        const { data: mine } = await admin
+          .from('task_github_configs')
+          .select('*')
+          .eq('task_id', taskId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (mine?.github_issue_number && mine.github_issue_id) return mine
+        const { data: anyLink } = await admin
+          .from('task_github_configs')
+          .select('*')
+          .eq('task_id', taskId)
+          .not('github_issue_number', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        return anyLink
+      }
+
+      const blockedLink = await loadLink(blockedTaskId)
+      const blockerLink = await loadLink(blockerTaskId)
+
+      if (
+        !blockedLink?.github_issue_number ||
+        !blockedLink.github_repo_owner ||
+        !blockedLink.github_repo_name ||
+        !blockerLink?.github_issue_id ||
+        !blockerLink.github_issue_number
+      ) {
+        return json({
+          ok: true,
+          github_synced: false,
+          reason: 'One or both tasks are not linked to a GitHub issue',
+        })
+      }
+
+      // Only sync when same repo (GitHub API is per-repo)
+      if (
+        blockedLink.github_repo_owner !== blockerLink.github_repo_owner ||
+        blockedLink.github_repo_name !== blockerLink.github_repo_name
+      ) {
+        return json({
+          ok: true,
+          github_synced: false,
+          reason: 'Tasks are linked to different repositories; GitHub dependency not updated',
+        })
+      }
+
+      const owner = blockedLink.github_repo_owner as string
+      const repo = blockedLink.github_repo_name as string
+      const blockedNum = blockedLink.github_issue_number as number
+      const blockerIssueId = blockerLink.github_issue_id as number
+
+      try {
+        // Dependencies API is newer — use current GitHub API version header via raw fetch
+        const headers = {
+          Accept: 'application/vnd.github+json',
+          Authorization: authHeader(token),
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        }
+        if (mode === 'add') {
+          const res = await fetch(
+            `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedNum}/dependencies/blocked_by`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ issue_id: blockerIssueId }),
+            },
+          )
+          if (!res.ok && res.status !== 422) {
+            // 422 often means already exists
+            const text = await res.text()
+            if (res.status === 404 || res.status === 410) {
+              return json({
+                ok: true,
+                github_synced: false,
+                reason:
+                  'GitHub issue dependencies API not available for this repo (or PAT lacks access)',
+              })
+            }
+            return json({
+              ok: false,
+              github_synced: false,
+              reason: `GitHub ${res.status}: ${text.slice(0, 200)}`,
+            }, 400)
+          }
+        } else {
+          const res = await fetch(
+            `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedNum}/dependencies/blocked_by/${blockerIssueId}`,
+            { method: 'DELETE', headers },
+          )
+          if (!res.ok && res.status !== 404) {
+            const text = await res.text()
+            return json({
+              ok: false,
+              github_synced: false,
+              reason: `GitHub ${res.status}: ${text.slice(0, 200)}`,
+            }, 400)
+          }
+        }
+
+        // Refresh blocked_by cache on blocked task
+        const blockedBy = await fetchBlockedBy(owner, repo, blockedNum)
+        await upsertTaskConfig(
+          blockedTaskId,
+          { github_blocked_by: blockedBy },
+          (blockedLink.user_id as string) || user.id,
+        )
+
+        return json({ ok: true, github_synced: true, reason: null })
+      } catch (e) {
+        return json({
+          ok: false,
+          github_synced: false,
+          reason: e instanceof Error ? e.message : 'GitHub dependency sync failed',
+        }, 400)
+      }
+    }
+
     if (action === 'create_issue') {
       const taskId = String(body.taskId ?? '')
       if (!taskId) return json({ error: 'taskId required' }, 400)

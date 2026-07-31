@@ -1,5 +1,5 @@
 import { getSupabase } from '@/lib/supabase/client'
-import type { Tag, Task, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
+import type { Tag, Task, TaskDependency, TaskGitHubConfig, TaskTag } from '@/lib/supabase/types'
 
 export async function fetchTasks(scopeId: string) {
   const { data, error } = await getSupabase()
@@ -182,4 +182,59 @@ export function exportTasksAsText(
     }
   }
   return lines.join('\n')
+}
+
+// task_dependencies is not yet in generated Database types
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function depsTable() {
+  return (getSupabase() as any).from('task_dependencies')
+}
+
+/** All blocker relationships in a project. */
+export async function fetchTaskDependencies(scopeId: string) {
+  const { data, error } = await depsTable().select('*').eq('scope_id', scopeId)
+  if (error) throw error
+  return (data ?? []) as TaskDependency[]
+}
+
+/**
+ * Mark blockedTaskId as blocked by blockerTaskId.
+ * Caller may push to GitHub when both tasks have issues.
+ */
+export async function addTaskDependency(input: {
+  scopeId: string
+  blockedTaskId: string
+  blockerTaskId: string
+  createdBy?: string | null
+}) {
+  if (input.blockedTaskId === input.blockerTaskId) {
+    throw new Error('A task cannot block itself')
+  }
+  const { data, error } = await depsTable()
+    .upsert(
+      {
+        scope_id: input.scopeId,
+        blocked_task_id: input.blockedTaskId,
+        blocker_task_id: input.blockerTaskId,
+        created_by: input.createdBy ?? null,
+      },
+      { onConflict: 'blocked_task_id,blocker_task_id' },
+    )
+    .select('*')
+    .single()
+  if (error) throw error
+  return data as TaskDependency
+}
+
+export async function removeTaskDependency(id: string) {
+  const { error } = await depsTable().delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function removeTaskDependencyPair(blockedTaskId: string, blockerTaskId: string) {
+  const { error } = await depsTable()
+    .delete()
+    .eq('blocked_task_id', blockedTaskId)
+    .eq('blocker_task_id', blockerTaskId)
+  if (error) throw error
 }
