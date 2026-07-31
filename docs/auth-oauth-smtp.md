@@ -1,9 +1,12 @@
-# Auth: Google + GitHub OAuth, and SMTP for email
+# Auth: Google + GitHub OAuth, SMTP, and email templates
+
+_Last updated 2026-07-31._
 
 App buttons are live on **Login** and **Sign up**. They only work after you enable each provider in **Supabase** (and Google Cloud / GitHub Developer Settings).
 
 Production site: `https://projects-manager-navy.vercel.app`  
-Local: `http://localhost:5173`
+Local: `http://localhost:5173`  
+Branded email HTML: `supabase/templates/` (generate + apply scripts in that folder).
 
 **Callback URL used by the app:**  
 `https://projects-manager-navy.vercel.app/auth/callback`  
