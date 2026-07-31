@@ -19,12 +19,14 @@ Family-friendly project and task manager. Track lists, tags, due dates, shares, 
 ```text
 web/                 ← SPA (deploy this to Vercel)
 supabase/            ← SQL migrations, Edge Functions, auth email templates
-scripts/             ← data migration helpers, legacy cleanup
+scripts/             ← data migration helpers
 docs/                ← product + setup docs (see docs/README.md)
-legacy-flask/        ← archived classic app (optional; remove after cutover)
+legacy-flask/        ← LOCAL ONLY (gitignored): classic Flask tree + machine archive
 ```
 
 UI copy says **projects**; the database still uses `scopes` for historical reasons.
+
+**`legacy-flask/` is not pushed to GitHub.** It may exist on your machine for reference, old DB dumps, or AI rules from the Flask era. Safe to delete the whole folder if you do not need it.
 
 ---
 
@@ -112,11 +114,10 @@ See [docs/auth-oauth-smtp.md](docs/auth-oauth-smtp.md) and [supabase/templates/R
 
 ---
 
-## Legacy Flask
+## Legacy Flask (local only)
 
-`legacy-flask/` is the old stack. Use only for historical export if needed, then:
+The classic Flask app is **not part of the remote repo**. If you still have a local `legacy-flask/` directory (or `_local_archive` under it), that is machine-only. Delete it anytime:
 
 ```powershell
-.\scripts\remove-legacy.ps1
-# type: DELETE LEGACY
+Remove-Item -Recurse -Force .\legacy-flask
 ```

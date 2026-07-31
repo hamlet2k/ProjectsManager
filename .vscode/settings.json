@@ -1,11 +1,22 @@
 {
-    "files.associations": {
-        "*.html": "jinja-html"
-    },
-
-    "emmet.preferences": {
-    },
-    "emmet.includeLanguages": {
-        "jinja-html": "html",
-    },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "venv": true,
+    ".pytest_cache": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "venv": true,
+    "legacy-flask": true,
+    "**/dist": true
+  },
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "typescript.tsdk": "web/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
 }
