@@ -6,6 +6,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import type { Tag, Task } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 import { Icons } from '@/components/icons'
+import { isModKey, TASK_SHORTCUTS } from '@/lib/keyboardShortcuts'
 
 type Props = {
   open: boolean
@@ -75,6 +76,36 @@ export function TaskModal({
     onClose()
   }
 
+  // Ctrl/Cmd+S save while modal is open
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (!isModKey(e)) return
+      if (e.key.toLowerCase() !== 's') return
+      e.preventDefault()
+      if (!name.trim() || saving) return
+      void (async () => {
+        setSaving(true)
+        setError(null)
+        try {
+          await onSubmit({
+            name: name.trim(),
+            description: description.trim(),
+            endDate: endDate ? new Date(endDate).toISOString() : null,
+            tagIds,
+          })
+          onClose()
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Save failed')
+        } finally {
+          setSaving(false)
+        }
+      })()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, name, description, endDate, tagIds, saving, onSubmit, onClose])
+
   return (
     <Modal
       open={open}
@@ -118,7 +149,12 @@ export function TaskModal({
             <Button variant="secondary" onClick={cancel} disabled={saving}>
               Cancel
             </Button>
-            <Button disabled={saving || !name.trim()} onClick={() => void save()}>
+            <Button
+              disabled={saving || !name.trim()}
+              onClick={() => void save()}
+              title={`${TASK_SHORTCUTS.saveModal.description} (${TASK_SHORTCUTS.saveModal.combo()})`}
+              aria-keyshortcuts="Control+S Meta+S"
+            >
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>
@@ -173,7 +209,8 @@ export function TaskModal({
               <button
                 type="button"
                 className="icon-btn"
-                title="Save task"
+                title={`${TASK_SHORTCUTS.saveModal.description} (${TASK_SHORTCUTS.saveModal.combo()})`}
+                aria-keyshortcuts="Control+S Meta+S Control+Enter Meta+Enter"
                 disabled={saving || !name.trim()}
                 onClick={() => void save()}
               >

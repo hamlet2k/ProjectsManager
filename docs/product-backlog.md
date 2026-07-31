@@ -57,7 +57,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] Scroll to newly added task + temporary highlight
 - [x] Esc cancels task tag editor / closes expanded task details (modals already Esc)
 - [x] Auto-collapse filters after tag selection / search Enter on mobile
-- [ ] Global + contextual keyboard shortcuts consolidated; alt-text for keybound buttons
+- [x] Global + contextual keyboard shortcuts consolidated; titles + aria-keyshortcuts on keybound controls
 - [ ] Select which icons show collapsed vs expanded on task rows
 - [x] Rename UI “end date” → “due date” everywhere (labels already Due date)
 - [x] Clearer drag-reorder hints when sort is Tags / not Rank

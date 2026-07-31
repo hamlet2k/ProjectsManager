@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -24,6 +24,11 @@ import {
   summarizeLinkedRepos,
 } from '@/features/github/repoAccent'
 import { copyToClipboard, cn } from '@/lib/utils'
+import {
+  isModKey,
+  isTypingTarget,
+  TASK_SHORTCUTS,
+} from '@/lib/keyboardShortcuts'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Icons } from '@/components/icons'
@@ -234,49 +239,17 @@ export function TaskBoard({
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Esc: close tag editor / collapse expanded task details (modals handle their own Esc)
-      if (e.key === 'Escape') {
-        if (tagEditTaskId) {
-          e.preventDefault()
-          setTagEditTaskId(null)
-          return
-        }
-        if (expandedTaskId) {
-          e.preventDefault()
-          setExpandedTaskId(null)
-          return
-        }
-        return
-      }
-
-      if (!(e.ctrlKey || e.metaKey)) return
-      if (e.key.toLowerCase() === 'backspace') {
-        if (!search) return
-        const el = e.target as HTMLElement | null
-        const tag = (el?.tagName || '').toLowerCase()
-        const typingInOtherField =
-          (tag === 'input' || tag === 'textarea') && el !== searchRef.current
-        if (typingInOtherField) return
-        e.preventDefault()
-        setSearch('')
-        searchRef.current?.focus()
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        openAdd()
-        setQuickDetails(false)
-        queueMicrotask(() => quickRef.current?.focus())
-      }
-      if (e.key === 'ArrowDown' && document.activeElement === quickRef.current) {
-        e.preventDefault()
-        setQuickDetails(true)
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [search, searchRef, quickRef, tagEditTaskId, expandedTaskId])
+  const clearAllFilters = useCallback(() => {
+    setSearch('')
+    setActiveTagIds([])
+    setSortBy('rank')
+    setShowCompleted(false)
+    setGithubRepoFilter(null)
+    localStorage.setItem('pm-task-search', '')
+    localStorage.setItem('pm-task-sort', 'rank')
+    localStorage.setItem('pm-show-completed', 'false')
+    localStorage.setItem('pm-active-tags', '[]')
+  }, [])
 
   // Scroll to + flash newly created tasks (quick-add or modal)
   useEffect(() => {
@@ -515,6 +488,107 @@ export function TaskBoard({
     }
   }
 
+  // Global / contextual shortcuts for the task board (see lib/keyboardShortcuts.ts)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const typing = isTypingTarget(target)
+      const inSearch = target === searchRef.current
+      const inQuick =
+        target === quickRef.current ||
+        Boolean(target?.closest?.('[data-quick-add-panel]'))
+
+      // Esc: layered dismiss (modals handle their own Esc)
+      if (e.key === 'Escape') {
+        if (tagEditTaskId) {
+          e.preventDefault()
+          setTagEditTaskId(null)
+          return
+        }
+        if (expandedTaskId) {
+          e.preventDefault()
+          setExpandedTaskId(null)
+          return
+        }
+        if (inSearch && search) {
+          e.preventDefault()
+          setSearch('')
+          return
+        }
+        if (inQuick && (quickName || quickDetails)) {
+          e.preventDefault()
+          resetQuick()
+          return
+        }
+        return
+      }
+
+      if (!isModKey(e)) return
+
+      // Ctrl/Cmd+Backspace — clear all filters
+      if (e.key === 'Backspace') {
+        if (typing && !inSearch) return
+        e.preventDefault()
+        clearAllFilters()
+        openFilters()
+        searchRef.current?.focus()
+        return
+      }
+
+      // Ctrl/Cmd+↑ — focus quick-add
+      if (e.key === 'ArrowUp') {
+        if (typing && !inQuick && !inSearch) return
+        e.preventDefault()
+        openAdd()
+        setQuickDetails(false)
+        queueMicrotask(() => quickRef.current?.focus())
+        return
+      }
+
+      // Ctrl/Cmd+↓ — quick-add details, or toggle expand first visible task
+      if (e.key === 'ArrowDown') {
+        if (document.activeElement === quickRef.current || inQuick) {
+          e.preventDefault()
+          setQuickDetails(true)
+          return
+        }
+        if (!typing && filtered.length > 0) {
+          e.preventDefault()
+          const first = filtered[0]!
+          setExpandedTaskId((id) => (id === first.id ? null : first.id))
+          onExpandTask?.(first)
+          document.getElementById(`task-row-${first.id}`)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+          })
+        }
+        return
+      }
+
+      // Ctrl/Cmd+Enter — save quick-add
+      if (e.key === 'Enter' && inQuick && canEdit) {
+        if (!quickName.trim() || savingQuick) return
+        e.preventDefault()
+        void submitQuick()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [
+    search,
+    searchRef,
+    quickRef,
+    tagEditTaskId,
+    expandedTaskId,
+    quickName,
+    quickDetails,
+    clearAllFilters,
+    filtered,
+    onExpandTask,
+    canEdit,
+    savingQuick,
+  ])
+
   const stickySolid = filtersOpen || addOpen
   const showingPills = !filtersOpen || !addOpen
   const chromeMode =
@@ -589,18 +663,9 @@ export function TaskBoard({
                     <button
                       type="button"
                       className="rounded-md px-2 py-1 text-xs font-medium text-[var(--color-muted)] underline decoration-wavy hover:text-[var(--color-text)]"
-                      title="Reset search, tags, sort, and completed"
-                      onClick={() => {
-                        setSearch('')
-                        setActiveTagIds([])
-                        setSortBy('rank')
-                        setShowCompleted(false)
-                        setGithubRepoFilter(null)
-                        localStorage.setItem('pm-task-search', '')
-                        localStorage.setItem('pm-task-sort', 'rank')
-                        localStorage.setItem('pm-show-completed', 'false')
-                        localStorage.setItem('pm-active-tags', '[]')
-                      }}
+                      title={`${TASK_SHORTCUTS.clearAllFilters.description} (${TASK_SHORTCUTS.clearAllFilters.combo()})`}
+                      aria-keyshortcuts="Control+Backspace Meta+Backspace"
+                      onClick={() => clearAllFilters()}
                     >
                       Clear all
                     </button>
@@ -646,7 +711,7 @@ export function TaskBoard({
                       <button
                         type="button"
                         className="field-input-clear"
-                        title="Clear search"
+                        title={`${TASK_SHORTCUTS.clearSearch.description} (${TASK_SHORTCUTS.clearSearch.combo()})`}
                         onClick={() => {
                           setSearch('')
                           searchRef.current?.focus()
@@ -783,7 +848,10 @@ export function TaskBoard({
 
           {/* #4 Quick add + details accordion */}
           {canEdit && addOpen ? (
-            <section className="notebook-panel floating-elevated !py-2 space-y-2">
+            <section
+              className="notebook-panel floating-elevated !py-2 space-y-2"
+              data-quick-add-panel
+            >
               <div className="flex items-center justify-between gap-2 px-0.5">
                 <span className="text-sm font-semibold">Add task</span>
                 <button
@@ -806,7 +874,12 @@ export function TaskBoard({
                   <button
                     type="button"
                     className="px-3 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-                    title={quickDetails ? 'Hide details' : 'Show details (Ctrl+↓)'}
+                    title={
+                      quickDetails
+                        ? 'Hide details'
+                        : `${TASK_SHORTCUTS.quickDetails.description} (${TASK_SHORTCUTS.quickDetails.combo()})`
+                    }
+                    aria-keyshortcuts="Control+ArrowDown Meta+ArrowDown"
                     onClick={() => setQuickDetails((v) => !v)}
                   >
                     {quickDetails ? <Icons.ChevronDown /> : <Icons.ChevronRight />}
@@ -817,6 +890,8 @@ export function TaskBoard({
                     onChange={(e) => setQuickName(e.target.value)}
                     placeholder="Add new task…"
                     disabled={savingQuick}
+                    aria-keyshortcuts="Control+ArrowUp Meta+ArrowUp"
+                    title={`${TASK_SHORTCUTS.focusAdd.description} (${TASK_SHORTCUTS.focusAdd.combo()})`}
                   />
                   <div className="quick-side">
                     {onImportFromGithub && githubEnabled ? (
@@ -834,7 +909,7 @@ export function TaskBoard({
                       <button
                         type="button"
                         className="icon-btn"
-                        title="Clear"
+                        title={`Clear (${TASK_SHORTCUTS.collapseEsc.combo()} when focused here)`}
                         onClick={() => resetQuick()}
                       >
                         <Icons.X />
@@ -843,7 +918,8 @@ export function TaskBoard({
                     <button
                       type="submit"
                       className="icon-btn"
-                      title="Save task"
+                      title={`${TASK_SHORTCUTS.saveQuick.description} (${TASK_SHORTCUTS.saveQuick.combo()})`}
+                      aria-keyshortcuts="Control+Enter Meta+Enter"
                       disabled={savingQuick || !quickName.trim()}
                     >
                       <Icons.Save />
@@ -939,8 +1015,11 @@ export function TaskBoard({
                   </div>
                 ) : (
                   <p className="px-1 text-xs text-[var(--color-muted)]">
-                    <span className="kbd">Ctrl</span>+<span className="kbd">↓</span> for details ·{' '}
-                    <span className="kbd">Ctrl</span>+<span className="kbd">↑</span> focus add
+                    <span className="kbd">{TASK_SHORTCUTS.quickDetails.combo()}</span> details ·{' '}
+                    <span className="kbd">{TASK_SHORTCUTS.focusAdd.combo()}</span> focus add ·{' '}
+                    <span className="kbd">{TASK_SHORTCUTS.saveQuick.combo()}</span> save ·{' '}
+                    <span className="kbd">{TASK_SHORTCUTS.clearAllFilters.combo()}</span> clear
+                    filters
                   </p>
                 )}
               </form>
