@@ -81,6 +81,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] Blocked-by issue pill (red) from GitHub relationships (sync/link/import refresh `github_blocked_by`)
 - [x] App-native task blockers (`task_dependencies`) + optional GitHub sync when both tasks linked
 - [x] Bidirectional dep reconcile on sync/link/import (GH→app edges when both issues are tasks; app→GH push missing)
+- [x] Repo filter chips in Filters (GitHub icon, not #tag); remove #github system-tag auto-apply; multi-repo legend demoted
 - [ ] Webhooks for two-way without manual sync
 - [x] SSO GitHub/Google sign-in (Auth OAuth; see docs/auth-oauth-smtp.md)
 

@@ -663,6 +663,42 @@ a:hover .project-title {
   font-weight: 700;
 }
 
+/* Filter panel: virtual repository chips (not #tags) */
+.tag-chip.tag-chip-repo {
+  gap: 0.3rem;
+  max-width: 14rem;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-count {
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-default-mark {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+
+.tag-chip.tag-chip-repo.active {
+  /* Selected state uses tag-chip.active; keep readable */
+}
+
 /* Selected repo filter in legend — keep accent visible while selected */
 .github-repo-legend .pill-badge.gh-repo-filter-on,
 .github-repo-legend .pill-badge.is-toggle.is-selected {

@@ -586,33 +586,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    async function ensureGithubSystemTag(scopeId: string, taskId: string) {
-      try {
-        let { data: ghTag } = await admin
-          .from('tags')
-          .select('id')
-          .eq('scope_id', scopeId)
-          .ilike('name', 'github')
-          .maybeSingle()
-        if (!ghTag) {
-          const ins = await admin
-            .from('tags')
-            .insert({ scope_id: scopeId, name: 'github' })
-            .select('id')
-            .single()
-          ghTag = ins.data
-        }
-        if (ghTag?.id) {
-          await admin.from('task_tags').upsert(
-            { task_id: taskId, tag_id: ghTag.id },
-            { onConflict: 'task_id,tag_id' },
-          )
-        }
-      } catch (e) {
-        console.warn('ensure github system tag', e)
-      }
-    }
-
     type BlockedByRef = {
       number: number
       title: string
@@ -1027,8 +1000,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        await ensureGithubSystemTag(task.scope_id as string, taskId)
-
         const depSync = await reconcileDependencies({
           scopeId: task.scope_id as string,
           taskId,
@@ -1193,8 +1164,6 @@ Deno.serve(async (req) => {
             /* skip label */
           }
         }
-
-        await ensureGithubSystemTag(scopeId, task.id)
 
         // Upsert link first so index can see this task when importing deps
         await upsertTaskConfig(task.id, {
@@ -1484,8 +1453,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        await ensureGithubSystemTag(task.scope_id as string, taskId)
-
         // New issues have no blockers yet; still store empty array
         const config = await upsertTaskConfig(taskId, {
           github_issue_id: issue.id,
@@ -1643,22 +1610,8 @@ Deno.serve(async (req) => {
             }
             if (existing?.id) tagIds.push(existing.id)
           }
-          let { data: ghTag } = await admin
-            .from('tags')
-            .select('id')
-            .eq('scope_id', scopeId)
-            .ilike('name', 'github')
-            .maybeSingle()
-          if (!ghTag) {
-            const ins = await admin
-              .from('tags')
-              .insert({ scope_id: scopeId, name: 'github' })
-              .select('id')
-              .single()
-            ghTag = ins.data
-          }
-          if (ghTag?.id) tagIds.push(ghTag.id)
 
+          // Pull: replace task tags with labels from the issue (no local #github system tag)
           await admin.from('task_tags').delete().eq('task_id', taskId)
           if (tagIds.length) {
             await admin.from('task_tags').insert(tagIds.map((tag_id) => ({ task_id: taskId, tag_id })))

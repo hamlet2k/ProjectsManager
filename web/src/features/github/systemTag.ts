@@ -1,4 +1,7 @@
-/** App-only system tag for GitHub-linked tasks (not pushed as a GitHub issue label). */
+/**
+ * Legacy local-only system tag. No longer auto-applied; filtering uses repo chips
+ * from task↔issue links. Still hidden in UI when leftover rows exist.
+ */
 export const GITHUB_SYSTEM_TAG = 'github'
 
 export function isGithubSystemTag(name: string | null | undefined): boolean {

@@ -46,7 +46,6 @@ import {
   mapTaskGitHubByTaskId,
   repoLabel,
 } from '@/features/github/visibility'
-import { GITHUB_SYSTEM_TAG, isGithubSystemTag } from '@/features/github/systemTag'
 import { createTag as createTagApi, setTaskTags } from '@/features/tasks/api'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Modal } from '@/components/ui/Modal'
@@ -443,19 +442,6 @@ export function ScopePage() {
     [ghCaps.canMutate, ghCaps.scopeIntegrated, githubByTask, qc, scopeId, scrollToTask],
   )
 
-  async function ensureGithubSystemTagOnTask(taskId: string) {
-    let ghTag = tags.find((t) => isGithubSystemTag(t.name))
-    if (!ghTag) {
-      ghTag = await createTagApi(scopeId!, GITHUB_SYSTEM_TAG)
-      await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
-    }
-    const current = taskTags.filter((tt) => tt.task_id === taskId).map((tt) => tt.tag_id)
-    if (!current.includes(ghTag.id)) {
-      await setTaskTags(taskId, [...current, ghTag.id])
-      await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
-    }
-  }
-
   // Shortcuts for add/search live in TaskBoard; keep page free of conflicts.
 
   if (scopeLoading || tasksQuery.isLoading) return <PageLoader />
@@ -616,17 +602,10 @@ export function ScopePage() {
           await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
         }}
         onCreateTag={async (name) => {
-          if (isGithubSystemTag(name)) {
-            throw new Error('“github” is a reserved system tag')
-          }
           const tag = await createTag.mutateAsync(name)
           return tag
         }}
         onDeleteTag={async (tag) => {
-          if (isGithubSystemTag(tag.name)) {
-            toast.push('The #github system tag cannot be deleted', 'error')
-            return
-          }
           const ok = await confirm({
             title: 'Remove tag from project?',
             message: `Delete #${tag.name}? It will be removed from every task that uses it.`,
@@ -662,7 +641,6 @@ export function ScopePage() {
                 title: task.name,
                 body: task.description ?? undefined,
               })
-              await ensureGithubSystemTagOnTask(task.id)
               toast.push(
                 res.project_added
                   ? 'GitHub issue created (also added to the Project board in settings)'
@@ -807,7 +785,6 @@ export function ScopePage() {
                       title: task.name,
                       body: task.description ?? undefined,
                     })
-                    await ensureGithubSystemTagOnTask(task.id)
                     toast.push(
                       res.project_added
                         ? 'GitHub issue created (also added to the Project board in settings)'
@@ -868,7 +845,6 @@ export function ScopePage() {
                 taskId: issuePicker.taskId,
                 issueNumber: issue.number,
               })
-              await ensureGithubSystemTagOnTask(issuePicker.taskId)
               toast.push(
                 res.project_added
                   ? `Linked #${issue.number} (also added to Project board if configured)`

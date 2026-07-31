@@ -332,21 +332,16 @@ export function TaskBoard({
     return m
   }, [dependencies, tasks])
 
-  /** Only show #github filter when at least one task is linked. */
-  const hasGithubLinkedTask = useMemo(() => {
-    for (const c of githubByTask.values()) {
-      if (c.github_issue_number) return true
-    }
-    return false
-  }, [githubByTask])
-
+  /** User tags only — legacy #github system tag is hidden (no longer maintained). */
   const filterTags = useMemo(
-    () =>
-      tags.filter((t) => {
-        if (!isGithubSystemTag(t.name)) return true
-        return hasGithubLinkedTask
-      }),
-    [tags, hasGithubLinkedTask],
+    () => tags.filter((t) => !isGithubSystemTag(t.name)),
+    [tags],
+  )
+
+  /** Virtual filter chips from linked issue repos (not DB tags). */
+  const linkedRepoUsage = useMemo(
+    () => (githubVisible ? summarizeLinkedRepos(githubByTask.values(), defaultGithubRepo) : []),
+    [githubVisible, githubByTask, defaultGithubRepo],
   )
 
   const filtered = useMemo(() => {
@@ -421,11 +416,13 @@ export function TaskBoard({
     const untagged: Task[] = []
     const assigned = new Set<string>()
 
-    // Prefer active tag filters as group order; else all scope tags
+    // Prefer active tag filters as group order; else all scope tags (skip legacy #github)
     const tagOrder =
       activeTagIds.length > 0
-        ? tags.filter((t) => activeTagIds.includes(t.id))
-        : [...tags].sort((a, b) => a.name.localeCompare(b.name))
+        ? tags.filter((t) => activeTagIds.includes(t.id) && !isGithubSystemTag(t.name))
+        : [...tags]
+            .filter((t) => !isGithubSystemTag(t.name))
+            .sort((a, b) => a.name.localeCompare(b.name))
 
     for (const tag of tagOrder) byTag.set(tag.id, [])
 
@@ -795,80 +792,139 @@ export function TaskBoard({
                 </label>
               </div>
 
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                  <Icons.Tag size="0.9em" />
-                  <span>Tags:</span>
-                  {activeTagIds.length > 0 ? (
-                    <button
-                      type="button"
-                      className="normal-case tracking-normal underline decoration-wavy"
-                      onClick={() => setActiveTagIds([])}
-                    >
-                      Clear tags
-                    </button>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {filterTags.length === 0 ? (
-                    <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
-                  ) : (
-                    filterTags.map((tag) => {
-                      const active = activeTagIds.includes(tag.id)
-                      return (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          className={cn(
-                            'tag-chip',
-                            active && 'active',
-                            isGithubSystemTag(tag.name) && 'system-tag',
-                          )}
-                          onClick={() => toggleTag(tag.id)}
-                          title={
-                            isGithubSystemTag(tag.name)
-                              ? 'Filter GitHub-linked tasks'
-                              : canEdit && onDeleteTag && active
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                    <Icons.Tag size="0.9em" />
+                    <span>Tags</span>
+                    {activeTagIds.length > 0 ? (
+                      <button
+                        type="button"
+                        className="normal-case tracking-normal underline decoration-wavy"
+                        onClick={() => setActiveTagIds([])}
+                      >
+                        Clear tags
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {filterTags.length === 0 ? (
+                      <span className="text-sm text-[var(--color-muted)]">No tags yet.</span>
+                    ) : (
+                      filterTags.map((tag) => {
+                        const active = activeTagIds.includes(tag.id)
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            className={cn('tag-chip', active && 'active')}
+                            onClick={() => toggleTag(tag.id)}
+                            title={
+                              canEdit && onDeleteTag && active
                                 ? 'Click to unselect · hover for delete from project'
                                 : 'Filter by this tag'
-                          }
-                        >
-                          #{tag.name}
-                          {canEdit &&
-                          onDeleteTag &&
-                          !isGithubSystemTag(tag.name) &&
-                          active ? (
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="tag-chip-remove"
-                              title="Delete tag from project"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void (async () => {
-                                  await onDeleteTag(tag)
-                                  setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
-                                })()
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
+                            }
+                          >
+                            #{tag.name}
+                            {canEdit && onDeleteTag && active ? (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                className="tag-chip-remove"
+                                title="Delete tag from project"
+                                onClick={(e) => {
                                   e.stopPropagation()
                                   void (async () => {
                                     await onDeleteTag(tag)
                                     setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
                                   })()
-                                }
-                              }}
-                            >
-                              <Icons.Trash size="0.7em" />
-                            </span>
-                          ) : null}
-                        </button>
-                      )
-                    })
-                  )}
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    void (async () => {
+                                      await onDeleteTag(tag)
+                                      setActiveTagIds((ids) => ids.filter((id) => id !== tag.id))
+                                    })()
+                                  }
+                                }}
+                              >
+                                <Icons.Trash size="0.7em" />
+                              </span>
+                            ) : null}
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
                 </div>
+
+                {githubVisible && linkedRepoUsage.length > 0 ? (
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                      <Icons.Github size="0.9em" />
+                      <span>Repositories</span>
+                      {githubRepoFilter ? (
+                        <button
+                          type="button"
+                          className="normal-case tracking-normal underline decoration-wavy"
+                          onClick={() => setGithubRepoFilter(null)}
+                        >
+                          Clear repo
+                        </button>
+                      ) : null}
+                      {linkedRepoUsage.length > 1 && onOpenGithubSettings ? (
+                        <button
+                          type="button"
+                          className="normal-case tracking-normal underline decoration-wavy"
+                          onClick={onOpenGithubSettings}
+                          title="Change default repository for new issues"
+                        >
+                          Change default…
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {linkedRepoUsage.map((u) => {
+                        const active = githubRepoFilter === u.key
+                        return (
+                          <button
+                            key={u.key}
+                            type="button"
+                            className={cn(
+                              'tag-chip tag-chip-repo',
+                              active && 'active',
+                              u.isDefault && 'tag-chip-repo-default',
+                            )}
+                            style={active ? undefined : repoAccentStyle(u.owner, u.name)}
+                            title={
+                              active
+                                ? `Clear filter: ${u.key}`
+                                : `Filter tasks linked to ${u.key} (${u.count})`
+                            }
+                            onClick={() => {
+                              setGithubRepoFilter(active ? null : u.key)
+                              collapseFiltersIfMobile()
+                            }}
+                          >
+                            <Icons.Github size="0.85em" className="tag-chip-repo-icon" />
+                            <span className="tag-chip-repo-name">{u.name}</span>
+                            <span className="tag-chip-repo-count opacity-70">×{u.count}</span>
+                            {u.isDefault ? (
+                              <span className="tag-chip-repo-default-mark">default</span>
+                            ) : null}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-xs text-[var(--color-muted)]">
+                      Repo chips filter by the issue’s linked repository (not a task tag). User tags
+                      still sync as GitHub labels.
+                    </p>
+                  </div>
+                ) : null}
+
                 {sortBy === 'tags' ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
                     Grouped by tag. To change priority order, set sort to <strong>Rank</strong> and
@@ -1072,17 +1128,6 @@ export function TaskBoard({
 
       {/* Task list — flat or tag groups */}
       <section className="space-y-4">
-        {githubVisible ? (
-          <GithubRepoLegend
-            githubByTask={githubByTask}
-            defaultRepo={defaultGithubRepo}
-            projectLinked={githubEnabled || Boolean(defaultGithubRepo)}
-            selectedRepoKey={githubRepoFilter}
-            onSelectRepo={setGithubRepoFilter}
-            onChangeDefault={onOpenGithubSettings}
-            canChangeDefault={Boolean(onOpenGithubSettings)}
-          />
-        ) : null}
         {canEdit && sortBy === 'tags' ? (
           <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
             Sorted by <strong>Tags (groups)</strong> — drag-to-reorder priority is off. Switch sort
@@ -1238,15 +1283,9 @@ export function TaskBoard({
                         try {
                           const tag = await onCreateTag(name)
                           const current = (tagsByTask.get(task.id) ?? [])
-                            .filter((t) => !isGithubSystemTag(t.name) || githubByTask.get(task.id)?.github_issue_number)
+                            .filter((t) => !isGithubSystemTag(t.name))
                             .map((t) => t.id)
                           const next = current.includes(tag.id) ? current : [...current, tag.id]
-                          // Preserve system github tag if linked
-                          const ghTag = tags.find((t) => isGithubSystemTag(t.name))
-                          const link = githubByTask.get(task.id)
-                          if (link?.github_issue_number && ghTag && !next.includes(ghTag.id)) {
-                            next.push(ghTag.id)
-                          }
                           await onSetTaskTags(task.id, next)
                           requestAnimationFrame(() => {
                             document
@@ -1739,8 +1778,8 @@ function SortableTaskRow({
               ) : null}
 
               {/*
-                Tags: view mode = only tags on this task (no #github).
-                Edit mode = one list of all project tags (pill style), selected highlighted.
+                Tags: view mode = tags on this task (legacy #github hidden).
+                Edit mode = project tags as toggle pills.
               */}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1792,10 +1831,6 @@ function SortableTaskRow({
                                   const next = on
                                     ? base.filter((id) => id !== tag.id)
                                     : [...base, tag.id]
-                                  const ghSys = allTags.find((t) => isGithubSystemTag(t.name))
-                                  if (github?.github_issue_number && ghSys && !next.includes(ghSys.id)) {
-                                    next.push(ghSys.id)
-                                  }
                                   void onSetTags(next)
                                 }}
                               >
@@ -1824,10 +1859,6 @@ function SortableTaskRow({
                       e.preventDefault()
                       const name = newTag.trim().replace(/^#/, '')
                       if (!name) return
-                      if (isGithubSystemTag(name)) {
-                        setNewTag('')
-                        return
-                      }
                       await onCreateTag(name)
                       setNewTag('')
                     }}
@@ -1900,130 +1931,4 @@ function SortableTaskRow({
   )
 }
 
-/** Compact legend: filter by repo + change default. */
-function GithubRepoLegend({
-  githubByTask,
-  defaultRepo,
-  projectLinked,
-  selectedRepoKey,
-  onSelectRepo,
-  onChangeDefault,
-  canChangeDefault,
-}: {
-  githubByTask: Map<string, TaskGitHubConfig>
-  defaultRepo: string | null
-  projectLinked: boolean
-  selectedRepoKey: string | null
-  onSelectRepo: (key: string | null) => void
-  onChangeDefault?: () => void
-  canChangeDefault?: boolean
-}) {
-  const usage = useMemo(
-    () => summarizeLinkedRepos(githubByTask.values(), defaultRepo),
-    [githubByTask, defaultRepo],
-  )
 
-  // Only show for multi-repo projects (rare). Single-repo is the normal case.
-  useEffect(() => {
-    if (usage.length <= 1 && selectedRepoKey) onSelectRepo(null)
-  }, [usage.length, selectedRepoKey, onSelectRepo])
-
-  if (usage.length <= 1) return null
-
-  const legacyCount = usage.filter((u) => !u.isDefault).reduce((n, u) => n + u.count, 0)
-
-  return (
-    <div className="github-repo-legend rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-[var(--color-text)]">
-          <Icons.Github size="0.9em" className="mr-1 inline-block align-[-0.1em]" />
-          GitHub links
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          {defaultRepo ? (
-            <span title="New create/link goes here">
-              Default:{' '}
-              <strong className="text-[var(--color-text)]">{defaultRepo}</strong>
-            </span>
-          ) : (
-            <span>
-              {projectLinked
-                ? 'No default repository set'
-                : 'Project GitHub off — existing links are read-only'}
-            </span>
-          )}
-          {canChangeDefault && onChangeDefault ? (
-            <Button type="button" size="sm" variant="secondary" onClick={onChangeDefault}>
-              Change default…
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      <ul className="flex flex-wrap items-center gap-2">
-        <li>
-          <button
-            type="button"
-            className={cn('pill-badge is-toggle', selectedRepoKey == null && 'is-selected')}
-            onClick={() => onSelectRepo(null)}
-            title="Show all linked tasks"
-          >
-            All
-          </button>
-        </li>
-        {usage.map((u) => {
-          const selected = selectedRepoKey === u.key
-          return (
-            <li key={u.key}>
-              <button
-                type="button"
-                className={cn(
-                  'pill-badge gh-repo-pill is-toggle',
-                  u.isDefault && 'gh-repo-default',
-                  selected && 'is-selected gh-repo-filter-on',
-                )}
-                style={selected ? undefined : repoAccentStyle(u.owner, u.name)}
-                title={
-                  selected
-                    ? `Clear filter (${u.key})`
-                    : `Filter tasks linked to ${u.key} (${u.count})`
-                }
-                onClick={() => onSelectRepo(selected ? null : u.key)}
-              >
-                <span className="gh-swatch" aria-hidden />
-                {u.name}
-                <span className="opacity-70">×{u.count}</span>
-                {u.isDefault ? <span className="gh-default-mark">default</span> : null}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-      {selectedRepoKey ? (
-        <p className="mt-1.5 leading-snug">
-          Filtering issues on <strong className="text-[var(--color-text)]">{selectedRepoKey}</strong>
-          .{' '}
-          <button
-            type="button"
-            className="underline decoration-wavy"
-            onClick={() => onSelectRepo(null)}
-          >
-            Clear repo filter
-          </button>
-        </p>
-      ) : (
-        <p className="mt-1.5 leading-snug">
-          Click a repo to filter. Colors = original issue repo. Changing default does not move old
-          links
-          {legacyCount > 0 ? (
-            <>
-              {' '}
-              — <strong className="text-[var(--color-text)]">{legacyCount}</strong> task
-              {legacyCount === 1 ? '' : 's'} on a non-default repo
-            </>
-          ) : null}
-          .
-        </p>
-      )}
-    </div>
-  )
-}
