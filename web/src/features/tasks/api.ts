@@ -103,8 +103,26 @@ export async function setTaskCompleted(taskId: string, completed: boolean) {
   return [taskId]
 }
 
+/** Bulk complete / uncomplete (e.g. entire tag or due group). */
+export async function setTasksCompleted(ids: string[], completed: boolean) {
+  if (!ids.length) return
+  const completed_date = completed ? new Date().toISOString() : null
+  const { error } = await getSupabase()
+    .from('tasks')
+    .update({ completed, completed_date })
+    .in('id', ids)
+  if (error) throw error
+}
+
 export async function deleteTask(id: string) {
   const { error } = await getSupabase().from('tasks').delete().eq('id', id)
+  if (error) throw error
+}
+
+/** Delete many tasks in one request (e.g. entire tag/due group). */
+export async function deleteTasks(ids: string[]) {
+  if (!ids.length) return
+  const { error } = await getSupabase().from('tasks').delete().in('id', ids)
   if (error) throw error
 }
 

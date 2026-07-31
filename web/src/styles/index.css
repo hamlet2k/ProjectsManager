@@ -139,6 +139,7 @@ h3,
 }
 
 .tag-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -193,23 +194,52 @@ a:hover .project-title {
   border-style: dashed;
 }
 
-/* Delete control on filter chips: show on hover (any chip) or when chip is active */
+/*
+ * Delete control: absolutely positioned badge so it never changes chip width
+ * or flex-wrap (avoids the mobile “tap → hover trash → wrap → miss select” bug).
+ * Desktop: show on hover or when selected. Touch: only when selected.
+ */
 .tag-chip .tag-chip-remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  z-index: 1;
   display: none;
-  margin-left: 0.2rem;
-  line-height: 1;
-  opacity: 0.85;
   align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-danger, #b91c1c);
+  line-height: 1;
+  font-size: 0.7rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
 }
 
 .tag-chip:hover .tag-chip-remove,
 .tag-chip.active .tag-chip-remove,
-.tag-chip .tag-chip-remove:focus {
+.tag-chip .tag-chip-remove:focus-visible {
   display: inline-flex;
 }
 
 .tag-chip .tag-chip-remove:hover {
-  opacity: 1;
+  background: color-mix(in srgb, var(--color-danger, #b91c1c) 12%, var(--color-surface));
+  border-color: var(--color-danger, #b91c1c);
+}
+
+@media (hover: none) {
+  /* Sticky :hover on touch must not reveal delete on unselected chips */
+  .tag-chip:hover:not(.active) .tag-chip-remove {
+    display: none;
+  }
+
+  .tag-chip.active .tag-chip-remove {
+    display: inline-flex;
+  }
 }
 
 /* Tag editor pills — share selected/hover tokens with filter chips */
@@ -333,11 +363,6 @@ a:hover .project-title {
   gap: 0.25rem;
   flex-shrink: 0;
   margin-left: auto;
-}
-
-/* Secondary row actions only when the task card is expanded */
-.task-card:not(.is-open) .task-action-when-open {
-  display: none;
 }
 
 /* Mobile: title row full width, actions on next line */

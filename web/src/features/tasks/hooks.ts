@@ -8,6 +8,7 @@ import {
   createTask,
   deleteTag,
   deleteTask,
+  deleteTasks,
   fetchTags,
   fetchTaskDependencies,
   fetchTaskTags,
@@ -15,6 +16,7 @@ import {
   removeTaskDependency,
   reorderTasks,
   setTaskCompleted,
+  setTasksCompleted,
   setTaskTags,
   updateTask,
 } from './api'
@@ -205,6 +207,18 @@ export function useToggleTaskComplete(scopeId: string) {
   })
 }
 
+export function useSetTasksCompleted(scopeId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { ids: string[]; completed: boolean }) =>
+      setTasksCompleted(input.ids, input.completed),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+    },
+  })
+}
+
 export function useDeleteTask(scopeId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -212,6 +226,19 @@ export function useDeleteTask(scopeId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
       qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+    },
+  })
+}
+
+export function useDeleteTasks(scopeId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => deleteTasks(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
+      qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
     },
   })
 }

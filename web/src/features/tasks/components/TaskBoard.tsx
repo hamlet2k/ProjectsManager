@@ -37,6 +37,14 @@ import { MarkdownView } from '@/lib/markdown'
 import { TaskDependenciesModal } from '@/features/tasks/components/TaskDependenciesModal'
 import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
 import { MarkdownHelp } from '@/components/ui/MarkdownHelp'
+import {
+  TaskDeleteConfirm,
+  type TaskDeleteMode,
+} from '@/features/tasks/components/TaskDeleteConfirm'
+import {
+  loadLastNewTaskTagIds,
+  saveLastNewTaskTagIds,
+} from '@/features/tasks/lastNewTaskTags'
 
 export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
 
@@ -45,6 +53,8 @@ export type QuickAddPayload = {
   description?: string | null
   endDate?: string | null
   tagIds?: string[]
+  /** When true and GitHub is enabled, create a linked issue after the task. */
+  createGithubIssue?: boolean
 }
 
 type Props = {
@@ -62,8 +72,29 @@ type Props = {
   /** Active project default repo (`owner/name`) for new issues; null if none. */
   defaultGithubRepo?: string | null
   onToggleComplete: (task: Task, completed: boolean) => void
+  /** Mark many tasks complete / incomplete (e.g. whole group). */
+  onSetTasksCompleted?: (tasks: Task[], completed: boolean) => void | Promise<void>
   onEdit: (task: Task) => void
-  onDelete: (task: Task) => void
+  onDelete: (task: Task, opts?: { closeGithubIssues?: boolean }) => void | Promise<void>
+  /** Delete every task in a group (tag or due bucket). */
+  onDeleteTasks?: (
+    tasks: Task[],
+    opts?: { closeGithubIssues?: boolean },
+  ) => void | Promise<void>
+  /** Can close linked GitHub issues (preference + PAT + project linked). */
+  canCloseGithubIssues?: boolean
+  /** Project option: completing a task closes its open GitHub issue when allowed. */
+  closeGithubOnComplete?: boolean
+  /**
+   * Project feature: show dependency chrome (default true).
+   * When false, hide pills, manage button, and dependency drawer section.
+   */
+  dependenciesEnabled?: boolean
+  /**
+   * Project feature: copy opens full export modal (default true).
+   * When false, copy pastes simple checklist text immediately.
+   */
+  advancedExportEnabled?: boolean
   onReorder: (orderedIds: string[]) => void
   onQuickAdd: (input: QuickAddPayload) => Promise<void>
   onOpenDetailedAdd: () => void
@@ -88,6 +119,12 @@ type Props = {
   onRemoveBlocker?: (dep: TaskDependency) => Promise<void>
   searchInputRef?: React.RefObject<HTMLInputElement | null>
   quickAddRef?: React.RefObject<HTMLInputElement | null>
+  /**
+   * Parent-driven “go to task” (import, link, GH create, etc.).
+   * Board smooth-scrolls and flashes the row (same as new-task UX).
+   */
+  focusTaskId?: string | null
+  onFocusTaskHandled?: () => void
 }
 
 type TaskGroup = {
@@ -108,8 +145,14 @@ export function TaskBoard({
   githubEnabled,
   defaultGithubRepo = null,
   onToggleComplete,
+  onSetTasksCompleted,
   onEdit,
   onDelete,
+  onDeleteTasks,
+  canCloseGithubIssues = false,
+  closeGithubOnComplete = true,
+  dependenciesEnabled = true,
+  advancedExportEnabled = true,
   onReorder,
   onQuickAdd,
   onOpenDetailedAdd,
@@ -125,6 +168,8 @@ export function TaskBoard({
   onRemoveBlocker,
   searchInputRef,
   quickAddRef,
+  focusTaskId = null,
+  onFocusTaskHandled,
 }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
@@ -158,8 +203,16 @@ export function TaskBoard({
   const [quickName, setQuickName] = useState('')
   const [quickDescription, setQuickDescription] = useState('')
   const [quickEndDate, setQuickEndDate] = useState('')
-  const [quickTagIds, setQuickTagIds] = useState<string[]>([])
+  const [quickTagIds, setQuickTagIds] = useState<string[]>(() => loadLastNewTaskTagIds())
   const [savingQuick, setSavingQuick] = useState(false)
+  /** Persist “also create GitHub issue” (default off; remember last choice). */
+  const [createGithubOnAdd, setCreateGithubOnAdd] = useState(
+    () => localStorage.getItem('pm-create-gh-on-add') === 'true',
+  )
+
+  useEffect(() => {
+    localStorage.setItem('pm-create-gh-on-add', String(createGithubOnAdd))
+  }, [createGithubOnAdd])
 
   const [tagEditTaskId, setTagEditTaskId] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
@@ -167,8 +220,18 @@ export function TaskBoard({
     task: Task
     tab: 'blocked_by' | 'blocks'
   } | null>(null)
-  /** Temporary highlight after a task is created */
+  const [deletePending, setDeletePending] = useState<{
+    tasks: Task[]
+    groupTitle?: string | null
+    /** Tag id to drop from active filters after successful group delete */
+    clearTagId?: string | null
+  } | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  /** Temporary highlight after create / navigate / tag move */
   const [flashTaskId, setFlashTaskId] = useState<string | null>(null)
+  /** Bump to re-run CSS flash when the same task is revealed again */
+  const [flashNonce, setFlashNonce] = useState(0)
+  const flashClearTimer = useRef<number | null>(null)
   const knownTaskIds = useRef<Set<string> | null>(null)
 
   const localSearchRef = useRef<HTMLInputElement>(null)
@@ -263,6 +326,49 @@ export function TaskBoard({
     localStorage.setItem('pm-active-tags', '[]')
   }, [])
 
+  /**
+   * Smooth-scroll to a task row and play the same flash as new-task create.
+   * Optionally expands the row and ensures completed tasks are visible.
+   */
+  const revealTask = useCallback(
+    (taskId: string, opts?: { expand?: boolean; delayMs?: number }) => {
+      const target = tasks.find((t) => t.id === taskId)
+      const unhidingCompleted = Boolean(target?.completed && !showCompleted)
+      if (unhidingCompleted) {
+        setShowCompleted(true)
+      }
+      if (opts?.expand) {
+        setExpandedTaskId(taskId)
+        setTagEditTaskId(null)
+      }
+
+      // Extra delay when the row may not exist yet (just re-enabled “show completed”, or tag regroup)
+      const delayMs = opts?.delayMs ?? (unhidingCompleted ? 140 : 60)
+
+      if (flashClearTimer.current != null) {
+        window.clearTimeout(flashClearTimer.current)
+        flashClearTimer.current = null
+      }
+
+      // Clear then re-set so CSS animation restarts when targeting the same row again
+      setFlashTaskId(null)
+      window.setTimeout(() => {
+        setFlashTaskId(taskId)
+        setFlashNonce((n) => n + 1)
+        window.setTimeout(() => {
+          document
+            .getElementById(`task-row-${taskId}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, delayMs)
+        flashClearTimer.current = window.setTimeout(() => {
+          setFlashTaskId(null)
+          flashClearTimer.current = null
+        }, 2200 + delayMs)
+      }, 0)
+    },
+    [tasks, showCompleted],
+  )
+
   // Scroll to + flash newly created tasks (quick-add or modal)
   useEffect(() => {
     const ids = new Set(tasks.map((t) => t.id))
@@ -277,18 +383,15 @@ export function TaskBoard({
     const newest = [...added].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]!
-    setFlashTaskId(newest.id)
-    const timer = window.setTimeout(() => {
-      document
-        .getElementById(`task-row-${newest.id}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }, 50)
-    const clearFlash = window.setTimeout(() => setFlashTaskId(null), 2200)
-    return () => {
-      window.clearTimeout(timer)
-      window.clearTimeout(clearFlash)
-    }
-  }, [tasks])
+    revealTask(newest.id, { delayMs: 50 })
+  }, [tasks, revealTask])
+
+  // Parent-requested focus (import, link issue, create from GH, …)
+  useEffect(() => {
+    if (!focusTaskId) return
+    revealTask(focusTaskId, { delayMs: 80 })
+    onFocusTaskHandled?.()
+  }, [focusTaskId, revealTask, onFocusTaskHandled])
 
   const tagsByTask = useMemo(() => {
     const m = new Map<string, Tag[]>()
@@ -495,18 +598,70 @@ export function TaskBoard({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const canDrag =
+  /** Flat Rank view: full-list drag (no search / tag filters). */
+  const canDragRank =
     canEdit && sortBy === 'rank' && !search.trim() && activeTagIds.length === 0
+
+  /**
+   * Tags (groups): drag only within a single group.
+   * Search off so we reorder the full group membership (completed still
+   * follows show-completed, same as Rank with hidden completed).
+   */
+  const canDragInTagGroups = canEdit && sortBy === 'tags' && !search.trim()
+
+  const canDrag = canDragRank || canDragInTagGroups
 
   const onDragEnd = (event: DragEndEvent) => {
     if (!canDrag) return
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const activeId = String(active.id)
+    const overId = String(over.id)
+
+    // --- Within-tag-group reorder (global rank, model B) ---
+    if (canDragInTagGroups) {
+      const group = groups.find((g) => g.tasks.some((t) => t.id === activeId))
+      if (!group) return
+      // No cross-group drops
+      if (!group.tasks.some((t) => t.id === overId)) return
+
+      const groupIds = group.tasks.map((t) => t.id)
+      const oldIndex = groupIds.indexOf(activeId)
+      const newIndex = groupIds.indexOf(overId)
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+
+      const newGroupOrder = arrayMove(groupIds, oldIndex, newIndex)
+      const groupSet = new Set(groupIds)
+
+      // Full project order by current rank; replace group-member slots with newGroupOrder
+      const global = tasks
+        .slice()
+        .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+        .map((t) => t.id)
+
+      const queue = [...newGroupOrder]
+      const result: string[] = []
+      for (const id of global) {
+        if (groupSet.has(id)) {
+          const next = queue.shift()
+          if (next) result.push(next)
+        } else {
+          result.push(id)
+        }
+      }
+      // Any leftover (shouldn’t happen) append to preserve ids
+      while (queue.length) result.push(queue.shift()!)
+
+      onReorder(result)
+      return
+    }
+
+    // --- Flat Rank reorder ---
     // Reorder within the currently visible ranked list, then append hidden tasks
     // (e.g. completed when "show completed" is off) preserving their relative order.
     const visibleIds = filtered.map((t) => t.id)
-    const oldIndex = visibleIds.indexOf(String(active.id))
-    const newIndex = visibleIds.indexOf(String(over.id))
+    const oldIndex = visibleIds.indexOf(activeId)
+    const newIndex = visibleIds.indexOf(overId)
     if (oldIndex < 0 || newIndex < 0) return
     const nextVisible = arrayMove(visibleIds, oldIndex, newIndex)
     const hiddenIds = tasks
@@ -526,26 +681,41 @@ export function TaskBoard({
     collapseFiltersIfMobile()
   }
 
-  const resetQuick = () => {
+  const resetQuick = (opts?: { keepTags?: boolean }) => {
     setQuickName('')
     setQuickDescription('')
     setQuickEndDate('')
-    setQuickTagIds([])
+    if (!opts?.keepTags) {
+      // Restore remembered tags (valid for this project)
+      setQuickTagIds(loadLastNewTaskTagIds(tags.map((t) => t.id)))
+    }
     setQuickDetails(false)
   }
+
+  // Drop remembered tags that no longer exist on this project
+  useEffect(() => {
+    const valid = new Set(tags.map((t) => t.id))
+    setQuickTagIds((prev) => {
+      const next = prev.filter((id) => valid.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [tags])
 
   const submitQuick = async () => {
     const name = quickName.trim()
     if (!name) return
     setSavingQuick(true)
     try {
+      saveLastNewTaskTagIds(quickTagIds)
       await onQuickAdd({
         name,
         description: quickDescription.trim() || null,
         endDate: quickEndDate ? new Date(quickEndDate).toISOString() : null,
         tagIds: quickTagIds,
+        createGithubIssue: Boolean(githubEnabled && createGithubOnAdd),
       })
-      resetQuick()
+      // Keep last tags for the next task; clear the rest of the form
+      resetQuick({ keepTags: true })
       quickRef.current?.focus()
     } catch (err) {
       toast.push(err instanceof Error ? err.message : 'Could not add task', 'error')
@@ -621,12 +791,14 @@ export function TaskBoard({
         if (!typing && filtered.length > 0) {
           e.preventDefault()
           const first = filtered[0]!
-          setExpandedTaskId((id) => (id === first.id ? null : first.id))
-          onExpandTask?.(first)
-          document.getElementById(`task-row-${first.id}`)?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'nearest',
-          })
+          const willExpand = expandedTaskId !== first.id
+          if (willExpand) {
+            setExpandedTaskId(first.id)
+            onExpandTask?.(first)
+          } else {
+            setExpandedTaskId(null)
+          }
+          revealTask(first.id, { delayMs: 40 })
         }
         return
       }
@@ -653,6 +825,7 @@ export function TaskBoard({
     onExpandTask,
     canEdit,
     savingQuick,
+    revealTask,
   ])
 
   const stickySolid = filtersOpen || addOpen
@@ -977,21 +1150,22 @@ export function TaskBoard({
 
                 {sortBy === 'tags' ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    Grouped by tag. To change priority order, set sort to <strong>Rank</strong> and
-                    drag the ⋮⋮ handle.
+                    Grouped by tag. Drag the ⋮⋮ handle <strong>within a group</strong> to change
+                    priority (updates project rank). Clear search to reorder. Cross-group drag is
+                    off.
                   </p>
                 ) : sortBy === 'due' ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
                     Grouped by due date (today, tomorrow, next week…). Overdue tasks appear under{' '}
-                    <strong>Today</strong>. Drag reorder is off — use <strong>Rank</strong> to
-                    prioritize.
+                    <strong>Today</strong>. Drag reorder is off — use <strong>Rank</strong> or{' '}
+                    <strong>Tags</strong> to prioritize.
                   </p>
                 ) : !canDrag && canEdit ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
-                    Drag reorder needs sort <strong>Rank</strong> and no search/tag filters. Use the
-                    ⋮⋮ handle on each row.
+                    Drag reorder: sort <strong>Rank</strong> (full list) or <strong>Tags</strong>{' '}
+                    (within a group). Clear search / tag filters for Rank drag.
                   </p>
-                ) : canDrag ? (
+                ) : canDragRank ? (
                   <p className="mt-2 text-xs text-[var(--color-muted)]">
                     Drag the ⋮⋮ handle to change task priority order.
                   </p>
@@ -1048,17 +1222,6 @@ export function TaskBoard({
                     title={`${TASK_SHORTCUTS.focusAdd.description} (${TASK_SHORTCUTS.focusAdd.combo()})`}
                   />
                   <div className="quick-side">
-                    {onImportFromGithub && githubEnabled ? (
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Create task from a GitHub issue"
-                        disabled={savingQuick}
-                        onClick={() => onImportFromGithub()}
-                      >
-                        <Icons.Github />
-                      </button>
-                    ) : null}
                     {quickName ? (
                       <button
                         type="button"
@@ -1083,6 +1246,39 @@ export function TaskBoard({
 
                 {quickDetails ? (
                   <div className="space-y-2 rounded-[var(--radius-sketch-sm)] border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-3">
+                    {githubEnabled ? (
+                      <label className="flex items-start gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={createGithubOnAdd}
+                          onChange={(e) => setCreateGithubOnAdd(e.target.checked)}
+                          disabled={savingQuick}
+                        />
+                        <span>
+                          Create GitHub issue
+                          <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                            Opens a new issue on{' '}
+                            <strong className="text-[var(--color-text)]">
+                              {defaultGithubRepo ?? 'the linked repo'}
+                            </strong>{' '}
+                            and links it to this task
+                            {onImportFromGithub ? (
+                              <>
+                                {' · '}
+                                <button
+                                  type="button"
+                                  className="underline decoration-wavy"
+                                  onClick={() => onImportFromGithub()}
+                                >
+                                  or import an existing issue
+                                </button>
+                              </>
+                            ) : null}
+                          </span>
+                        </span>
+                      </label>
+                    ) : null}
                     <label className="block text-sm">
                       <span className="mb-1 flex items-center justify-between gap-2 text-[var(--color-muted)]">
                         Description
@@ -1173,10 +1369,19 @@ export function TaskBoard({
 
       {/* Task list — flat or tag groups */}
       <section className="space-y-4">
-        {canEdit && (sortBy === 'tags' || sortBy === 'due') ? (
+        {canEdit && sortBy === 'due' ? (
           <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
-            Sorted by <strong>{sortBy === 'due' ? 'Due date' : 'Tags'}</strong> groups — drag
-            reorder is off. Switch sort to <strong>Rank</strong> to drag tasks with the ⋮⋮ handle.
+            Sorted by <strong>Due date</strong> groups — drag reorder is off. Use{' '}
+            <strong>Rank</strong> or <strong>Tags</strong> to rearrange priority.
+          </p>
+        ) : canEdit && sortBy === 'tags' && canDragInTagGroups ? (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
+            Sorted by <strong>Tags</strong> — drag the ⋮⋮ handle <strong>inside a group</strong> to
+            reorder (project-wide rank). Dropping into another group is not supported.
+          </p>
+        ) : canEdit && sortBy === 'tags' && !canDragInTagGroups ? (
+          <p className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
+            Sorted by <strong>Tags</strong> — clear search to drag-reorder within groups.
           </p>
         ) : null}
         {filtered.length === 0 ? (
@@ -1192,17 +1397,93 @@ export function TaskBoard({
                     {group.title}
                   </h3>
                   <span className="text-xs text-[var(--color-muted)]">({group.tasks.length})</span>
+                  {/* Same order as task row actions: complete · copy · (group extras) · delete */}
                   <div className="flex gap-1">
+                    {canEdit && onSetTasksCompleted && group.tasks.length > 0 ? (
+                      <button
+                        type="button"
+                        className="icon-btn !h-7 !w-7"
+                        title={
+                          group.tasks.every((t) => t.completed)
+                            ? `Mark all ${group.tasks.length} task${group.tasks.length === 1 ? '' : 's'} incomplete`
+                            : `Complete all open tasks in ${group.title}`
+                        }
+                        onClick={() => {
+                          void (async () => {
+                            const openOnes = group.tasks.filter((t) => !t.completed)
+                            const allDone = openOnes.length === 0
+                            const targets = allDone ? group.tasks : openOnes
+                            const n = targets.length
+
+                            // Only warn about GitHub when completing tasks that have open issue links
+                            // and the project will actually try to close them.
+                            let ghCloseCount = 0
+                            if (
+                              !allDone &&
+                              githubVisible &&
+                              canCloseGithubIssues &&
+                              closeGithubOnComplete
+                            ) {
+                              for (const t of openOnes) {
+                                const gh = githubByTask.get(t.id)
+                                if (
+                                  gh?.github_issue_number &&
+                                  gh.github_issue_state !== 'closed'
+                                ) {
+                                  ghCloseCount += 1
+                                }
+                              }
+                            }
+
+                            let message = allDone
+                              ? `Mark all ${n} task${n === 1 ? '' : 's'} in ${group.title} as not done?`
+                              : `Mark ${n} open task${n === 1 ? '' : 's'} in ${group.title} as completed?`
+                            if (ghCloseCount > 0) {
+                              message +=
+                                ghCloseCount === 1
+                                  ? ' 1 linked open GitHub issue will also be closed.'
+                                  : ` ${ghCloseCount} linked open GitHub issues will also be closed.`
+                            }
+
+                            const ok = await confirm({
+                              title: allDone
+                                ? 'Mark group incomplete?'
+                                : 'Complete entire group?',
+                              message,
+                              confirmLabel: allDone
+                                ? n === 1
+                                  ? 'Mark incomplete'
+                                  : `Mark ${n} incomplete`
+                                : n === 1
+                                  ? 'Complete task'
+                                  : `Complete ${n} tasks`,
+                              cancelLabel: 'Cancel',
+                            })
+                            if (!ok) return
+                            try {
+                              await onSetTasksCompleted(targets, !allDone)
+                            } catch (e) {
+                              toast.push(
+                                e instanceof Error ? e.message : 'Could not update group',
+                                'error',
+                              )
+                            }
+                          })()
+                        }}
+                      >
+                        <Icons.Check size="0.85em" />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="icon-btn !h-7 !w-7"
                       title={
-                        onOpenTransfer
+                        advancedExportEnabled && onOpenTransfer
                           ? 'Export group tasks'
-                          : 'Copy group tasks'
+                          : 'Copy group as checklist text'
                       }
                       onClick={async () => {
-                        if (onOpenTransfer) {
+                        if (advancedExportEnabled && onOpenTransfer) {
                           onOpenTransfer(
                             group.tasks.map((t) => t.id),
                             'export',
@@ -1213,10 +1494,15 @@ export function TaskBoard({
                           .map((t) => `${t.completed ? '[x]' : '[ ]'} ${t.name}`)
                           .join('\n')
                         const ok = await copyToClipboard(text)
-                        toast.push(ok ? 'Group copied' : 'Copy failed', ok ? 'success' : 'error')
+                        toast.push(
+                          ok
+                            ? `Copied ${group.tasks.length} task(s) as text`
+                            : 'Copy failed',
+                          ok ? 'success' : 'error',
+                        )
                       }}
                     >
-                      <Icons.Clipboard size="0.85em" />
+                      <Icons.Copy size="0.85em" />
                     </button>
                     {canEdit && group.tagId ? (
                       <button
@@ -1226,11 +1512,28 @@ export function TaskBoard({
                         onClick={() => {
                           openAdd()
                           setQuickDetails(true)
+                          // Group launch overrides remembered tags
                           setQuickTagIds([group.tagId!])
                           queueMicrotask(() => quickRef.current?.focus())
                         }}
                       >
                         <Icons.Plus size="0.85em" />
+                      </button>
+                    ) : null}
+                    {canEdit && onDeleteTasks && group.tasks.length > 0 ? (
+                      <button
+                        type="button"
+                        className="icon-btn danger !h-7 !w-7"
+                        title={`Delete all ${group.tasks.length} task${group.tasks.length === 1 ? '' : 's'} in this group`}
+                        onClick={() => {
+                          setDeletePending({
+                            tasks: group.tasks,
+                            groupTitle: group.title,
+                            clearTagId: group.tagId,
+                          })
+                        }}
+                      >
+                        <Icons.Trash size="0.85em" />
                       </button>
                     ) : null}
                   </div>
@@ -1262,7 +1565,10 @@ export function TaskBoard({
                       defaultGithubRepo={defaultGithubRepo}
                       expanded={expandedTaskId === task.id}
                       flash={flashTaskId === task.id}
+                      flashNonce={flashNonce}
                       tagEditOpen={tagEditTaskId === task.id}
+                      dependenciesEnabled={dependenciesEnabled}
+                      onRevealTask={revealTask}
                       onToggleExpand={() => {
                         setExpandedTaskId((id) => {
                           const next = id === task.id ? null : task.id
@@ -1273,29 +1579,23 @@ export function TaskBoard({
                       onToggleComplete={onToggleComplete}
                       onEdit={onEdit}
                       onOpenDependencies={
-                        canEdit && onAddBlocker && onRemoveBlocker
+                        dependenciesEnabled && canEdit && onAddBlocker && onRemoveBlocker
                           ? (tab) => setDepsModal({ task, tab })
                           : undefined
                       }
-                      onConfirmDelete={async (task) => {
-                        const ok = await confirm({
-                          title: 'Delete task?',
-                          message: `Delete “${task.name}”? This cannot be undone.`,
-                          confirmLabel: 'Delete',
-                          cancelLabel: 'Cancel',
-                          danger: true,
-                        })
-                        if (ok) onDelete(task)
+                      onConfirmDelete={(task) => {
+                        setDeletePending({ tasks: [task] })
                       }}
                       onCopy={() => {
-                        if (onOpenTransfer) {
+                        if (advancedExportEnabled && onOpenTransfer) {
                           onOpenTransfer([task.id], 'export')
                           return
                         }
                         void (async () => {
-                          const ok = await copyToClipboard(task.name)
+                          const line = `${task.completed ? '[x]' : '[ ]'} ${task.name}`
+                          const ok = await copyToClipboard(line)
                           toast.push(
-                            ok ? 'Task name copied' : 'Copy failed',
+                            ok ? 'Task copied as text' : 'Copy failed',
                             ok ? 'success' : 'error',
                           )
                         })()
@@ -1317,12 +1617,8 @@ export function TaskBoard({
                       onSetTags={async (ids) => {
                         try {
                           await onSetTaskTags(task.id, ids)
-                          // Keep task in view when sort-by-tags moves it between groups
-                          requestAnimationFrame(() => {
-                            document
-                              .getElementById(`task-row-${task.id}`)
-                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                          })
+                          // After list re-groups (tags / due), scroll + flash like new task
+                          revealTask(task.id, { delayMs: 100 })
                         } catch (e) {
                           toast.push(
                             e instanceof Error ? e.message : 'Tag update failed',
@@ -1338,11 +1634,7 @@ export function TaskBoard({
                             .map((t) => t.id)
                           const next = current.includes(tag.id) ? current : [...current, tag.id]
                           await onSetTaskTags(task.id, next)
-                          requestAnimationFrame(() => {
-                            document
-                              .getElementById(`task-row-${task.id}`)
-                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                          })
+                          revealTask(task.id, { delayMs: 100 })
                           return tag
                         } catch (e) {
                           toast.push(
@@ -1373,6 +1665,44 @@ export function TaskBoard({
           onRemoveBlocker={onRemoveBlocker}
         />
       ) : null}
+
+      <TaskDeleteConfirm
+        open={Boolean(deletePending?.tasks.length)}
+        tasks={deletePending?.tasks ?? []}
+        githubByTask={githubVisible ? githubByTask : undefined}
+        canCloseGithub={canCloseGithubIssues}
+        groupTitle={deletePending?.groupTitle}
+        busy={deleteBusy}
+        onCancel={() => {
+          if (!deleteBusy) setDeletePending(null)
+        }}
+        onConfirm={(mode: TaskDeleteMode) => {
+          void (async () => {
+            if (!deletePending?.tasks.length) return
+            setDeleteBusy(true)
+            const list = deletePending.tasks
+            const clearTagId = deletePending.clearTagId
+            const opts = { closeGithubIssues: mode === 'close' }
+            try {
+              if (list.length === 1 && !deletePending.groupTitle) {
+                await onDelete(list[0]!, opts)
+              } else if (onDeleteTasks) {
+                await onDeleteTasks(list, opts)
+              } else {
+                for (const t of list) await onDelete(t, opts)
+              }
+              if (clearTagId) {
+                setActiveTagIds((ids) => ids.filter((id) => id !== clearTagId))
+              }
+              setDeletePending(null)
+            } catch (e) {
+              toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
+            } finally {
+              setDeleteBusy(false)
+            }
+          })()
+        }}
+      />
     </div>
   )
 }
@@ -1418,7 +1748,10 @@ function SortableTaskRow({
   defaultGithubRepo,
   expanded,
   flash,
+  flashNonce,
   tagEditOpen,
+  dependenciesEnabled = true,
+  onRevealTask,
   onToggleExpand,
   onToggleComplete,
   onEdit,
@@ -1443,7 +1776,10 @@ function SortableTaskRow({
   defaultGithubRepo: string | null
   expanded: boolean
   flash: boolean
+  flashNonce: number
   tagEditOpen: boolean
+  dependenciesEnabled?: boolean
+  onRevealTask: (taskId: string, opts?: { expand?: boolean; delayMs?: number }) => void
   onToggleExpand: () => void
   onToggleComplete: (task: Task, completed: boolean) => void
   onEdit: (task: Task) => void
@@ -1511,6 +1847,7 @@ function SortableTaskRow({
           isDragging && 'is-dragging',
           flash && 'flash-new',
         )}
+        data-flash-nonce={flash ? flashNonce : undefined}
       >
         <div className={cn('task-row', task.completed && 'completed', isDragging && 'dragging')}>
           <div className="task-row-main">
@@ -1518,7 +1855,11 @@ function SortableTaskRow({
               type="button"
               ref={canDrag ? setActivatorNodeRef : undefined}
               className={cn('grip', !canDrag && 'opacity-30', isDragging && 'is-active')}
-              title={canDrag ? 'Drag to reorder' : 'Reorder when sorted by Rank'}
+              title={
+                canDrag
+                  ? 'Drag to reorder'
+                  : 'Reorder when sorted by Rank, or by Tags within a group'
+              }
               aria-label={canDrag ? 'Drag to reorder task' : 'Reordering disabled'}
               aria-disabled={!canDrag}
               {...(canDrag ? { ...attributes, ...listeners } : {})}
@@ -1539,46 +1880,46 @@ function SortableTaskRow({
             </button>
 
             {/* App: this task is blocked by others */}
-            {openAppBlockers.slice(0, 3).map(({ task: b }) => (
-              <button
-                key={`app-block-${b.id}`}
-                type="button"
-                className="pill-badge gh-blocked-by"
-                title={`Blocked by: ${b.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  document
-                    .getElementById(`task-row-${b.id}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                }}
-              >
-                <span className="pill-badge-label" aria-hidden>
-                  ⛔
-                </span>
-                <span className="pill-badge-text">{b.name}</span>
-              </button>
-            ))}
+            {dependenciesEnabled
+              ? openAppBlockers.slice(0, 3).map(({ task: b }) => (
+                  <button
+                    key={`app-block-${b.id}`}
+                    type="button"
+                    className="pill-badge gh-blocked-by"
+                    title={`Blocked by: ${b.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onRevealTask(b.id)
+                    }}
+                  >
+                    <span className="pill-badge-label" aria-hidden>
+                      ⛔
+                    </span>
+                    <span className="pill-badge-text">{b.name}</span>
+                  </button>
+                ))
+              : null}
 
             {/* App: this task blocks others */}
-            {openAppBlocking.slice(0, 2).map(({ task: b }) => (
-              <button
-                key={`app-blocking-${b.id}`}
-                type="button"
-                className="pill-badge gh-blocking"
-                title={`Blocks: ${b.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  document
-                    .getElementById(`task-row-${b.id}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                }}
-              >
-                <span className="pill-badge-label" aria-hidden>
-                  🔒
-                </span>
-                <span className="pill-badge-text">{b.name}</span>
-              </button>
-            ))}
+            {dependenciesEnabled
+              ? openAppBlocking.slice(0, 2).map(({ task: b }) => (
+                  <button
+                    key={`app-blocking-${b.id}`}
+                    type="button"
+                    className="pill-badge gh-blocking"
+                    title={`Blocks: ${b.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onRevealTask(b.id)
+                    }}
+                  >
+                    <span className="pill-badge-label" aria-hidden>
+                      🔒
+                    </span>
+                    <span className="pill-badge-text">{b.name}</span>
+                  </button>
+                ))
+              : null}
 
             {/* GitHub-only blockers (issue # without an app task edge) */}
             {githubVisible &&
@@ -1666,7 +2007,6 @@ function SortableTaskRow({
           </div>
 
           <div className="task-row-actions">
-            {/* Collapsed: complete · GH · deps · edit. Expanded also: export · delete */}
             <button
               type="button"
               className="icon-btn"
@@ -1675,6 +2015,14 @@ function SortableTaskRow({
               onClick={() => onToggleComplete(task, !task.completed)}
             >
               <Icons.Check />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              title="Copy task"
+              onClick={onCopy}
+            >
+              <Icons.Copy />
             </button>
             {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
               <button
@@ -1750,15 +2098,7 @@ function SortableTaskRow({
             </button>
             <button
               type="button"
-              className="icon-btn task-action-when-open"
-              title="Export / copy this task"
-              onClick={onCopy}
-            >
-              <Icons.Copy />
-            </button>
-            <button
-              type="button"
-              className="icon-btn danger task-action-when-open"
+              className="icon-btn danger"
               title="Delete"
               disabled={!canEdit}
               onClick={() => onConfirmDelete(task)}
@@ -1773,7 +2113,7 @@ function SortableTaskRow({
           <div className="task-drawer-inner">
             <div className="task-drawer-body space-y-3">
               {/* Dependencies summary (manage via row diagram icon) */}
-              {appBlockers.length > 0 || appBlocking.length > 0 ? (
+              {dependenciesEnabled && (appBlockers.length > 0 || appBlocking.length > 0) ? (
                 <div className="space-y-1.5">
                   <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
                     Dependencies
@@ -1798,11 +2138,7 @@ function SortableTaskRow({
                           type="button"
                           className="pill-badge gh-blocked-by"
                           title={`Blocked by: ${b.name}${b.completed ? ' (done)' : ''}`}
-                          onClick={() =>
-                            document
-                              .getElementById(`task-row-${b.id}`)
-                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                          }
+                          onClick={() => onRevealTask(b.id)}
                         >
                           <span className="pill-badge-label" aria-hidden>
                             ⛔
@@ -1826,11 +2162,7 @@ function SortableTaskRow({
                           type="button"
                           className="pill-badge gh-blocking"
                           title={`Blocks: ${b.name}${b.completed ? ' (done)' : ''}`}
-                          onClick={() =>
-                            document
-                              .getElementById(`task-row-${b.id}`)
-                              ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-                          }
+                          onClick={() => onRevealTask(b.id)}
                         >
                           <span className="pill-badge-label" aria-hidden>
                             🔒

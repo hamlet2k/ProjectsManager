@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { useTheme } from '@/app/providers/ThemeProvider'
-import { Button } from '@/components/ui/Button'
 import { cn, formatRelative } from '@/lib/utils'
 import {
   useMarkNotificationRead,
@@ -21,6 +20,8 @@ import {
 import { isScopeGitHubIntegrated } from '@/features/github/visibility'
 import { getSupabase } from '@/lib/supabase/client'
 
+const KOFI_URL = 'https://ko-fi.com/hamlet2k'
+
 export function AppLayout() {
   const { signOut, profile } = useAuth()
   const { theme, setTheme, resolved } = useTheme()
@@ -35,6 +36,7 @@ export function AppLayout() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const projectMatch = useMatch('/projects/:scopeId')
   const scopeId = projectMatch?.params.scopeId
@@ -55,7 +57,9 @@ export function AppLayout() {
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (!notifRef.current?.contains(e.target as Node)) setNotifOpen(false)
+      const t = e.target as Node
+      if (!notifRef.current?.contains(t)) setNotifOpen(false)
+      if (!menuRef.current?.contains(t)) setMenuOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -63,6 +67,28 @@ export function AppLayout() {
 
   const iconBtn =
     'inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'
+
+  /** Shared style for every row in the mobile overflow menu (links + actions). */
+  const menuItemClass =
+    'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50'
+
+  const cycleTheme = () => {
+    const order = ['light', 'dark', 'system'] as const
+    const idx = order.indexOf(theme)
+    setTheme(order[(idx + 1) % order.length]!)
+  }
+
+  const themeLabel =
+    theme === 'system'
+      ? `Theme: system (${resolved})`
+      : theme === 'dark'
+        ? 'Theme: dark'
+        : 'Theme: light'
+
+  const ThemeIcon =
+    theme === 'system' ? Icons.System : theme === 'dark' ? Icons.Moon : Icons.Sun
+
+  const closeMenu = () => setMenuOpen(false)
 
   const handleGithubRefresh = async () => {
     if (!scopeId || refreshing) return
@@ -136,10 +162,11 @@ export function AppLayout() {
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1">
+          {/* Desktop / tablet: full icon toolbar */}
           {projectLinked ? (
             <button
               type="button"
-              className={iconBtn}
+              className={cn(iconBtn, 'hidden sm:inline-flex')}
               title="Refresh GitHub issue links for this project"
               disabled={refreshing}
               onClick={() => void handleGithubRefresh()}
@@ -150,19 +177,32 @@ export function AppLayout() {
 
           <button
             type="button"
-            className={iconBtn}
+            className={cn(iconBtn, 'hidden sm:inline-flex')}
             title="Feedback"
             onClick={() => setFeedbackOpen(true)}
           >
             <Icons.Feedback />
           </button>
 
+          <a
+            href={KOFI_URL}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(iconBtn, 'hidden sm:inline-flex text-[#FF5E5B] hover:text-[#FF5E5B]')}
+            title="Support on Ko-fi"
+          >
+            <Icons.Cup />
+          </a>
+
           <div className="relative" ref={notifRef}>
             <button
               type="button"
               className={cn(iconBtn, 'relative')}
               title="Notifications"
-              onClick={() => setNotifOpen((v) => !v)}
+              onClick={() => {
+                setNotifOpen((v) => !v)
+                setMenuOpen(false)
+              }}
             >
               <Icons.Bell />
               {unread > 0 ? (
@@ -272,7 +312,11 @@ export function AppLayout() {
             ) : null}
           </div>
 
-          <NavLink to="/settings" className={iconBtn} title="Settings">
+          <NavLink
+            to="/settings"
+            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            title="Settings"
+          >
             <Icons.Settings />
           </NavLink>
 
@@ -280,25 +324,11 @@ export function AppLayout() {
 
           <button
             type="button"
-            className={iconBtn}
-            title={
-              theme === 'system'
-                ? `Theme: system (currently ${resolved})`
-                : `Theme: ${theme}`
-            }
-            onClick={() => {
-              const order = ['light', 'dark', 'system'] as const
-              const idx = order.indexOf(theme)
-              setTheme(order[(idx + 1) % order.length]!)
-            }}
+            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            title={themeLabel}
+            onClick={cycleTheme}
           >
-            {theme === 'system' ? (
-              <Icons.System />
-            ) : theme === 'dark' ? (
-              <Icons.Moon />
-            ) : (
-              <Icons.Sun />
-            )}
+            <ThemeIcon />
           </button>
 
           <button
@@ -310,70 +340,157 @@ export function AppLayout() {
             <Icons.Logout />
           </button>
 
-          <button
-            type="button"
-            className={cn(iconBtn, 'sm:hidden')}
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Menu"
-          >
-            ☰
-          </button>
-        </div>
-      </header>
-
-      {menuOpen ? (
-        <div className="mx-4 mt-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2 sm:hidden">
-          <nav className="flex flex-col gap-1 text-sm">
-            <Link
-              className="rounded-lg px-3 py-2 hover:bg-[var(--color-surface-2)]"
-              to="/"
-              onClick={() => setMenuOpen(false)}
-            >
-              Projects
-            </Link>
-            <Link
-              className="rounded-lg px-3 py-2 hover:bg-[var(--color-surface-2)]"
-              to="/notifications"
-              onClick={() => setMenuOpen(false)}
-            >
-              Notifications {unread > 0 ? `(${unread})` : ''}
-            </Link>
-            <Link
-              className="rounded-lg px-3 py-2 hover:bg-[var(--color-surface-2)]"
-              to="/settings"
-              onClick={() => setMenuOpen(false)}
-            >
-              Settings
-            </Link>
-            {projectLinked ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={refreshing}
-                onClick={() => {
-                  void handleGithubRefresh()
-                  setMenuOpen(false)
-                }}
-              >
-                Refresh GitHub
-              </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              size="sm"
+          {/* Mobile overflow menu */}
+          <div className="relative sm:hidden" ref={menuRef}>
+            <button
+              type="button"
+              className={iconBtn}
+              title={menuOpen ? 'Close menu' : 'Menu'}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
               onClick={() => {
-                setFeedbackOpen(true)
-                setMenuOpen(false)
+                setMenuOpen((v) => !v)
+                setNotifOpen(false)
               }}
             >
-              Feedback
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => signOut()}>
-              Sign out
-            </Button>
-          </nav>
+              {menuOpen ? <Icons.X /> : <Icons.Menu />}
+            </button>
+
+            {menuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 z-50 mt-2 w-[min(100vw-2rem,18rem)] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-[0_10px_28px_rgba(15,23,42,0.14)]"
+              >
+                <nav className="flex flex-col">
+                  <Link
+                    role="menuitem"
+                    className={menuItemClass}
+                    to="/"
+                    onClick={closeMenu}
+                  >
+                    <Icons.Home size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    Projects
+                  </Link>
+                  <Link
+                    role="menuitem"
+                    className={menuItemClass}
+                    to="/notifications"
+                    onClick={closeMenu}
+                  >
+                    <span className="relative inline-flex shrink-0">
+                      <Icons.Bell size="1.1em" className="text-[var(--color-muted)]" />
+                      {unread > 0 ? (
+                        <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--color-primary)] px-0.5 text-[9px] font-bold text-[var(--color-primary-fg)]">
+                          {unread > 9 ? '9+' : unread}
+                        </span>
+                      ) : null}
+                    </span>
+                    Notifications
+                    {unread > 0 ? (
+                      <span className="ml-auto text-xs text-[var(--color-muted)]">
+                        {unread} new
+                      </span>
+                    ) : null}
+                  </Link>
+                  <Link
+                    role="menuitem"
+                    className={menuItemClass}
+                    to="/settings"
+                    onClick={closeMenu}
+                  >
+                    <Icons.Settings size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    Settings
+                  </Link>
+
+                  <div
+                    className="my-1 border-t border-[var(--color-border)]"
+                    role="separator"
+                  />
+
+                  {projectLinked ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={menuItemClass}
+                      disabled={refreshing}
+                      onClick={() => {
+                        void handleGithubRefresh()
+                        closeMenu()
+                      }}
+                    >
+                      <Icons.Refresh
+                        size="1.1em"
+                        className={cn(
+                          'shrink-0 text-[var(--color-muted)]',
+                          refreshing && 'animate-spin',
+                        )}
+                      />
+                      {refreshing ? 'Refreshing…' : 'Refresh GitHub'}
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      setFeedbackOpen(true)
+                      closeMenu()
+                    }}
+                  >
+                    <Icons.Feedback size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    Feedback
+                  </button>
+
+                  <a
+                    role="menuitem"
+                    className={menuItemClass}
+                    href={KOFI_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={closeMenu}
+                  >
+                    <Icons.Cup size="1.1em" className="shrink-0 text-[#FF5E5B]" />
+                    Support on Ko-fi
+                  </a>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      cycleTheme()
+                      // Keep menu open so user can cycle theme again if needed
+                    }}
+                  >
+                    <ThemeIcon size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    {themeLabel}
+                  </button>
+
+                  <div
+                    className="my-1 border-t border-[var(--color-border)]"
+                    role="separator"
+                  />
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      closeMenu()
+                      void signOut()
+                    }}
+                  >
+                    <Icons.Logout size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    Sign out
+                  </button>
+                </nav>
+              </div>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+      </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Outlet />

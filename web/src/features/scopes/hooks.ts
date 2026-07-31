@@ -71,7 +71,14 @@ export function useUpdateScope() {
   const { user } = useAuth()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: { id: string; name?: string; description?: string | null; rank?: number }) => {
+    mutationFn: (input: {
+      id: string
+      name?: string
+      description?: string | null
+      rank?: number
+      dependencies_enabled?: boolean
+      advanced_export_enabled?: boolean
+    }) => {
       const { id, ...patch } = input
       return updateScope(id, patch)
     },

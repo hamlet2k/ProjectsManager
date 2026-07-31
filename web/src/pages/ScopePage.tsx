@@ -8,9 +8,11 @@ import {
   useReorderTasks,
   useScopeTasks,
   useToggleTaskComplete,
+  useSetTasksCompleted,
   useUpdateTask,
   useCreateTag,
   useDeleteTag,
+  useDeleteTasks,
   useAddTaskDependency,
   useRemoveTaskDependency,
 } from '@/features/tasks/hooks'
@@ -71,7 +73,9 @@ export function ScopePage() {
   const createTask = useCreateTask(scopeId!)
   const updateTask = useUpdateTask(scopeId!)
   const toggleComplete = useToggleTaskComplete(scopeId!)
+  const setTasksCompleted = useSetTasksCompleted(scopeId!)
   const deleteTask = useDeleteTask(scopeId!)
+  const deleteTasks = useDeleteTasks(scopeId!)
   const reorderTasks = useReorderTasks(scopeId!)
   const createTag = useCreateTag(scopeId!)
   const deleteTagMut = useDeleteTag(scopeId!)
@@ -155,6 +159,62 @@ export function ScopePage() {
   const githubByTask = useMemo(
     () => mapTaskGitHubByTaskId(taskGhQuery.data ?? [], user?.id),
     [taskGhQuery.data, user?.id],
+  )
+
+  /**
+   * Option C: never delete GitHub issues.
+   * Optionally close open linked issues first (while task_github_configs still exist), then delete tasks.
+   */
+  const deleteTasksWithGithubOption = useCallback(
+    async (list: Task[], closeGithubIssues: boolean) => {
+      if (!list.length) return
+      let closed = 0
+      let closeFailed = 0
+      if (closeGithubIssues && ghCaps.canMutate && ghCaps.scopeIntegrated) {
+        for (const task of list) {
+          const link = githubByTask.get(task.id)
+          if (!link?.github_issue_number || link.github_issue_state === 'closed') continue
+          try {
+            await closeIssueForTask(task.id)
+            closed += 1
+          } catch {
+            closeFailed += 1
+          }
+        }
+      }
+      const ids = list.map((t) => t.id)
+      if (ids.length === 1) {
+        await deleteTask.mutateAsync(ids[0]!)
+      } else {
+        await deleteTasks.mutateAsync(ids)
+      }
+      await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+      const parts: string[] = []
+      parts.push(ids.length === 1 ? 'Task deleted' : `Deleted ${ids.length} tasks`)
+      if (closed > 0) {
+        parts.push(
+          closed === 1 ? 'closed 1 GitHub issue' : `closed ${closed} GitHub issues`,
+        )
+      }
+      if (closeFailed > 0) {
+        parts.push(
+          closeFailed === 1
+            ? '1 issue failed to close (task still removed)'
+            : `${closeFailed} issues failed to close (tasks still removed)`,
+        )
+      }
+      toast.push(parts.join(' · '), closeFailed > 0 ? 'error' : 'success')
+    },
+    [
+      ghCaps.canMutate,
+      ghCaps.scopeIntegrated,
+      githubByTask,
+      deleteTask,
+      deleteTasks,
+      qc,
+      scopeId,
+      toast,
+    ],
   )
 
   const reposQuery = useQuery({
@@ -411,12 +471,12 @@ export function ScopePage() {
     myScopeConfig,
   ])
 
+  /** Board reveals (smooth scroll + flash) via focusTaskId */
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null)
   const scrollToTask = useCallback((taskId: string) => {
-    requestAnimationFrame(() => {
-      document
-        .getElementById(`task-row-${taskId}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    })
+    // Clear first so re-focusing the same id still triggers the board effect
+    setFocusTaskId(null)
+    requestAnimationFrame(() => setFocusTaskId(taskId))
   }, [])
 
   // Soft background sync when opening details — LWW, once per 90s per task
@@ -544,6 +604,8 @@ export function ScopePage() {
         defaultGithubRepo={displayRepo}
         searchInputRef={searchRef}
         quickAddRef={quickAddRef}
+        focusTaskId={focusTaskId}
+        onFocusTaskHandled={() => setFocusTaskId(null)}
         onToggleComplete={async (task, completed) => {
           try {
             await toggleComplete.mutateAsync({ taskId: task.id, completed })
@@ -576,18 +638,93 @@ export function ScopePage() {
             toast.push(e instanceof Error ? e.message : 'Update failed', 'error')
           }
         }}
+        onSetTasksCompleted={
+          access.canEdit
+            ? async (list, completed) => {
+                const ids = list.map((t) => t.id)
+                if (!ids.length) return
+                await setTasksCompleted.mutateAsync({ ids, completed })
+                let closed = 0
+                let closeFailed = 0
+                const closeOnComplete = binding?.close_issue_on_complete !== false
+                if (
+                  completed &&
+                  closeOnComplete &&
+                  ghCaps.scopeIntegrated &&
+                  ghCaps.canMutate
+                ) {
+                  for (const task of list) {
+                    const link = githubByTask.get(task.id)
+                    if (
+                      !link?.github_issue_number ||
+                      link.github_issue_state === 'closed'
+                    ) {
+                      continue
+                    }
+                    try {
+                      await closeIssueForTask(task.id)
+                      closed += 1
+                    } catch {
+                      closeFailed += 1
+                    }
+                  }
+                  if (closed > 0 || closeFailed > 0) {
+                    await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+                  }
+                }
+                const parts: string[] = [
+                  completed
+                    ? ids.length === 1
+                      ? 'Task completed'
+                      : `Completed ${ids.length} tasks`
+                    : ids.length === 1
+                      ? 'Task marked incomplete'
+                      : `Marked ${ids.length} tasks incomplete`,
+                ]
+                if (closed > 0) {
+                  parts.push(
+                    closed === 1
+                      ? 'closed 1 GitHub issue'
+                      : `closed ${closed} GitHub issues`,
+                  )
+                }
+                if (closeFailed > 0) {
+                  parts.push(
+                    closeFailed === 1
+                      ? '1 issue failed to close'
+                      : `${closeFailed} issues failed to close`,
+                  )
+                }
+                toast.push(parts.join(' · '), closeFailed > 0 ? 'error' : 'success')
+              }
+            : undefined
+        }
         onEdit={(task) => {
           setEditingTask(task)
           setTaskModalOpen(true)
         }}
-        onDelete={async (task) => {
+        canCloseGithubIssues={ghCaps.canMutate && ghCaps.scopeIntegrated}
+        closeGithubOnComplete={binding?.close_issue_on_complete !== false}
+        dependenciesEnabled={scope.dependencies_enabled !== false}
+        advancedExportEnabled={scope.advanced_export_enabled !== false}
+        onDelete={async (task, opts) => {
           try {
-            await deleteTask.mutateAsync(task.id)
-            toast.push('Task deleted', 'success')
+            await deleteTasksWithGithubOption([task], opts?.closeGithubIssues === true)
           } catch (e) {
             toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
+            throw e
           }
         }}
+        onDeleteTasks={
+          access.canEdit
+            ? async (tasksToDelete, opts) => {
+                await deleteTasksWithGithubOption(
+                  tasksToDelete,
+                  opts?.closeGithubIssues === true,
+                )
+              }
+            : undefined
+        }
         onReorder={(ids) => {
           reorderTasks.mutate(ids, {
             onError: (e) =>
@@ -595,12 +732,41 @@ export function ScopePage() {
           })
         }}
         onQuickAdd={async (input) => {
-          await createTask.mutateAsync({
+          const task = await createTask.mutateAsync({
             name: input.name,
             description: input.description,
             endDate: input.endDate,
             tagIds: input.tagIds,
           })
+          if (
+            input.createGithubIssue &&
+            ghCaps.canMutate &&
+            ghCaps.scopeIntegrated &&
+            task?.id
+          ) {
+            try {
+              const res = await createIssueForTask({
+                taskId: task.id,
+                title: task.name,
+                body: task.description ?? undefined,
+              })
+              await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+              toast.push(
+                res.project_added
+                  ? 'Task added · GitHub issue created (on Project board)'
+                  : 'Task added · GitHub issue created',
+                'success',
+              )
+            } catch (e) {
+              toast.push(
+                e instanceof Error
+                  ? `Task added, but GitHub issue failed: ${e.message}`
+                  : 'Task added, but GitHub issue failed',
+                'error',
+              )
+            }
+            return
+          }
           toast.push('Task added', 'success')
         }}
         onOpenDetailedAdd={() => {
@@ -751,20 +917,59 @@ export function ScopePage() {
             })
             toast.push('Task updated', 'success')
           } else {
-            await createTask.mutateAsync({
+            const task = await createTask.mutateAsync({
               name: values.name,
               description: values.description || null,
               endDate: values.endDate,
               tagIds: values.tagIds,
             })
-            toast.push('Task created', 'success')
+            if (
+              values.createGithubIssue &&
+              ghCaps.canMutate &&
+              ghCaps.scopeIntegrated &&
+              task?.id
+            ) {
+              try {
+                const res = await createIssueForTask({
+                  taskId: task.id,
+                  title: task.name,
+                  body: task.description ?? undefined,
+                })
+                await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+                toast.push(
+                  res.project_added
+                    ? 'Task created · GitHub issue created (on Project board)'
+                    : 'Task created · GitHub issue created',
+                  'success',
+                )
+              } catch (e) {
+                toast.push(
+                  e instanceof Error
+                    ? `Task created, but GitHub issue failed: ${e.message}`
+                    : 'Task created, but GitHub issue failed',
+                  'error',
+                )
+              }
+            } else {
+              toast.push('Task created', 'success')
+            }
           }
         }}
+        githubConfig={
+          editingTask ? githubByTask.get(editingTask.id) ?? null : null
+        }
+        canCloseGithubIssues={ghCaps.canMutate && ghCaps.scopeIntegrated}
+        canCreateGithubIssue={
+          !editingTask && ghCaps.canMutate && ghCaps.scopeIntegrated
+        }
+        githubRepoLabel={displayRepo}
         onDelete={
           editingTask
-            ? async () => {
-                await deleteTask.mutateAsync(editingTask.id)
-                toast.push('Task deleted', 'success')
+            ? async (opts) => {
+                await deleteTasksWithGithubOption(
+                  [editingTask],
+                  opts?.closeGithubIssues === true,
+                )
               }
             : undefined
         }
@@ -911,6 +1116,8 @@ export function ScopePage() {
             id: scope.id,
             name: values.name,
             description: values.description || null,
+            dependencies_enabled: values.dependenciesEnabled,
+            advanced_export_enabled: values.advancedExportEnabled,
           })
           toast.push('Project updated', 'success')
           await qc.invalidateQueries({ queryKey: ['scope', scopeId] })

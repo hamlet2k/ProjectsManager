@@ -202,10 +202,23 @@ export function DashboardPage() {
                 id: editing.id,
                 name: values.name,
                 description: values.description || null,
+                dependencies_enabled: values.dependenciesEnabled,
+                advanced_export_enabled: values.advancedExportEnabled,
               })
               toast.push('Project updated', 'success')
             } else {
-              await createScope.mutateAsync(values)
+              const created = await createScope.mutateAsync({
+                name: values.name,
+                description: values.description || undefined,
+              })
+              // RPC create uses DB defaults (on); patch if user chose simpler tools
+              if (!values.dependenciesEnabled || !values.advancedExportEnabled) {
+                await updateScope.mutateAsync({
+                  id: created.id,
+                  dependencies_enabled: values.dependenciesEnabled,
+                  advanced_export_enabled: values.advancedExportEnabled,
+                })
+              }
               toast.push('Project created', 'success')
             }
           } catch (e) {

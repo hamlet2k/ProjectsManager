@@ -68,7 +68,11 @@ export const Icons = {
   /** Task dependencies / blockers */
   Dependencies: (p: IconProps) => <Bi name="diagram-3" {...p} />,
   List: (p: IconProps) => <Bi name="list-task" {...p} />,
+  /** Hamburger / overflow menu */
+  Menu: (p: IconProps) => <Bi name="list" {...p} />,
   People: (p: IconProps) => <Bi name="people" {...p} />,
   Help: (p: IconProps) => <Bi name="question-circle" {...p} />,
   Markdown: (p: IconProps) => <Bi name="markdown" {...p} />,
+  /** Coffee / support (Ko-fi style cup) */
+  Cup: (p: IconProps) => <Bi name="cup-hot" {...p} />,
 }

@@ -58,7 +58,7 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [x] Esc cancels task tag editor / closes expanded task details (modals already Esc)
 - [x] Auto-collapse filters after tag selection / search Enter on mobile
 - [x] Global + contextual keyboard shortcuts consolidated; titles + aria-keyshortcuts on keybound controls
-- [x] Select which icons show collapsed vs expanded on task rows (complete/GH/deps/edit always; export+delete when expanded)
+- [x] Task row action icons always visible (export/copy + delete restored; no collapsed-only subset)
 - [x] Rename UI “end date” → “due date” everywhere (labels already Due date)
 - [x] Clearer drag-reorder hints when sort is Tags / not Rank
 - [x] Due-date group sort (today / tomorrow / next week / month / future / none)
@@ -102,7 +102,8 @@ Prioritized for a solid product before deep GitHub, then chatbot/AI.
 - [ ] **Comprehensive help site/page** explaining the app and features (GitHub matrix, share roles, tags, sync LWW, etc.)
 - [ ] Contextual **Help links** from Settings / GitHub modal / Share / empty states into the right help section
 - [ ] Help index entry in navbar (once help content exists)
-- [x] Advanced import/export (issue #49 core): unified modal, formats (plain/checklist/AI backlog/JSON/CSV), full metadata toggle, AI instructions field, copy + download, paste/upload import with preview — user/scope `advanced_export_enabled` DB prefs still optional polish
+- [x] Advanced import/export (issue #49 core): unified modal, formats (plain/checklist/AI backlog/JSON/CSV), full metadata toggle, AI instructions field, copy + download, paste/upload import with preview
+- [x] Project feature flags: `dependencies_enabled` + `advanced_export_enabled` (edit project; defaults on; simple copy when advanced off)
 - [x] Rename scopes → projects in UI (internal DB still `scopes`)
 
 ### Explicitly deferred / N/A on new stack

@@ -92,7 +92,16 @@ export async function createScope(input: {
 
 export async function updateScope(
   id: string,
-  patch: Partial<Pick<Scope, 'name' | 'description' | 'rank'>>,
+  patch: Partial<
+    Pick<
+      Scope,
+      | 'name'
+      | 'description'
+      | 'rank'
+      | 'dependencies_enabled'
+      | 'advanced_export_enabled'
+    >
+  >,
 ) {
   const { data, error } = await getSupabase()
     .from('scopes')

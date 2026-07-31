@@ -24,3 +24,4 @@ id-map.json
 
 # Supabase CLI local state
 supabase/.temp/
+.env*

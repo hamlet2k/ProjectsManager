@@ -30,3 +30,4 @@ id-map.json
 *.sw?
 
 .vercel
+.env*

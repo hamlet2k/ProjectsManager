@@ -28,6 +28,16 @@ export type Scope = {
   rank: number
   owner_id: string
   legacy_id: number | null
+  /**
+   * Project feature: show dependency pills / manage UI.
+   * When false, app still stores edges but hides the chrome (simpler lists).
+   */
+  dependencies_enabled?: boolean
+  /**
+   * Project feature: full Import/Export formats from the copy control.
+   * When false, copy actions paste plain checklist text immediately.
+   */
+  advanced_export_enabled?: boolean
   created_at: string
   updated_at: string
 }

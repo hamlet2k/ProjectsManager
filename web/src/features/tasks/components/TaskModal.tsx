@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Textarea } from '@/components/ui/Input'
-import { useConfirm } from '@/components/ui/ConfirmDialog'
 import type { Tag, Task } from '@/lib/supabase/types'
 import { cn } from '@/lib/utils'
 import { Icons } from '@/components/icons'
@@ -10,6 +9,12 @@ import { isModKey, TASK_SHORTCUTS } from '@/lib/keyboardShortcuts'
 import { InlineTagAdd } from '@/features/tasks/components/InlineTagAdd'
 import { isGithubSystemTag } from '@/features/github/systemTag'
 import { MarkdownHelp } from '@/components/ui/MarkdownHelp'
+import { TaskDeleteConfirm, type TaskDeleteMode } from '@/features/tasks/components/TaskDeleteConfirm'
+import type { TaskGitHubConfig } from '@/lib/supabase/types'
+import {
+  loadLastNewTaskTagIds,
+  saveLastNewTaskTagIds,
+} from '@/features/tasks/lastNewTaskTags'
 
 type Props = {
   open: boolean
@@ -22,8 +27,16 @@ type Props = {
     description: string
     endDate: string | null
     tagIds: string[]
+    /** New task only: also create + link a GitHub issue. */
+    createGithubIssue?: boolean
   }) => Promise<void>
-  onDelete?: () => Promise<void>
+  onDelete?: (opts?: { closeGithubIssues?: boolean }) => Promise<void>
+  /** GitHub link for delete confirm (option C). */
+  githubConfig?: TaskGitHubConfig | null
+  canCloseGithubIssues?: boolean
+  /** New task: show “create GitHub issue” option. */
+  canCreateGithubIssue?: boolean
+  githubRepoLabel?: string | null
   /** Create a project tag (for inline + tag). */
   onCreateTag?: (name: string) => Promise<Tag>
   /** New task only: create task from a GitHub issue instead. */
@@ -38,36 +51,60 @@ export function TaskModal({
   selectedTagIds = [],
   onSubmit,
   onDelete,
+  githubConfig = null,
+  canCloseGithubIssues = false,
+  canCreateGithubIssue = false,
+  githubRepoLabel = null,
   onCreateTag,
   onImportFromGithub,
 }: Props) {
-  const confirm = useConfirm()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [endDate, setEndDate] = useState('')
   const [tagIds, setTagIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [createGithubIssue, setCreateGithubIssue] = useState(
+    () => localStorage.getItem('pm-create-gh-on-add') === 'true',
+  )
 
   useEffect(() => {
     if (!open) return
     setName(initial?.name ?? '')
     setDescription(initial?.description ?? '')
     setEndDate(initial?.end_date ? initial.end_date.slice(0, 10) : '')
-    setTagIds(selectedTagIds)
     setError(null)
-  }, [open, initial, selectedTagIds])
+    if (initial) {
+      setTagIds(selectedTagIds)
+    } else {
+      // New task: parent may pass overrides (e.g. future); else last selection
+      const valid = tags.map((t) => t.id)
+      setTagIds(
+        selectedTagIds.length > 0
+          ? selectedTagIds.filter((id) => valid.includes(id))
+          : loadLastNewTaskTagIds(valid),
+      )
+      setCreateGithubIssue(localStorage.getItem('pm-create-gh-on-add') === 'true')
+    }
+  }, [open, initial, selectedTagIds, tags])
 
   const save = async () => {
     if (!name.trim() || saving) return
     setSaving(true)
     setError(null)
     try {
+      if (!initial) {
+        localStorage.setItem('pm-create-gh-on-add', String(createGithubIssue))
+        saveLastNewTaskTagIds(tagIds)
+      }
       await onSubmit({
         name: name.trim(),
         description: description.trim(),
         endDate: endDate ? new Date(endDate).toISOString() : null,
         tagIds,
+        createGithubIssue: !initial && canCreateGithubIssue ? createGithubIssue : undefined,
       })
       onClose()
     } catch (e) {
@@ -94,11 +131,16 @@ export function TaskModal({
         setSaving(true)
         setError(null)
         try {
+          if (!initial) {
+            localStorage.setItem('pm-create-gh-on-add', String(createGithubIssue))
+            saveLastNewTaskTagIds(tagIds)
+          }
           await onSubmit({
             name: name.trim(),
             description: description.trim(),
             endDate: endDate ? new Date(endDate).toISOString() : null,
             tagIds,
+            createGithubIssue: !initial && canCreateGithubIssue ? createGithubIssue : undefined,
           })
           onClose()
         } catch (err) {
@@ -110,7 +152,19 @@ export function TaskModal({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, name, description, endDate, tagIds, saving, onSubmit, onClose])
+  }, [
+    open,
+    name,
+    description,
+    endDate,
+    tagIds,
+    saving,
+    onSubmit,
+    onClose,
+    initial,
+    createGithubIssue,
+    canCreateGithubIssue,
+  ])
 
   return (
     <Modal
@@ -124,28 +178,8 @@ export function TaskModal({
             {initial && onDelete ? (
               <Button
                 variant="danger"
-                disabled={saving}
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: 'Delete task?',
-                    message: initial.name
-                      ? `Delete “${initial.name}”? This cannot be undone.`
-                      : 'Delete this task? This cannot be undone.',
-                    confirmLabel: 'Delete',
-                    cancelLabel: 'Cancel',
-                    danger: true,
-                  })
-                  if (!ok) return
-                  setSaving(true)
-                  try {
-                    await onDelete()
-                    onClose()
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : 'Delete failed')
-                  } finally {
-                    setSaving(false)
-                  }
-                }}
+                disabled={saving || deleteBusy}
+                onClick={() => setDeleteOpen(true)}
               >
                 Delete
               </Button>
@@ -225,6 +259,28 @@ export function TaskModal({
             </div>
           </div>
         </Field>
+        {!initial && canCreateGithubIssue ? (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={createGithubIssue}
+              onChange={(e) => setCreateGithubIssue(e.target.checked)}
+              disabled={saving}
+            />
+            <span>
+              Create GitHub issue
+              <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                Opens a new issue on{' '}
+                <strong className="text-[var(--color-text)]">
+                  {githubRepoLabel ?? 'the linked repository'}
+                </strong>{' '}
+                and links it to this task
+              </span>
+            </span>
+          </label>
+        ) : null}
+
         <Field label="Description (Markdown)" htmlFor="task-desc">
           <div className="mb-1.5 flex justify-end">
             <MarkdownHelp />
@@ -281,6 +337,39 @@ export function TaskModal({
           </div>
         </Field>
       </div>
+
+      {initial && onDelete ? (
+        <TaskDeleteConfirm
+          open={deleteOpen}
+          tasks={[initial]}
+          githubByTask={
+            githubConfig
+              ? new Map([[initial.id, githubConfig]])
+              : undefined
+          }
+          canCloseGithub={canCloseGithubIssues}
+          busy={deleteBusy}
+          onCancel={() => {
+            if (!deleteBusy) setDeleteOpen(false)
+          }}
+          onConfirm={(mode: TaskDeleteMode) => {
+            void (async () => {
+              setDeleteBusy(true)
+              setSaving(true)
+              try {
+                await onDelete({ closeGithubIssues: mode === 'close' })
+                setDeleteOpen(false)
+                onClose()
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Delete failed')
+              } finally {
+                setDeleteBusy(false)
+                setSaving(false)
+              }
+            })()
+          }}
+        />
+      ) : null}
     </Modal>
   )
 }

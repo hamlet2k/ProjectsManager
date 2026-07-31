@@ -112,7 +112,26 @@ Login → **Continue with GitHub**.
 
 ---
 
-## 3. SMTP recommendation (emails: signup confirm, magic link, reset)
+## 3. Email templates (branded)
+
+Auth email HTML lives in **`supabase/templates/`** (confirm signup, magic link, reset password, invite, email change, reauth, plus security notifications).
+
+```bash
+# Rebuild HTML from the shared layout
+node supabase/templates/generate.mjs
+
+# Push to hosted Supabase (Management API)
+# Token: https://supabase.com/dashboard/account/tokens
+export SUPABASE_ACCESS_TOKEN=sbp_...
+node supabase/templates/apply-to-hosted.mjs
+```
+
+Or paste subjects/body from those files into **Dashboard → Authentication → Email Templates**.  
+See `supabase/templates/README.md`.
+
+---
+
+## 4. SMTP recommendation (emails: signup confirm, magic link, reset)
 
 ### Recommendation: **Resend** (best balance for a free/personal app)
 
@@ -154,7 +173,7 @@ Official-style reference: Supabase docs “Send emails with custom SMTP” + Res
 
 ---
 
-## 4. Email confirmation (optional)
+## 5. Email confirmation (optional)
 
 **Authentication → Providers → Email**
 
@@ -165,7 +184,7 @@ Official-style reference: Supabase docs “Send emails with custom SMTP” + Res
 
 ---
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
@@ -178,7 +197,7 @@ Official-style reference: Supabase docs “Send emails with custom SMTP” + Res
 
 ---
 
-## 6. Security notes
+## 7. Security notes
 
 - Never put OAuth **client secrets** in the Vite app — only in Supabase dashboard.
 - GitHub **PAT** in Settings (task issues) ≠ GitHub **OAuth App** (login).
