@@ -613,7 +613,8 @@ export function TaskBoard({
                 <button
                   type="button"
                   className="sticky-pill sticky-pill-bubble"
-                  title="Add task"
+                  title={`${TASK_SHORTCUTS.focusAdd.description} (${TASK_SHORTCUTS.focusAdd.combo()})`}
+                  aria-keyshortcuts="Control+ArrowUp Meta+ArrowUp"
                   onClick={() => {
                     openAdd()
                     queueMicrotask(() => quickRef.current?.focus())
