@@ -1,6 +1,8 @@
 # GitHub integration: user vs project (adapted from #35)
 
-_Adapted for the current contract: **one project → one repository**, user opt-in, issue links are project-global, read-only visibility when preference is off but the project is still integrated._
+_Last updated 2026-07-31._
+
+Adapted for the current contract: **one project → one default repository**, user opt-in, issue links project-global, read-only when preference is off but the project is still integrated.
 
 Source of old requirements: [issue #35](https://github.com/hamlet2k/ProjectsManager/issues/35).
 
@@ -23,9 +25,14 @@ Token is stored encrypted when you save a PAT. **Turning preference off does not
 
 | Action | Result |
 |--------|--------|
-| See repo / issue # / milestones | Yes |
+| See repo / issue # / milestones / blocked-by | Yes |
 | Create / sync / close issues | Yes (if editor/owner + valid PAT) |
-| Change linked repo | Yes (editor/owner). Changing an existing link is an **override** → confirm + **notify** other members |
+| Create issue when adding a task | Optional checkbox (remembered; default off) |
+| Link / import existing issue | Yes |
+| App task dependencies + GH blocked-by sync | Yes when both ends linked (and project deps enabled) |
+| Delete task | Unlink only, or close open issue then delete (**never** delete issue on GitHub) |
+| Complete task | Optional close issue if `close_issue_on_complete` |
+| Change linked repo | Yes (editor/owner). Existing link change = **override** → confirm + **notify** |
 
 ### B. User preference **OFF** + project **still linked** (by anyone)
 
@@ -149,6 +156,8 @@ Even with **one active default repo** for *new* create/link:
 
 - Capabilities: `web/src/features/github/visibility.ts`
 - Settings toggle + confirm: `web/src/pages/SettingsPage.tsx`
-- Project modal: `web/src/pages/ScopePage.tsx`
+- Project GitHub + tasks: `web/src/pages/ScopePage.tsx`
+- Edge API: `supabase/functions/github-proxy/`, `github-credentials/`
 - Notify RPC: `supabase/migrations/20260730000000_github_binding_notifications.sql`
-- Repo accents: `web/src/features/github/repoAccent.ts`
+- Repo accents / filters: `web/src/features/github/repoAccent.ts`
+- Delete confirm (option C): `web/src/features/tasks/components/TaskDeleteConfirm.tsx`

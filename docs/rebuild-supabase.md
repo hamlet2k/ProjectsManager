@@ -1,35 +1,52 @@
-# Rebuild: Vite + React + Supabase + Vercel
+# Rebuild notes (Vite + React + Supabase + Vercel)
 
-Prefer the root [README.md](../README.md) for setup.
+_Status: **complete on `main`** (2026-07-31, PR #130). Prefer [../README.md](../README.md) for setup._
 
-## Layout
+## Outcome
 
 | Path | Role |
 |------|------|
-| `web/` | New SPA — deploy to Vercel |
-| `supabase/` | Schema + Edge Functions |
-| `scripts/migrate-from-flask/` | Export/import old data |
-| `scripts/remove-legacy.ps1` | Deletes old Flask app after cutover |
-| `legacy-flask/` | Old app (temporary; remove when done) |
+| `web/` | Production SPA (Vercel) |
+| `supabase/` | Schema migrations, Edge Functions, auth email templates |
+| `scripts/migrate-from-flask/` | One-shot data export/import from the old DB |
+| `legacy-flask/` | Archived classic app (optional delete) |
 
-## Lifecycle
+## Lifecycle (done)
 
-1. **Develop** against Supabase + `web/`.
-2. **Migrate** data using scripts (reads DB; Flask code is only for reference/export).
-3. **Verify** production login and scopes/tasks.
-4. **Clean** — run `.\scripts\remove-legacy.ps1` so only the modern stack remains.
+1. Develop SPA against Supabase.  
+2. Migrate data from Postgres export where needed.  
+3. Production on Vercel + Auth redirects.  
+4. Feature work continues on product backlog — not “rebuild infrastructure.”
 
-## Schema source of truth
+## Schema
 
-- `supabase/migrations/20260727000000_init.sql`
+Migrations under `supabase/migrations/` (apply in timestamp order). Notable later ones:
 
-## Permission matrix (RLS)
+| Migration | Purpose |
+|-----------|---------|
+| `…_init.sql` | Core schema, profiles, scopes, tasks, tags, GitHub tables, RLS base |
+| `…_github_visibility_rls.sql` | Member read of bindings, `close_issue_on_complete` |
+| `…_github_binding_notifications.sql` | Binding change notify helpers |
+| `…_github_blocked_by.sql` | Issue blocked-by payload on task GitHub config |
+| `…_task_dependencies.sql` | App-native task dependencies |
+| `…_scope_feature_flags.sql` | `dependencies_enabled`, `advanced_export_enabled` |
+
+## Permission matrix (RLS / app)
 
 | Action | Owner | Editor | Viewer |
 |--------|:-----:|:------:|:------:|
-| View scope & tasks | ✅ | ✅ | ✅ |
+| View project & tasks | ✅ | ✅ | ✅ |
 | Create/edit/complete tasks | ✅ | ✅ | ❌ |
-| Delete task (own) | ✅ | ✅ (if owner_id) | ❌ |
-| Delete any task / scope | ✅ | ❌ | ❌ |
+| Delete tasks | ✅ | ✅* | ❌ |
+| Delete project | ✅ | ❌ | ❌ |
 | Manage shares & invite links | ✅ | ❌ | ❌ |
-| Own GitHub config rows | ✅ | ✅ | ✅ |
+| Configure GitHub binding | ✅ | ✅ (when allowed) | ❌ |
+| GitHub mutations (create/sync/close) | ✅** | ✅** | ❌ |
+
+\* Subject to app + RLS (editors can delete tasks they work on).  
+\*\* Requires user GitHub preference ON + credentials + project linked.
+
+## Related
+
+- Product backlog: [product-backlog.md](product-backlog.md)  
+- GitHub matrix: [github-integration-matrix.md](github-integration-matrix.md)  
