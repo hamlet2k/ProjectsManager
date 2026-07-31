@@ -1,0 +1,1740 @@
+// Supabase Edge Function: GitHub API proxy (repos, milestones, issues, sync)
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const GITHUB_API = 'https://api.github.com'
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+async function deriveKey(secret: string): Promise<CryptoKey> {
+  const enc = new TextEncoder()
+  const material = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, [
+    'deriveKey',
+  ])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode('projects-manager-github-v1'),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+async function decryptToken(payload: string, secret: string): Promise<string> {
+  const key = await deriveKey(secret)
+  const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))
+  const iv = raw.slice(0, 12)
+  const data = raw.slice(12)
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data)
+  return new TextDecoder().decode(plain)
+}
+
+/** GitHub accepts Bearer for classic (ghp_) and fine-grained (github_pat_) PATs. */
+function authHeader(token: string): string {
+  const t = token.trim()
+  return `Bearer ${t}`
+}
+
+async function gh(token: string, path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${GITHUB_API}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: authHeader(token),
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+  })
+}
+
+async function ghJson<T>(token: string, path: string, init?: RequestInit): Promise<T> {
+  const res = await gh(token, path, init)
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`GitHub ${res.status}: ${text.slice(0, 400)}`)
+  }
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+type ScopeConfig = {
+  user_id?: string
+  github_integration_enabled: boolean
+  github_repo_owner: string | null
+  github_repo_name: string | null
+  github_repo_id: number | null
+  github_milestone_number: number | null
+  github_milestone_title: string | null
+  github_project_id: string | null
+  github_project_name: string | null
+  github_label_name: string | null
+  close_issue_on_complete?: boolean
+  updated_at?: string
+}
+
+/** Decode PEM body (base64) → DER bytes. */
+function pemBodyToDer(pem: string, typeHint: string): Uint8Array {
+  const re = new RegExp(
+    `-----BEGIN[^-]*${typeHint}[^-]*-----[\\s\\S]*?-----END[^-]*${typeHint}[^-]*-----`,
+    'i',
+  )
+  const block = pem.match(re)?.[0] ?? pem
+  const b64 = block
+    .replace(/-----BEGIN[^-]+-----/g, '')
+    .replace(/-----END[^-]+-----/g, '')
+    .replace(/\s+/g, '')
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+function derToPem(der: Uint8Array, label: string): string {
+  // Avoid String.fromCharCode(...largeArray) stack limits on 2048-bit keys
+  let binary = ''
+  for (let i = 0; i < der.length; i++) binary += String.fromCharCode(der[i]!)
+  const b64 = btoa(binary)
+  const lines = b64.match(/.{1,64}/g) ?? [b64]
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----\n`
+}
+
+function encodeDerLength(len: number): Uint8Array {
+  if (len < 0x80) return Uint8Array.of(len)
+  if (len < 0x100) return Uint8Array.of(0x81, len)
+  if (len < 0x10000) return Uint8Array.of(0x82, (len >> 8) & 0xff, len & 0xff)
+  if (len < 0x1000000) {
+    return Uint8Array.of(0x83, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff)
+  }
+  return Uint8Array.of(
+    0x84,
+    (len >> 24) & 0xff,
+    (len >> 16) & 0xff,
+    (len >> 8) & 0xff,
+    len & 0xff,
+  )
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    o += p.length
+  }
+  return out
+}
+
+function encodeDerSequence(content: Uint8Array): Uint8Array {
+  return concatBytes(Uint8Array.of(0x30), encodeDerLength(content.length), content)
+}
+
+function encodeDerOctetString(content: Uint8Array): Uint8Array {
+  return concatBytes(Uint8Array.of(0x04), encodeDerLength(content.length), content)
+}
+
+/**
+ * GitHub downloads App keys as PKCS#1 (`BEGIN RSA PRIVATE KEY`).
+ * universal-github-app-jwt / WebCrypto only accept PKCS#8 (`BEGIN PRIVATE KEY`).
+ * Wrap PKCS#1 DER in a minimal PKCS#8 PrivateKeyInfo.
+ */
+function rsaPkcs1PemToPkcs8Pem(pkcs1Pem: string): string {
+  const pkcs1Der = pemBodyToDer(pkcs1Pem, 'RSA PRIVATE KEY')
+  // AlgorithmIdentifier: rsaEncryption OID 1.2.840.113549.1.1.1 + NULL
+  const algorithmIdentifier = Uint8Array.of(
+    0x30,
+    0x0d,
+    0x06,
+    0x09,
+    0x2a,
+    0x86,
+    0x48,
+    0x86,
+    0xf7,
+    0x0d,
+    0x01,
+    0x01,
+    0x01,
+    0x05,
+    0x00,
+  )
+  const version = Uint8Array.of(0x02, 0x01, 0x00) // INTEGER 0
+  const privateKey = encodeDerOctetString(pkcs1Der)
+  const pkcs8Der = encodeDerSequence(concatBytes(version, algorithmIdentifier, privateKey))
+  return derToPem(pkcs8Der, 'PRIVATE KEY')
+}
+
+/** Normalize PEM from secrets UI / Windows paste; convert PKCS#1 → PKCS#8 if needed. */
+function normalizeGitHubAppPrivateKey(raw: string): string {
+  let pem = raw.trim()
+  // Secrets often store literal \n; Windows paste may use \r\n
+  if (pem.includes('\\n')) pem = pem.replace(/\\n/g, '\n')
+  pem = pem.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+
+  if (pem.includes('BEGIN PRIVATE KEY')) return pem.endsWith('\n') ? pem : `${pem}\n`
+  if (pem.includes('BEGIN RSA PRIVATE KEY')) return rsaPkcs1PemToPkcs8Pem(pem)
+
+  throw new Error(
+    'GITHUB_APP_PRIVATE_KEY must be a PEM starting with BEGIN RSA PRIVATE KEY or BEGIN PRIVATE KEY',
+  )
+}
+
+/**
+ * Product feedback uses the "ProjectsManager Feedback Bot" GitHub App (or a
+ * dedicated machine token). Callers never need a personal PAT — same model as
+ * the classic Flask /api/feedback flow (utils/github_token.py).
+ *
+ * Secrets (edge function):
+ *   GITHUB_FEEDBACK_REPOSITORY  e.g. hamlet2k/ProjectsManager
+ *   GITHUB_APP_ID               App ID from the GitHub App settings page
+ *   GITHUB_INSTALLATION_ID      Installation id on that account/org
+ *   GITHUB_APP_PRIVATE_KEY      Full PEM from GitHub (PKCS#1 or PKCS#8 OK)
+ *
+ * Optional escape hatch for ops only:
+ *   GITHUB_FEEDBACK_TOKEN       fine-grained/classic PAT with Issues write
+ */
+async function getFeedbackGitHubToken(): Promise<string> {
+  const direct = (Deno.env.get('GITHUB_FEEDBACK_TOKEN') || '').trim()
+  if (direct) return direct
+
+  const appId = (Deno.env.get('GITHUB_APP_ID') || '').trim()
+  const installationId = (Deno.env.get('GITHUB_INSTALLATION_ID') || '').trim()
+  const rawKey = (Deno.env.get('GITHUB_APP_PRIVATE_KEY') || '').trim()
+  if (!appId || !installationId || !rawKey) {
+    throw new Error(
+      'Feedback bot is not configured. Set GITHUB_APP_ID, GITHUB_INSTALLATION_ID, and GITHUB_APP_PRIVATE_KEY (ProjectsManager Feedback Bot) on the edge function.',
+    )
+  }
+
+  let privateKeyPem: string
+  try {
+    privateKeyPem = normalizeGitHubAppPrivateKey(rawKey)
+  } catch (e) {
+    throw new Error(e instanceof Error ? e.message : 'Invalid GITHUB_APP_PRIVATE_KEY')
+  }
+
+  // Spread large PEMs carefully for btoa in derToPem — use chunked btoa if needed
+  const { createAppAuth } = await import('https://esm.sh/@octokit/auth-app@6.1.1')
+  const auth = createAppAuth({
+    appId,
+    privateKey: privateKeyPem,
+    installationId: Number(installationId),
+  })
+  try {
+    const result = await auth({ type: 'installation' })
+    if (!result?.token) throw new Error('GitHub App auth returned no installation token')
+    return result.token
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `Could not mint Feedback Bot installation token. Check App ID, installation id, PEM, and that the app is installed on the feedback repo. (${msg.slice(0, 240)})`,
+    )
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const authHeaderIn = req.headers.get('Authorization')
+    if (!authHeaderIn) return json({ error: 'Missing Authorization' }, 401)
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeaderIn } },
+    })
+    const {
+      data: { user },
+      error: userErr,
+    } = await userClient.auth.getUser()
+    if (userErr || !user) return json({ error: 'Unauthorized' }, 401)
+
+    const admin = createClient(supabaseUrl, serviceKey)
+    const body = await req.json().catch(() => ({}))
+    const action = body.action as string
+
+    // Product feedback → GitHub issue on the Projects Manager repo (GitHub App / feedback token).
+    // Does not require the user's personal PAT.
+    if (action === 'submit_feedback') {
+      const title = String(body.title ?? '').trim()
+      const description = String(body.description ?? body.body ?? '').trim()
+      const feedbackType = String(body.type ?? 'question').trim().toLowerCase()
+      const contact = String(body.contact ?? '').trim()
+      if (!title || !description) {
+        return json({ error: 'Title and description are required.' }, 400)
+      }
+      const typeLabel =
+        feedbackType === 'bug' || feedbackType === 'enhancement' || feedbackType === 'question'
+          ? feedbackType
+          : 'question'
+
+      const repoConfig = (Deno.env.get('GITHUB_FEEDBACK_REPOSITORY') || 'hamlet2k/ProjectsManager').trim()
+      const [owner, repoName] = repoConfig.split('/')
+      if (!owner || !repoName) {
+        return json({ error: 'GITHUB_FEEDBACK_REPOSITORY is invalid (expected owner/repo).' }, 500)
+      }
+
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('name, email, username')
+        .eq('id', user.id)
+        .maybeSingle()
+
+      const issueBody = [
+        `### Feedback (${typeLabel})`,
+        '',
+        description,
+        '',
+        '---',
+        `**From:** ${profile?.name || '—'} <${profile?.email || user.email || '—'}>`,
+        `**Username:** ${profile?.username || '—'}`,
+        `**User id:** ${user.id}`,
+        contact ? `**Contact / reply-to:** ${contact}` : '**Contact / reply-to:** (not provided)',
+        `**App URL:** ${String(body.appUrl ?? '').trim() || '—'}`,
+        `**Submitted:** ${new Date().toISOString()}`,
+      ].join('\n')
+
+      // Always use Feedback Bot (GitHub App) / dedicated token — never the user's PAT.
+      // That way every signed-in app user can submit issues without linking GitHub.
+      let feedbackToken: string
+      try {
+        feedbackToken = await getFeedbackGitHubToken()
+      } catch (e) {
+        return json(
+          {
+            error:
+              e instanceof Error
+                ? e.message
+                : 'Feedback bot is not configured on the server.',
+          },
+          500,
+        )
+      }
+
+      try {
+        const create = (labels: string[]) =>
+          ghJson<{ number: number; html_url: string }>(
+            feedbackToken,
+            `/repos/${owner}/${repoName}/issues`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                title: title.slice(0, 200),
+                body: issueBody,
+                labels,
+              }),
+            },
+          )
+        let issue: { number: number; html_url: string }
+        try {
+          issue = await create([typeLabel, 'feedback'])
+        } catch {
+          // Labels may not exist on the repo — still open the issue.
+          issue = await create([])
+        }
+        return json({
+          ok: true,
+          issue_number: issue.number,
+          issue_url: issue.html_url,
+          via: 'feedback_bot',
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not create feedback issue'
+        return json({ error: msg }, 400)
+      }
+    }
+
+    const secret = Deno.env.get('GITHUB_TOKEN_SECRET')
+    if (!secret || secret.length < 16) {
+      return json({ error: 'GITHUB_TOKEN_SECRET is not configured on the Edge Function' }, 500)
+    }
+
+    const { data: cred, error: credErr } = await admin
+      .from('github_credentials')
+      .select('token_encrypted')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (credErr) return json({ error: credErr.message }, 400)
+    if (!cred?.token_encrypted) {
+      return json({ error: 'No GitHub token configured. Save a PAT under Settings first.' }, 400)
+    }
+
+    let token: string
+    try {
+      token = (await decryptToken(cred.token_encrypted, secret)).trim()
+    } catch {
+      return json(
+        {
+          error:
+            'Could not decrypt stored token. Remove the token in Settings and save a new PAT (GITHUB_TOKEN_SECRET may have changed).',
+        },
+        400,
+      )
+    }
+    if (!token) return json({ error: 'Stored GitHub token is empty' }, 400)
+
+    if (action === 'test') {
+      try {
+        const me = await ghJson<{ login: string }>(token, '/user')
+        return json({ ok: true, login: me.login })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'test failed'
+        return json(
+          {
+            error: msg.includes('401')
+              ? 'GitHub rejected the token (401). Use a classic PAT with repo scope, or a fine-grained PAT with repository access + Issues read/write.'
+              : msg,
+          },
+          400,
+        )
+      }
+    }
+
+    if (action === 'list_repos') {
+      try {
+        type RepoRaw = {
+          id: number
+          name: string
+          owner: { login: string } | string
+          full_name: string
+        }
+        const repos: RepoRaw[] = []
+        let page = 1
+        // affiliation covers owner + collab + org for classic and most fine-grained tokens
+        while (page <= 5) {
+          const batch = await ghJson<RepoRaw[]>(
+            token,
+            `/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator,organization_member`,
+          )
+          repos.push(...batch)
+          if (batch.length < 100) break
+          page += 1
+        }
+        return json({
+          repositories: repos.map((r) => ({
+            id: r.id,
+            name: r.name,
+            owner: typeof r.owner === 'string' ? r.owner : r.owner.login,
+            full_name: r.full_name,
+          })),
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'list_repos failed'
+        return json({ error: msg }, 400)
+      }
+    }
+
+    if (action === 'list_milestones') {
+      const owner = String(body.owner ?? '')
+      const repo = String(body.repo ?? '')
+      if (!owner || !repo) return json({ error: 'owner and repo required' }, 400)
+      try {
+        const milestones = await ghJson<
+          Array<{ number: number; title: string; due_on: string | null; state: string }>
+        >(token, `/repos/${owner}/${repo}/milestones?state=all&per_page=100`)
+        return json({
+          milestones: milestones.map((m) => ({
+            number: m.number,
+            title: m.title,
+            due_on: m.due_on,
+            state: m.state,
+          })),
+        })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'list_milestones failed' }, 400)
+      }
+    }
+
+    if (action === 'list_projects') {
+      const owner = String(body.owner ?? '')
+      if (!owner) return json({ error: 'owner required' }, 400)
+      const query = `
+        query($login: String!) {
+          repositoryOwner(login: $login) {
+            ... on User { projectsV2(first: 20) { nodes { id title number url closed } } }
+            ... on Organization { projectsV2(first: 20) { nodes { id title number url closed } } }
+          }
+        }`
+      const res = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader(token),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, variables: { login: owner } }),
+      })
+      const payload = await res.json()
+      const nodes = payload?.data?.repositoryOwner?.projectsV2?.nodes ?? []
+      return json({
+        projects: nodes
+          .filter((n: { closed?: boolean } | null) => n && !n.closed)
+          .map((n: { id: string; title: string; number?: number; url?: string }) => ({
+            id: n.id,
+            title: n.title,
+            number: n.number,
+            url: n.url,
+          })),
+      })
+    }
+
+    /** One project → one repo: owner’s active config, else latest active. */
+    async function loadCanonicalScopeConfig(scopeId: string): Promise<ScopeConfig | null> {
+      const { data: scope } = await admin.from('scopes').select('owner_id').eq('id', scopeId).maybeSingle()
+      const { data: configs } = await admin
+        .from('scope_github_configs')
+        .select('*')
+        .eq('scope_id', scopeId)
+      const list = (configs ?? []) as ScopeConfig[]
+      const active = list.filter(
+        (c) => c.github_integration_enabled && c.github_repo_owner && c.github_repo_name,
+      )
+      if (active.length === 0) {
+        // Fallback: current user's row even if partially filled
+        const mine = list.find((c) => c.user_id === user!.id)
+        return mine ?? null
+      }
+      if (scope?.owner_id) {
+        const ownerCfg = active.find((c) => c.user_id === scope.owner_id)
+        if (ownerCfg) return ownerCfg
+      }
+      return (
+        [...active].sort((a, b) =>
+          String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')),
+        )[0] ?? null
+      )
+    }
+
+    async function loadTaskLink(taskId: string) {
+      const { data: mine } = await admin
+        .from('task_github_configs')
+        .select('*')
+        .eq('task_id', taskId)
+        .eq('user_id', user!.id)
+        .maybeSingle()
+      if (mine?.github_issue_number) return mine
+
+      const { data: anyLink } = await admin
+        .from('task_github_configs')
+        .select('*')
+        .eq('task_id', taskId)
+        .not('github_issue_number', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return anyLink ?? mine ?? null
+    }
+
+    async function upsertTaskConfig(
+      taskId: string,
+      patch: Record<string, unknown>,
+      rowUserId?: string,
+    ) {
+      const uid = rowUserId ?? user!.id
+      const { data, error } = await admin
+        .from('task_github_configs')
+        .upsert({ task_id: taskId, user_id: uid, ...patch }, { onConflict: 'task_id,user_id' })
+        .select('*')
+        .single()
+      if (error) throw new Error(error.message)
+      return data
+    }
+
+    async function logSync(taskId: string, actionName: string, status: string, message?: string) {
+      await admin.from('sync_logs').insert({
+        task_id: taskId,
+        user_id: user!.id,
+        action: actionName,
+        status,
+        message: message ?? null,
+      })
+    }
+
+    async function ensureLabel(owner: string, repo: string, label: string) {
+      const check = await gh(token, `/repos/${owner}/${repo}/labels/${encodeURIComponent(label)}`)
+      if (check.ok) return
+      if (check.status === 404) {
+        const create = await gh(token, `/repos/${owner}/${repo}/labels`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name: label,
+            color: '0E8A16',
+            description: 'Projects Manager',
+          }),
+        })
+        if (!create.ok && create.status !== 422) {
+          const t = await create.text()
+          console.warn('ensureLabel failed', create.status, t.slice(0, 200))
+        }
+      }
+    }
+
+    type BlockedByRef = {
+      number: number
+      title: string
+      html_url: string
+      state: string
+      repo?: string | null
+    }
+
+    /**
+     * GitHub issue dependencies: issues that block this one.
+     * GET /repos/{owner}/{repo}/issues/{n}/dependencies/blocked_by
+     * Non-fatal if API unavailable (older GH / missing permission).
+     */
+    async function fetchBlockedBy(
+      owner: string,
+      repo: string,
+      issueNumber: number,
+    ): Promise<BlockedByRef[]> {
+      try {
+        const res = await gh(
+          token,
+          `/repos/${owner}/${repo}/issues/${issueNumber}/dependencies/blocked_by?per_page=20`,
+        )
+        if (!res.ok) {
+          // 404/410 = feature not available or no access — ignore
+          if (res.status === 404 || res.status === 410 || res.status === 403) return []
+          console.warn('blocked_by', res.status, (await res.text()).slice(0, 120))
+          return []
+        }
+        const issues = (await res.json()) as Array<{
+          number: number
+          title: string
+          html_url: string
+          state: string
+          repository_url?: string
+        }>
+        return (issues ?? []).map((i) => {
+          let repoLabel: string | null = null
+          if (i.repository_url) {
+            const m = i.repository_url.match(/repos\/([^/]+\/[^/]+)$/)
+            repoLabel = m?.[1] ?? null
+          }
+          return {
+            number: i.number,
+            title: i.title,
+            html_url: i.html_url,
+            state: i.state,
+            repo: repoLabel,
+          }
+        })
+      } catch (e) {
+        console.warn('fetchBlockedBy', e)
+        return []
+      }
+    }
+
+    type TaskIssueLink = {
+      task_id: string
+      github_issue_number: number | null
+      github_issue_id: number | null
+      github_repo_owner: string | null
+      github_repo_name: string | null
+    }
+
+    /** Map issue numbers → task ids for a scope + repo (one task per issue number). */
+    async function loadScopeIssueIndex(
+      scopeId: string,
+      owner: string,
+      repo: string,
+    ): Promise<Map<number, TaskIssueLink>> {
+      const map = new Map<number, TaskIssueLink>()
+      const { data: tasksInScope } = await admin
+        .from('tasks')
+        .select('id')
+        .eq('scope_id', scopeId)
+      const taskIds = (tasksInScope ?? []).map((t) => t.id as string)
+      if (taskIds.length === 0) return map
+
+      const { data: links } = await admin
+        .from('task_github_configs')
+        .select('task_id, github_issue_number, github_issue_id, github_repo_owner, github_repo_name')
+        .in('task_id', taskIds)
+        .eq('github_repo_owner', owner)
+        .eq('github_repo_name', repo)
+        .not('github_issue_number', 'is', null)
+
+      for (const l of (links ?? []) as TaskIssueLink[]) {
+        const n = l.github_issue_number
+        if (n == null) continue
+        if (!map.has(n)) map.set(n, l)
+      }
+      return map
+    }
+
+    /**
+     * GitHub blocked_by → app task_dependencies (upsert only; never deletes app edges).
+     * Only when the blocking issue is also linked to a task in the same project+repo.
+     */
+    async function importGithubBlockersToApp(
+      scopeId: string,
+      blockedTaskId: string,
+      owner: string,
+      repo: string,
+      blockedBy: BlockedByRef[],
+    ): Promise<number> {
+      if (!blockedBy.length) return 0
+      const index = await loadScopeIssueIndex(scopeId, owner, repo)
+      let added = 0
+      for (const b of blockedBy) {
+        const blockerLink = index.get(b.number)
+        if (!blockerLink || blockerLink.task_id === blockedTaskId) continue
+        const { error } = await admin.from('task_dependencies').upsert(
+          {
+            scope_id: scopeId,
+            blocked_task_id: blockedTaskId,
+            blocker_task_id: blockerLink.task_id,
+            created_by: user.id,
+          },
+          { onConflict: 'blocked_task_id,blocker_task_id' },
+        )
+        if (!error) added += 1
+        else console.warn('importGithubBlockersToApp upsert', error.message)
+      }
+      return added
+    }
+
+    /** POST GitHub blocked_by (non-fatal). */
+    async function githubAddBlockedBy(
+      owner: string,
+      repo: string,
+      blockedIssueNumber: number,
+      blockerIssueId: number,
+    ): Promise<boolean> {
+      try {
+        const res = await fetch(
+          `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedIssueNumber}/dependencies/blocked_by`,
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/vnd.github+json',
+              Authorization: authHeader(token),
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ issue_id: blockerIssueId }),
+          },
+        )
+        // 201 created, 422 often "already exists"
+        if (res.ok || res.status === 422) return true
+        if (res.status === 404 || res.status === 403 || res.status === 410) return false
+        console.warn('githubAddBlockedBy', res.status, (await res.text()).slice(0, 120))
+        return false
+      } catch (e) {
+        console.warn('githubAddBlockedBy', e)
+        return false
+      }
+    }
+
+    /**
+     * App task_dependencies → GitHub (add missing only).
+     * Pushes edges where this task is blocked or is a blocker, both sides linked same repo.
+     */
+    async function pushAppDepsToGithub(
+      scopeId: string,
+      taskId: string,
+      owner: string,
+      repo: string,
+    ): Promise<number> {
+      const { data: deps } = await admin
+        .from('task_dependencies')
+        .select('blocked_task_id, blocker_task_id')
+        .eq('scope_id', scopeId)
+        .or(`blocked_task_id.eq.${taskId},blocker_task_id.eq.${taskId}`)
+
+      if (!deps?.length) return 0
+
+      const index = await loadScopeIssueIndex(scopeId, owner, repo)
+      // also index by task_id
+      const byTask = new Map<string, TaskIssueLink>()
+      for (const link of index.values()) {
+        byTask.set(link.task_id, link)
+      }
+
+      let pushed = 0
+      for (const d of deps as { blocked_task_id: string; blocker_task_id: string }[]) {
+        const blocked = byTask.get(d.blocked_task_id)
+        const blocker = byTask.get(d.blocker_task_id)
+        if (
+          !blocked?.github_issue_number ||
+          !blocker?.github_issue_id ||
+          blocked.github_repo_owner !== owner ||
+          blocked.github_repo_name !== repo ||
+          blocker.github_repo_owner !== owner ||
+          blocker.github_repo_name !== repo
+        ) {
+          continue
+        }
+        const ok = await githubAddBlockedBy(
+          owner,
+          repo,
+          blocked.github_issue_number,
+          blocker.github_issue_id,
+        )
+        if (ok) pushed += 1
+      }
+      return pushed
+    }
+
+    /** After any link/sync: import GH→app, push app→GH, refresh blocked_by cache. */
+    async function reconcileDependencies(input: {
+      scopeId: string
+      taskId: string
+      owner: string
+      repo: string
+      issueNumber: number
+      configUserId?: string
+    }): Promise<{ blockedBy: BlockedByRef[]; imported: number; pushed: number }> {
+      // Push app edges first so re-fetch includes them
+      const pushed = await pushAppDepsToGithub(
+        input.scopeId,
+        input.taskId,
+        input.owner,
+        input.repo,
+      )
+      const blockedBy = await fetchBlockedBy(input.owner, input.repo, input.issueNumber)
+      const imported = await importGithubBlockersToApp(
+        input.scopeId,
+        input.taskId,
+        input.owner,
+        input.repo,
+        blockedBy,
+      )
+      return { blockedBy, imported, pushed }
+    }
+
+    /** Add issue/PR to a Projects V2 board (non-fatal if missing permission). */
+    async function addIssueToProjectV2(
+      projectId: string | null | undefined,
+      contentNodeId: string | null | undefined,
+    ): Promise<{ ok: boolean; error?: string }> {
+      if (!projectId || !contentNodeId) return { ok: false, error: 'no project or node' }
+      const mutation = `
+        mutation($projectId: ID!, $contentId: ID!) {
+          addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+            item { id }
+          }
+        }`
+      try {
+        const res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: {
+            Authorization: authHeader(token),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: mutation,
+            variables: { projectId, contentId: contentNodeId },
+          }),
+        })
+        const payload = await res.json()
+        if (payload?.errors?.length) {
+          const msg = payload.errors.map((e: { message?: string }) => e.message).join('; ')
+          console.warn('addProjectV2ItemById', msg)
+          return { ok: false, error: msg }
+        }
+        return { ok: true }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'project add failed'
+        console.warn('addProjectV2ItemById', msg)
+        return { ok: false, error: msg }
+      }
+    }
+
+    if (action === 'list_issues') {
+      const owner = String(body.owner ?? '')
+      const repo = String(body.repo ?? '')
+      const q = String(body.q ?? body.query ?? '').trim()
+      const state = String(body.state ?? 'open') // open | closed | all
+      if (!owner || !repo) return json({ error: 'owner and repo required' }, 400)
+      try {
+        // Prefer search API when filtering; otherwise list endpoint
+        type IssueRaw = {
+          id: number
+          node_id: string
+          number: number
+          title: string
+          html_url: string
+          state: string
+          body?: string | null
+          pull_request?: unknown
+          labels?: Array<{ name: string } | string>
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }
+        let issues: IssueRaw[] = []
+        if (q) {
+          const searchQ = [
+            `repo:${owner}/${repo}`,
+            'is:issue',
+            state === 'all' ? '' : `is:${state}`,
+            q,
+          ]
+            .filter(Boolean)
+            .join(' ')
+          const data = await ghJson<{ items: IssueRaw[] }>(
+            token,
+            `/search/issues?q=${encodeURIComponent(searchQ)}&per_page=30`,
+          )
+          issues = data.items ?? []
+        } else {
+          const st = state === 'all' ? 'all' : state === 'closed' ? 'closed' : 'open'
+          issues = await ghJson<IssueRaw[]>(
+            token,
+            `/repos/${owner}/${repo}/issues?state=${st}&per_page=40&sort=updated`,
+          )
+          // REST lists PRs as issues — drop PRs
+          issues = issues.filter((i) => !i.pull_request)
+        }
+        return json({
+          issues: issues.map((i) => ({
+            id: i.id,
+            node_id: i.node_id,
+            number: i.number,
+            title: i.title,
+            html_url: i.html_url,
+            state: i.state,
+            body: i.body ?? null,
+            labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name)),
+            milestone: i.milestone
+              ? {
+                  number: i.milestone.number,
+                  title: i.milestone.title,
+                  due_on: i.milestone.due_on,
+                }
+              : null,
+          })),
+        })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'list_issues failed' }, 400)
+      }
+    }
+
+    if (action === 'link_issue') {
+      const taskId = String(body.taskId ?? '')
+      const issueNumber = Number(body.issueNumber ?? body.number ?? 0)
+      if (!taskId || !issueNumber) {
+        return json({ error: 'taskId and issueNumber required' }, 400)
+      }
+
+      const existing = await loadTaskLink(taskId)
+      if (existing?.github_issue_number) {
+        return json(
+          {
+            error: `Task already linked to issue #${existing.github_issue_number}`,
+            config: existing,
+          },
+          400,
+        )
+      }
+
+      const { data: task, error: taskErr } = await admin
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single()
+      if (taskErr || !task) return json({ error: 'Task not found' }, 404)
+
+      const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json(
+          {
+            error:
+              'GitHub repo not configured for this project. Open project → GitHub and select a repository.',
+          },
+          400,
+        )
+      }
+
+      const owner = scopeCfg.github_repo_owner
+      const repo = scopeCfg.github_repo_name
+
+      try {
+        const issue = await ghJson<{
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+          title: string
+          body: string | null
+          pull_request?: unknown
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }>(token, `/repos/${owner}/${repo}/issues/${issueNumber}`)
+
+        if (issue.pull_request) {
+          return json({ error: 'Cannot link a pull request; pick an issue.' }, 400)
+        }
+
+        // Optional: fill empty task fields from issue
+        const fillFromIssue = body.fillFromIssue !== false
+        if (fillFromIssue) {
+          const patch: Record<string, unknown> = {}
+          if (!String(task.name ?? '').trim() && issue.title) patch.name = issue.title
+          if (!String(task.description ?? '').trim() && issue.body) {
+            patch.description = issue.body
+          }
+          if (issue.state === 'closed' && !task.completed) {
+            patch.completed = true
+            patch.completed_date = new Date().toISOString()
+          }
+          if (Object.keys(patch).length) {
+            await admin.from('tasks').update(patch).eq('id', taskId)
+          }
+        }
+
+        const depSync = await reconcileDependencies({
+          scopeId: task.scope_id as string,
+          taskId,
+          owner,
+          repo,
+          issueNumber: issue.number,
+        })
+
+        const config = await upsertTaskConfig(taskId, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: depSync.blockedBy,
+        })
+
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(taskId, 'link_issue', 'success', `Linked #${issue.number}`)
+        return json({
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'link failed'
+        await logSync(taskId, 'link_issue', 'error', msg)
+        return json({ error: msg }, 400)
+      }
+    }
+
+    if (action === 'import_issue') {
+      // Create a new task from a GitHub issue and link it
+      const scopeId = String(body.scopeId ?? '')
+      const issueNumber = Number(body.issueNumber ?? body.number ?? 0)
+      if (!scopeId || !issueNumber) {
+        return json({ error: 'scopeId and issueNumber required' }, 400)
+      }
+
+      const scopeCfg = await loadCanonicalScopeConfig(scopeId)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json({ error: 'GitHub repo not configured for this project.' }, 400)
+      }
+      const owner = scopeCfg.github_repo_owner
+      const repo = scopeCfg.github_repo_name
+
+      try {
+        const issue = await ghJson<{
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+          title: string
+          body: string | null
+          pull_request?: unknown
+          labels?: Array<{ name: string } | string>
+          milestone?: { number: number; title: string; due_on: string | null } | null
+        }>(token, `/repos/${owner}/${repo}/issues/${issueNumber}`)
+
+        if (issue.pull_request) {
+          return json({ error: 'Cannot import a pull request as a task.' }, 400)
+        }
+
+        // Avoid duplicate links to the same issue in this project
+        const { data: existingLinks } = await admin
+          .from('task_github_configs')
+          .select('task_id')
+          .eq('github_issue_number', issue.number)
+          .eq('github_repo_owner', owner)
+          .eq('github_repo_name', repo)
+        if (existingLinks?.length) {
+          const taskIds = existingLinks.map((r) => r.task_id as string)
+          const { data: sameScope } = await admin
+            .from('tasks')
+            .select('id')
+            .eq('scope_id', scopeId)
+            .in('id', taskIds)
+            .limit(1)
+            .maybeSingle()
+          if (sameScope?.id) {
+            return json(
+              {
+                error: `Issue #${issue.number} is already linked to a task in this project.`,
+                task_id: sameScope.id,
+              },
+              400,
+            )
+          }
+        }
+
+        const { data: maxRank } = await admin
+          .from('tasks')
+          .select('rank')
+          .eq('scope_id', scopeId)
+          .order('rank', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const rank = ((maxRank as { rank: number } | null)?.rank ?? -1) + 1
+
+        const { data: task, error: taskInsErr } = await admin
+          .from('tasks')
+          .insert({
+            scope_id: scopeId,
+            name: issue.title,
+            description: issue.body ?? null,
+            owner_id: user.id,
+            rank,
+            completed: issue.state === 'closed',
+            completed_date: issue.state === 'closed' ? new Date().toISOString() : null,
+            end_date: issue.milestone?.due_on ?? null,
+          })
+          .select('*')
+          .single()
+        if (taskInsErr || !task) {
+          return json({ error: taskInsErr?.message ?? 'Could not create task' }, 400)
+        }
+
+        // Map issue labels → tags
+        const labelNames = (issue.labels ?? [])
+          .map((l) => (typeof l === 'string' ? l : l.name))
+          .filter(Boolean)
+        for (const lab of labelNames) {
+          if (lab.toLowerCase() === 'github') continue
+          try {
+            let { data: tag } = await admin
+              .from('tags')
+              .select('id')
+              .eq('scope_id', scopeId)
+              .ilike('name', lab)
+              .maybeSingle()
+            if (!tag) {
+              const ins = await admin
+                .from('tags')
+                .insert({ scope_id: scopeId, name: lab })
+                .select('id')
+                .single()
+              tag = ins.data
+            }
+            if (tag?.id) {
+              await admin.from('task_tags').upsert(
+                { task_id: task.id, tag_id: tag.id },
+                { onConflict: 'task_id,tag_id' },
+              )
+            }
+          } catch {
+            /* skip label */
+          }
+        }
+
+        // Upsert link first so index can see this task when importing deps
+        await upsertTaskConfig(task.id, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: [],
+        })
+
+        const depSync = await reconcileDependencies({
+          scopeId,
+          taskId: task.id,
+          owner,
+          repo,
+          issueNumber: issue.number,
+        })
+
+        const config = await upsertTaskConfig(task.id, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number:
+            issue.milestone?.number ?? scopeCfg.github_milestone_number,
+          github_milestone_title: issue.milestone?.title ?? scopeCfg.github_milestone_title,
+          github_milestone_due_on: issue.milestone?.due_on ?? null,
+          github_blocked_by: depSync.blockedBy,
+        })
+
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(task.id, 'import_issue', 'success', `Imported #${issue.number}`)
+        return json({
+          task,
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'import failed'
+        return json({ error: msg }, 400)
+      }
+    }
+
+    /**
+     * Sync app task dependency to GitHub issue dependencies API.
+     * blockedTask is blocked by blockerTask (GitHub POST .../blocked_by { issue_id: blocker }).
+     */
+    if (action === 'sync_task_dependency') {
+      const blockedTaskId = String(body.blockedTaskId ?? '')
+      const blockerTaskId = String(body.blockerTaskId ?? '')
+      // body.action is the proxy route name; use mode for add|remove
+      const mode =
+        String(body.mode ?? 'add').toLowerCase() === 'remove' ? 'remove' : 'add'
+      if (!blockedTaskId || !blockerTaskId) {
+        return json({ error: 'blockedTaskId and blockerTaskId required' }, 400)
+      }
+
+      const loadLink = async (taskId: string) => {
+        const { data: mine } = await admin
+          .from('task_github_configs')
+          .select('*')
+          .eq('task_id', taskId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (mine?.github_issue_number && mine.github_issue_id) return mine
+        const { data: anyLink } = await admin
+          .from('task_github_configs')
+          .select('*')
+          .eq('task_id', taskId)
+          .not('github_issue_number', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        return anyLink
+      }
+
+      const blockedLink = await loadLink(blockedTaskId)
+      const blockerLink = await loadLink(blockerTaskId)
+
+      if (
+        !blockedLink?.github_issue_number ||
+        !blockedLink.github_repo_owner ||
+        !blockedLink.github_repo_name ||
+        !blockerLink?.github_issue_id ||
+        !blockerLink.github_issue_number
+      ) {
+        return json({
+          ok: true,
+          github_synced: false,
+          reason: 'One or both tasks are not linked to a GitHub issue',
+        })
+      }
+
+      // Only sync when same repo (GitHub API is per-repo)
+      if (
+        blockedLink.github_repo_owner !== blockerLink.github_repo_owner ||
+        blockedLink.github_repo_name !== blockerLink.github_repo_name
+      ) {
+        return json({
+          ok: true,
+          github_synced: false,
+          reason: 'Tasks are linked to different repositories; GitHub dependency not updated',
+        })
+      }
+
+      const owner = blockedLink.github_repo_owner as string
+      const repo = blockedLink.github_repo_name as string
+      const blockedNum = blockedLink.github_issue_number as number
+      const blockerIssueId = blockerLink.github_issue_id as number
+
+      try {
+        // Dependencies API is newer — use current GitHub API version header via raw fetch
+        const headers = {
+          Accept: 'application/vnd.github+json',
+          Authorization: authHeader(token),
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        }
+        if (mode === 'add') {
+          const res = await fetch(
+            `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedNum}/dependencies/blocked_by`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ issue_id: blockerIssueId }),
+            },
+          )
+          if (!res.ok && res.status !== 422) {
+            // 422 often means already exists
+            const text = await res.text()
+            if (res.status === 404 || res.status === 410) {
+              return json({
+                ok: true,
+                github_synced: false,
+                reason:
+                  'GitHub issue dependencies API not available for this repo (or PAT lacks access)',
+              })
+            }
+            return json({
+              ok: false,
+              github_synced: false,
+              reason: `GitHub ${res.status}: ${text.slice(0, 200)}`,
+            }, 400)
+          }
+        } else {
+          const res = await fetch(
+            `${GITHUB_API}/repos/${owner}/${repo}/issues/${blockedNum}/dependencies/blocked_by/${blockerIssueId}`,
+            { method: 'DELETE', headers },
+          )
+          if (!res.ok && res.status !== 404) {
+            const text = await res.text()
+            return json({
+              ok: false,
+              github_synced: false,
+              reason: `GitHub ${res.status}: ${text.slice(0, 200)}`,
+            }, 400)
+          }
+        }
+
+        // Refresh blocked_by cache on blocked task
+        const blockedBy = await fetchBlockedBy(owner, repo, blockedNum)
+        await upsertTaskConfig(
+          blockedTaskId,
+          { github_blocked_by: blockedBy },
+          (blockedLink.user_id as string) || user.id,
+        )
+
+        return json({ ok: true, github_synced: true, reason: null })
+      } catch (e) {
+        return json({
+          ok: false,
+          github_synced: false,
+          reason: e instanceof Error ? e.message : 'GitHub dependency sync failed',
+        }, 400)
+      }
+    }
+
+    if (action === 'create_issue') {
+      const taskId = String(body.taskId ?? '')
+      if (!taskId) return json({ error: 'taskId required' }, 400)
+
+      const existing = await loadTaskLink(taskId)
+      if (existing?.github_issue_number) {
+        return json({
+          error: `Task already linked to issue #${existing.github_issue_number}`,
+          config: existing,
+        }, 400)
+      }
+
+      const { data: task, error: taskErr } = await admin.from('tasks').select('*').eq('id', taskId).single()
+      if (taskErr || !task) return json({ error: 'Task not found' }, 404)
+
+      const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+      if (!scopeCfg?.github_repo_owner || !scopeCfg.github_repo_name) {
+        return json(
+          {
+            error:
+              'GitHub repo not configured for this project. Open project → GitHub and select a repository.',
+          },
+          400,
+        )
+      }
+
+      const owner = scopeCfg.github_repo_owner
+      const repo = scopeCfg.github_repo_name
+
+      // App task tags → GitHub labels (skip system "github" tag)
+      const { data: taskTagRows } = await admin
+        .from('task_tags')
+        .select('tag_id, tags(name)')
+        .eq('task_id', taskId)
+      const tagNames: string[] = []
+      for (const row of (taskTagRows ?? []) as { tags: { name: string } | null }[]) {
+        const n = row.tags?.name?.trim()
+        if (n && n.toLowerCase() !== 'github') tagNames.push(n)
+      }
+
+      const labels: string[] = []
+      const labelCandidates = [
+        ...tagNames,
+        ...(scopeCfg.github_label_name ? [scopeCfg.github_label_name] : []),
+      ]
+      for (const lab of [...new Set(labelCandidates)]) {
+        try {
+          await ensureLabel(owner, repo, lab)
+          labels.push(lab)
+        } catch {
+          /* skip bad labels */
+        }
+      }
+
+      const issueBody: Record<string, unknown> = {
+        title: String(body.title ?? task.name),
+        body: String(body.body ?? task.description ?? ''),
+      }
+      if (labels.length) issueBody.labels = labels
+      if (scopeCfg.github_milestone_number) issueBody.milestone = scopeCfg.github_milestone_number
+
+      try {
+        let issue: {
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+        }
+        try {
+          issue = await ghJson(token, `/repos/${owner}/${repo}/issues`, {
+            method: 'POST',
+            body: JSON.stringify(issueBody),
+          })
+        } catch (first) {
+          const msg = first instanceof Error ? first.message : ''
+          if (msg.includes('422') || msg.includes('Label') || msg.includes('milestone')) {
+            issue = await ghJson(token, `/repos/${owner}/${repo}/issues`, {
+              method: 'POST',
+              body: JSON.stringify({
+                title: issueBody.title,
+                body: issueBody.body,
+              }),
+            })
+          } else {
+            throw first
+          }
+        }
+
+        // New issues have no blockers yet; still store empty array
+        const config = await upsertTaskConfig(taskId, {
+          github_issue_id: issue.id,
+          github_issue_node_id: issue.node_id,
+          github_issue_number: issue.number,
+          github_issue_url: issue.html_url,
+          github_issue_state: issue.state,
+          github_repo_id: scopeCfg.github_repo_id,
+          github_repo_name: repo,
+          github_repo_owner: owner,
+          github_project_id: scopeCfg.github_project_id,
+          github_project_name: scopeCfg.github_project_name,
+          github_milestone_number: scopeCfg.github_milestone_number,
+          github_milestone_title: scopeCfg.github_milestone_title,
+          github_blocked_by: [],
+        })
+
+        // Optional: add new issue to the project's GitHub Project board
+        const projectAdd = await addIssueToProjectV2(
+          scopeCfg.github_project_id,
+          issue.node_id,
+        )
+
+        await logSync(
+          taskId,
+          'create_issue',
+          'success',
+          `Issue #${issue.number}${projectAdd.ok ? ' + project' : ''}`,
+        )
+        return json({
+          config,
+          project_added: projectAdd.ok,
+          project_error: projectAdd.error ?? null,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'create failed'
+        await logSync(taskId, 'create_issue', 'error', msg)
+        return json({ error: msg }, 400)
+      }
+    }
+
+    if (action === 'sync_task' || action === 'close_issue') {
+      const taskId = String(body.taskId ?? '')
+      if (!taskId) return json({ error: 'taskId required' }, 400)
+
+      const cfg = await loadTaskLink(taskId)
+      if (!cfg?.github_issue_number || !cfg.github_repo_owner || !cfg.github_repo_name) {
+        return json({ config: null, error: 'No linked issue for this task' }, 400)
+      }
+
+      const owner = cfg.github_repo_owner as string
+      const repo = cfg.github_repo_name as string
+      const number = cfg.github_issue_number as number
+      const rowUser = (cfg.user_id as string) || user.id
+      // Legacy clients may send pull/push; we use last-write-wins (LWW) unless forced.
+      const forceMode = body.mode === 'pull' || body.mode === 'push' ? String(body.mode) : null
+
+      try {
+        if (action === 'close_issue') {
+          // Require an active project-level GitHub binding (soft-disable must stop closes)
+          const { data: taskRow } = await admin
+            .from('tasks')
+            .select('scope_id')
+            .eq('id', taskId)
+            .maybeSingle()
+          if (taskRow?.scope_id) {
+            const active = await loadCanonicalScopeConfig(taskRow.scope_id as string)
+            if (!active?.github_repo_owner || !active.github_integration_enabled) {
+              return json(
+                {
+                  error:
+                    'GitHub is disabled for this project. Completing a task will not close the issue until you link a repository again.',
+                },
+                400,
+              )
+            }
+          }
+
+          const issue = await ghJson<{
+            id: number
+            node_id: string
+            number: number
+            html_url: string
+            state: string
+          }>(token, `/repos/${owner}/${repo}/issues/${number}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ state: 'closed' }),
+          })
+          const config = await upsertTaskConfig(
+            taskId,
+            {
+              github_issue_state: issue.state,
+              github_issue_url: issue.html_url,
+            },
+            rowUser,
+          )
+          await logSync(taskId, 'close_issue', 'success')
+          return json({ config })
+        }
+
+        const { data: task } = await admin.from('tasks').select('*').eq('id', taskId).single()
+        if (!task) return json({ error: 'Task not found' }, 404)
+
+        const scopeCfg = await loadCanonicalScopeConfig(task.scope_id)
+
+        type IssueFull = {
+          id: number
+          node_id: string
+          number: number
+          html_url: string
+          state: string
+          title: string
+          body: string | null
+          updated_at?: string
+          labels?: Array<{ name: string } | string>
+        }
+
+        // Always fetch GH first to compare timestamps
+        const remote = await ghJson<IssueFull>(token, `/repos/${owner}/${repo}/issues/${number}`)
+        const ghMs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
+        const appMs = task.updated_at ? new Date(task.updated_at as string).getTime() : 0
+        // GitHub wins on tie (remote edits often need to surface after soft expand)
+        const mode: 'pull' | 'push' =
+          forceMode === 'push' || forceMode === 'pull'
+            ? (forceMode as 'pull' | 'push')
+            : ghMs >= appMs
+              ? 'pull'
+              : 'push'
+
+        let issue: IssueFull = remote
+
+        async function applyGithubLabelsToTask(issueIn: IssueFull) {
+          const ghLabelNames = (issueIn.labels ?? [])
+            .map((l) => (typeof l === 'string' ? l : l.name))
+            .filter(Boolean)
+            .filter((n) => n.toLowerCase() !== 'github')
+            .filter((n) => n !== (scopeCfg?.github_label_name ?? ''))
+
+          const scopeId = task.scope_id as string
+          const tagIds: string[] = []
+          for (const name of ghLabelNames) {
+            let { data: existing } = await admin
+              .from('tags')
+              .select('id')
+              .eq('scope_id', scopeId)
+              .eq('name', name)
+              .maybeSingle()
+            if (!existing) {
+              const ins = await admin
+                .from('tags')
+                .insert({ scope_id: scopeId, name })
+                .select('id')
+                .single()
+              existing = ins.data
+            }
+            if (existing?.id) tagIds.push(existing.id)
+          }
+
+          // Pull: replace task tags with labels from the issue (no local #github system tag)
+          await admin.from('task_tags').delete().eq('task_id', taskId)
+          if (tagIds.length) {
+            await admin.from('task_tags').insert(tagIds.map((tag_id) => ({ task_id: taskId, tag_id })))
+          }
+        }
+
+        if (mode === 'push') {
+          // App is newer → write to GitHub
+          const { data: taskTagRows } = await admin
+            .from('task_tags')
+            .select('tag_id, tags(name)')
+            .eq('task_id', taskId)
+          const tagNames: string[] = []
+          for (const row of (taskTagRows ?? []) as { tags: { name: string } | null }[]) {
+            const n = row.tags?.name?.trim()
+            if (n && n.toLowerCase() !== 'github') tagNames.push(n)
+          }
+          const labels: string[] = []
+          const candidates = [
+            ...tagNames,
+            ...(scopeCfg?.github_label_name ? [scopeCfg.github_label_name] : []),
+          ]
+          for (const lab of [...new Set(candidates)]) {
+            try {
+              await ensureLabel(owner, repo, lab)
+              labels.push(lab)
+            } catch {
+              /* skip */
+            }
+          }
+          issue = await ghJson<IssueFull>(token, `/repos/${owner}/${repo}/issues/${number}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              title: task.name,
+              body: task.description ?? '',
+              labels,
+              state: task.completed ? 'closed' : 'open',
+            }),
+          })
+        } else {
+          // GitHub is newer → write to app
+          await admin
+            .from('tasks')
+            .update({
+              name: issue.title?.slice(0, 500) || task.name,
+              description: issue.body ?? null,
+            })
+            .eq('id', taskId)
+          await applyGithubLabelsToTask(issue)
+        }
+
+        // Ensure link fields exist before dependency index lookup
+        await upsertTaskConfig(
+          taskId,
+          {
+            github_issue_id: issue.id,
+            github_issue_node_id: issue.node_id,
+            github_issue_number: issue.number,
+            github_issue_url: issue.html_url,
+            github_issue_state: issue.state,
+          },
+          rowUser,
+        )
+
+        const depSync = await reconcileDependencies({
+          scopeId: task.scope_id as string,
+          taskId,
+          owner,
+          repo,
+          issueNumber: issue.number,
+          configUserId: rowUser,
+        })
+
+        const config = await upsertTaskConfig(
+          taskId,
+          {
+            github_issue_id: issue.id,
+            github_issue_node_id: issue.node_id,
+            github_issue_number: issue.number,
+            github_issue_url: issue.html_url,
+            github_issue_state: issue.state,
+            github_blocked_by: depSync.blockedBy,
+          },
+          rowUser,
+        )
+
+        if (issue.state === 'closed') {
+          await admin
+            .from('tasks')
+            .update({ completed: true, completed_date: new Date().toISOString() })
+            .eq('id', taskId)
+            .eq('completed', false)
+        } else if (mode === 'pull' && issue.state === 'open') {
+          await admin
+            .from('tasks')
+            .update({ completed: false, completed_date: null })
+            .eq('id', taskId)
+            .eq('completed', true)
+        }
+
+        await logSync(
+          taskId,
+          `sync_task_${mode}`,
+          'success',
+          `LWW ${mode} gh=${ghMs} app=${appMs} deps+${depSync.imported}/↑${depSync.pushed}`,
+        )
+        return json({
+          config,
+          mode,
+          githubUpdatedAt: remote.updated_at,
+          taskUpdatedAt: task.updated_at,
+          deps_imported: depSync.imported,
+          deps_pushed: depSync.pushed,
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'sync failed'
+        await logSync(taskId, action, 'error', msg)
+        return json({ error: msg }, 400)
+      }
+    }
+
+    return json({ error: `Unknown action: ${action}` }, 400)
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : 'Unexpected error' }, 500)
+  }
+})

@@ -1,0 +1,15 @@
+{
+  "name": "projects-manager",
+  "private": true,
+  "description": "Root tooling (Supabase CLI). Frontend lives in web/",
+  "scripts": {
+    "supabase": "supabase",
+    "db:link": "supabase link",
+    "functions:deploy": "supabase functions deploy"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.109.0",
+    "supabase": "^2.110.0",
+    "ws": "^8.21.1"
+  }
+}

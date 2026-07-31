@@ -1,0 +1,1077 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Bootswatch "Sketchy" inspired theme
+ * Hand-drawn borders, asymmetric radii, comic-ish type — not a literal notebook.
+ * Reference: https://bootswatch.com/sketchy/
+ */
+
+@theme {
+  --color-bg: #f7f7f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f0f0;
+  /* Soft sketch lines — grey, not harsh black */
+  --color-border: #b8bcc4;
+  --color-border-strong: #8b909a;
+  --color-text: #212529;
+  --color-muted: #6b7280;
+  --color-primary: #4b5563;
+  --color-primary-fg: #ffffff;
+  --color-danger: #4b5563;
+  --color-success: #28a745;
+  --color-warning: #ffc107;
+  --font-sans: Neucha, "Comic Sans MS", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Cabin Sketch", Neucha, cursive;
+  --radius-sketch: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --radius-sketch-sm: 125px 10px 115px 10px / 10px 115px 10px 125px;
+  --shadow-sketch: 1px 1px 0 rgba(75, 85, 99, 0.18);
+  --shadow-sketch-hover: 2px 2px 0 rgba(75, 85, 99, 0.22);
+  /* Shared selected/hover tones for filter chips + tag editor pills */
+  --color-tag-selected-bg: #5b6572;
+  --color-tag-selected-fg: #ffffff;
+  --color-tag-hover-bg: #e4e7ec;
+  --color-tag-hover-fg: #1f2937;
+}
+
+.dark {
+  --color-bg: #1a1a1a;
+  --color-surface: #2a2a2a;
+  --color-surface-2: #333333;
+  --color-border: #5c6370;
+  --color-border-strong: #8b919c;
+  --color-text: #f5f5f5;
+  --color-muted: #a1a8b3;
+  --color-primary: #c5cad3;
+  --color-primary-fg: #1a1a1a;
+  --color-danger: #ff6b6b;
+  --color-success: #51cf66;
+  --color-warning: #ffd43b;
+  --shadow-sketch: 1px 1px 0 rgba(200, 205, 215, 0.15);
+  --shadow-sketch-hover: 2px 2px 0 rgba(200, 205, 215, 0.2);
+  /* Mid slate — clearer than surface-2, softer than full primary fill */
+  --color-tag-selected-bg: #6d7684;
+  --color-tag-selected-fg: #f8fafc;
+  --color-tag-hover-bg: #3f4652;
+  --color-tag-hover-fg: #f8fafc;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+h1,
+h2,
+h3,
+.brand-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+/* Sketchy shell */
+.notebook-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(0, 0, 0, 0.02), transparent 40%),
+    radial-gradient(circle at 80% 60%, rgba(0, 0, 0, 0.025), transparent 45%),
+    var(--color-bg);
+}
+
+.dark .notebook-shell {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.03), transparent 40%),
+    var(--color-bg);
+}
+
+.notebook-nav {
+  position: sticky;
+  top: 0.65rem;
+  z-index: 40;
+  margin: 0.65rem auto 0;
+  max-width: 72rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch);
+}
+
+.notebook-card,
+.scope-card,
+.notebook-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch);
+}
+
+.notebook-panel {
+  padding: 1rem 1.15rem;
+}
+
+.scope-card {
+  padding: 0.9rem 1rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 8.5rem;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.scope-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-sketch-hover);
+}
+
+.tag-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-sketch-sm);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  padding: 0.2rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  user-select: none;
+}
+
+.tag-chip:hover {
+  background: var(--color-tag-hover-bg);
+  color: var(--color-tag-hover-fg);
+  border-color: var(--color-border-strong);
+}
+
+/* Selected filter tags — same tokens as editor pills */
+.tag-chip.active {
+  background: var(--color-tag-selected-bg);
+  border-color: var(--color-border-strong);
+  color: var(--color-tag-selected-fg);
+  font-weight: 600;
+}
+
+.tag-chip.active:hover {
+  background: var(--color-tag-selected-bg);
+  color: var(--color-tag-selected-fg);
+  filter: brightness(1.08);
+}
+
+.project-title {
+  font-family: var(--font-sans, inherit);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.scope-card a:hover .project-title,
+a.project-title-link:hover .project-title,
+a:hover .project-title {
+  text-decoration: none !important;
+}
+
+.tag-chip.system-tag {
+  cursor: default;
+  opacity: 0.9;
+  border-style: dashed;
+}
+
+/*
+ * Delete control: absolutely positioned badge so it never changes chip width
+ * or flex-wrap (avoids the mobile “tap → hover trash → wrap → miss select” bug).
+ * Desktop: show on hover or when selected. Touch: only when selected.
+ */
+.tag-chip .tag-chip-remove {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.4rem;
+  z-index: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-danger, #b91c1c);
+  line-height: 1;
+  font-size: 0.7rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+}
+
+.tag-chip:hover .tag-chip-remove,
+.tag-chip.active .tag-chip-remove,
+.tag-chip .tag-chip-remove:focus-visible {
+  display: inline-flex;
+}
+
+.tag-chip .tag-chip-remove:hover {
+  background: color-mix(in srgb, var(--color-danger, #b91c1c) 12%, var(--color-surface));
+  border-color: var(--color-danger, #b91c1c);
+}
+
+@media (hover: none) {
+  /* Sticky :hover on touch must not reveal delete on unselected chips */
+  .tag-chip:hover:not(.active) .tag-chip-remove {
+    display: none;
+  }
+
+  .tag-chip.active .tag-chip-remove {
+    display: inline-flex;
+  }
+}
+
+/* Tag editor pills — share selected/hover tokens with filter chips */
+.pill-badge.is-toggle {
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.pill-badge.is-toggle:hover {
+  background: var(--color-tag-hover-bg) !important;
+  color: var(--color-tag-hover-fg) !important;
+  border-color: var(--color-border-strong) !important;
+}
+
+.pill-badge.is-selected {
+  background: var(--color-tag-selected-bg) !important;
+  color: var(--color-tag-selected-fg) !important;
+  border-color: var(--color-border-strong) !important;
+  font-weight: 600;
+}
+
+.pill-badge.is-toggle.is-selected:hover {
+  background: var(--color-tag-selected-bg) !important;
+  color: var(--color-tag-selected-fg) !important;
+  filter: brightness(1.08);
+  opacity: 1;
+}
+
+.task-sortable {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.task-sortable.is-dragging {
+  z-index: 25;
+  touch-action: none;
+}
+
+/* Outer card: one sketchy shell; drawers slide open inside it */
+.task-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch);
+  overflow: hidden;
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.task-card:hover {
+  box-shadow: var(--shadow-sketch-hover);
+}
+
+.task-card.is-open {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sketch-hover);
+}
+
+.task-card.is-dragging {
+  opacity: 0.92;
+  border-color: var(--color-border-strong);
+}
+
+.task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.45rem 0.55rem;
+  min-height: 2.75rem;
+  box-shadow: none;
+}
+
+.task-row.completed .task-title {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
+.task-row.dragging {
+  /* dragging styles live on .task-card */
+}
+
+.task-card.flash-new,
+.task-row.flash-new {
+  animation: task-flash-new 2s ease;
+}
+
+@keyframes task-flash-new {
+  0% {
+    border-color: var(--color-primary);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--color-primary) 55%, transparent),
+      var(--shadow-sketch-hover);
+  }
+  40% {
+    border-color: var(--color-primary);
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--color-primary) 35%, transparent),
+      var(--shadow-sketch-hover);
+  }
+  100% {
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-sketch);
+  }
+}
+
+/* Main line: grip + title (+ optional pills) */
+.task-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Mobile: title row full width, actions on next line */
+@media (max-width: 640px) {
+  .task-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+  }
+
+  .task-row-main {
+    width: 100%;
+    flex: none;
+  }
+
+  .task-row-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+    padding-left: 1.75rem; /* align under title past grip */
+  }
+
+  .task-row .pill-badge {
+    display: none;
+  }
+}
+
+.grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Larger hit target so drag is easy next to the expand title */
+  width: 2rem;
+  height: 2rem;
+  margin: -0.25rem 0;
+  border: 0;
+  border-radius: var(--radius-sketch-sm);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  flex-shrink: 0;
+  touch-action: none;
+  padding: 0;
+  font: inherit;
+}
+
+.grip:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+.grip:active,
+.grip.is-active {
+  cursor: grabbing;
+  color: var(--color-text);
+}
+
+.grip:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.grip .bi {
+  pointer-events: none;
+}
+
+.task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: 0.15rem 0.25rem;
+  font-family: inherit;
+  text-decoration: none;
+}
+
+.task-title:hover {
+  text-decoration: none;
+  color: var(--color-text);
+  opacity: 0.85;
+}
+
+/*
+ * In-card drawers (details + tags): smooth height animation, no nested sketchy frame.
+ * Rolls down from the main row as part of the same card.
+ */
+.task-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+
+.task-drawer.open {
+  grid-template-rows: 1fr;
+}
+
+.task-drawer-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.task-drawer-body {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, var(--color-surface));
+  padding: 0.7rem 0.85rem 0.85rem;
+}
+
+.task-drawer-body.tags {
+  /* Slightly softer band so tags feel like a toolbar, not a second card */
+  background: color-mix(in srgb, var(--color-surface-2) 70%, var(--color-surface));
+}
+
+.dark .task-drawer-body {
+  background: color-mix(in srgb, var(--color-surface-2) 80%, #000 8%);
+}
+
+/* legacy class names kept as aliases if any remain */
+.task-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.task-expand.open {
+  grid-template-rows: 1fr;
+}
+.task-expand-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.task-expand-body {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 92%, var(--color-surface));
+  padding: 0.7rem 0.85rem 0.85rem;
+}
+
+.task-row.expanded-row {
+  /* open state on .task-card */
+}
+
+/* Pressed / selected toolbar buttons (Share / GitHub when active) */
+.btn-pressed {
+  background: var(--color-primary) !important;
+  color: var(--color-primary-fg) !important;
+  border-color: var(--color-border-strong) !important;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-sketch-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--color-surface-2);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow-sketch);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: var(--radius-sketch-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+/* Dependency pills: fixed max width + truncate (no “blocks” prefix in label) */
+.pill-badge.gh-blocked-by,
+.pill-badge.gh-blocking {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 9.5rem;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+}
+
+.pill-badge.gh-blocked-by .pill-badge-label,
+.pill-badge.gh-blocking .pill-badge-label {
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.pill-badge.gh-blocked-by .pill-badge-text,
+.pill-badge.gh-blocking .pill-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* “Blocked by” (this task waits on another) */
+.pill-badge.gh-blocked-by {
+  background: #fde8e8;
+  border-color: #c97a7a;
+  color: #8b2e2e;
+}
+
+.dark .pill-badge.gh-blocked-by {
+  background: rgba(200, 80, 80, 0.22);
+  border-color: #a85c5c;
+  color: #f0c0c0;
+}
+
+/* This task is a blocker for others */
+.pill-badge.gh-blocking {
+  background: #fff3e0;
+  border-color: #c9a06a;
+  color: #7a4e12;
+}
+
+.dark .pill-badge.gh-blocking {
+  background: rgba(200, 150, 60, 0.2);
+  border-color: #a88a4a;
+  color: #f0d8a0;
+}
+
+/* Row action: single dependencies control, status-colored */
+.icon-btn.dep-status-btn.dep-status-none {
+  color: var(--color-muted);
+}
+
+.icon-btn.dep-status-btn.dep-status-blocked {
+  color: #b33a3a;
+  background: rgba(200, 80, 80, 0.12);
+}
+
+.icon-btn.dep-status-btn.dep-status-blocking {
+  color: #a66b1a;
+  background: rgba(200, 150, 60, 0.14);
+}
+
+.dark .icon-btn.dep-status-btn.dep-status-blocked {
+  color: #f0a0a0;
+  background: rgba(200, 80, 80, 0.2);
+}
+
+.dark .icon-btn.dep-status-btn.dep-status-blocking {
+  color: #f0d090;
+  background: rgba(200, 150, 60, 0.18);
+}
+
+/* Multi-repo task links: pastel accent set inline; keep readable on hover */
+.pill-badge.gh-repo-pill {
+  max-width: 15rem;
+  gap: 0.25rem;
+}
+
+.pill-badge.gh-repo-pill .gh-repo-short {
+  max-width: 5.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill-badge.gh-repo-pill:hover {
+  filter: brightness(0.97);
+  background: inherit;
+  color: inherit;
+  border-color: inherit;
+}
+
+.dark .pill-badge.gh-repo-pill:hover {
+  filter: brightness(1.08);
+}
+
+/* Dot marks “not the project default” (legacy link) */
+.gh-legacy-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.gh-default-mark {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  margin-left: 0.15rem;
+}
+
+.github-repo-legend .gh-swatch {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.github-repo-legend .pill-badge.gh-repo-default {
+  font-weight: 700;
+}
+
+/* Filter panel: virtual repository chips (not #tags) */
+.tag-chip.tag-chip-repo {
+  gap: 0.3rem;
+  max-width: 14rem;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-icon {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-count {
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.tag-chip.tag-chip-repo .tag-chip-repo-default-mark {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+}
+
+.tag-chip.tag-chip-repo.active {
+  /* Selected state uses tag-chip.active; keep readable */
+}
+
+/* Inline “+ tag” — expands in-place, no full-width form row */
+.tag-chip.tag-add-trigger,
+.pill-badge.tag-add-trigger {
+  border-style: dashed;
+  color: var(--color-muted);
+  font-weight: 500;
+  gap: 0.2rem;
+}
+
+.tag-chip.tag-add-trigger:hover,
+.pill-badge.tag-add-trigger:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.tag-add-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: 11rem;
+  border-radius: var(--radius-sketch-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  padding: 0.15rem 0.35rem 0.15rem 0.45rem;
+  box-shadow: var(--shadow-sketch);
+  vertical-align: middle;
+}
+
+.tag-add-inline-pill {
+  /* match pill height roughly */
+  min-height: 1.5rem;
+}
+
+.tag-add-inline .tag-add-hash {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+.tag-add-inline .tag-add-input {
+  border: 0;
+  background: transparent;
+  outline: none;
+  min-width: 4rem;
+  max-width: 8rem;
+  padding: 0.1rem 0.15rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--color-text);
+}
+
+.tag-add-inline .tag-add-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.tag-add-inline .tag-add-confirm:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+.tag-add-inline .tag-add-confirm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Selected repo filter in legend — keep accent visible while selected */
+.github-repo-legend .pill-badge.gh-repo-filter-on,
+.github-repo-legend .pill-badge.is-toggle.is-selected {
+  box-shadow: 0 0 0 2px var(--color-primary);
+  font-weight: 700;
+}
+
+.github-repo-legend .pill-badge.is-toggle {
+  cursor: pointer;
+}
+
+.pill-badge:hover {
+  background: var(--color-primary);
+  border-color: var(--color-border-strong);
+  color: var(--color-primary-fg);
+}
+
+.quick-add {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch-sm);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch);
+}
+
+.quick-add input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 0.7rem 0.85rem;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--color-text);
+  outline: none;
+}
+
+.quick-add .quick-side {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+}
+
+.field-input {
+  width: 100%;
+  border-radius: var(--radius-sketch-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0.55rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--color-text);
+  outline: none;
+  box-shadow: none;
+}
+
+.field-input:focus {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sketch);
+}
+
+.field-input-wrap {
+  position: relative;
+}
+
+.field-input-wrap .field-input {
+  width: 100%;
+}
+
+.field-input-clear {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.field-input-clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+.kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  box-shadow: var(--shadow-sketch);
+}
+
+.notif-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sketch);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sketch-hover);
+  overflow: hidden;
+  z-index: 50;
+}
+
+.prose {
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.prose p {
+  margin: 0.5em 0;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.25rem;
+}
+
+.prose code {
+  font-size: 0.875em;
+  background: var(--color-surface-2);
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+}
+
+.prose pre {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  border-radius: var(--radius-sketch-sm);
+  overflow-x: auto;
+}
+
+.prose a {
+  color: var(--color-text);
+  text-decoration: underline;
+  text-decoration-style: wavy;
+}
+
+/* Sticky chrome floating pills — bubble FABs (distinct from row icon-btns) */
+.sticky-pill-bar {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  padding: 0 0.15rem;
+}
+
+.sticky-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.7rem 1.15rem;
+  min-height: 2.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  position: relative;
+}
+
+.sticky-pill-bubble {
+  box-shadow:
+    0 4px 14px rgba(15, 23, 42, 0.14),
+    0 1px 3px rgba(15, 23, 42, 0.08),
+    var(--shadow-sketch);
+}
+
+.dark .sticky-pill-bubble {
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.3),
+    var(--shadow-sketch);
+}
+
+.sticky-pill:hover {
+  transform: translate(-1px, -2px);
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.16),
+    var(--shadow-sketch-hover);
+}
+
+.sticky-pill-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--color-primary);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
+/*
+ * Sticky layer order (high → low):
+ *   1) App nav (z ~40)
+ *   2) Add/Filters chrome (pills + expanded panels) — always above groups
+ *   3) Tag group headers — flush under nav, but UNDER chrome so they never
+ *      cover floating pills or expanded filter/add panels when scrolling.
+ */
+.sticky-task-chrome {
+  z-index: 30;
+  top: 4.65rem;
+}
+
+/* When only pills (or mixed), sit just under the group-header band */
+.scope-task-layout[data-chrome='pills'] .sticky-task-chrome,
+.scope-task-layout[data-chrome='mixed'] .sticky-task-chrome {
+  top: 7.1rem;
+}
+
+.scope-task-layout[data-chrome='panels'] .sticky-task-chrome {
+  top: 4.65rem;
+}
+
+/* Elevated panels when sticky over the list (shadow only — keep sketchy borders) */
+.notebook-panel.floating-elevated {
+  box-shadow:
+    0 6px 20px rgba(15, 23, 42, 0.12),
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    var(--shadow-sketch);
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+}
+
+.dark .notebook-panel.floating-elevated {
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.25),
+    var(--shadow-sketch);
+}
+
+.task-group-header {
+  border-bottom: 1px dashed var(--color-border);
+  margin-top: 0;
+  margin-bottom: 0.35rem;
+  /* Flush under app nav */
+  top: 4.65rem;
+  /* Must stay BELOW sticky-task-chrome (30) so later groups can't cover pills/panels */
+  z-index: 10;
+  padding: 0.35rem 0.15rem 0.4rem;
+  background: var(--color-bg);
+}
+
+.task-group-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}

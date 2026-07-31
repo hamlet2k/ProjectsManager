@@ -8,5 +8,20 @@ patch/
 outputs/
 *.db
 .env
+.env.*
 *.sqlite3
 *.pem
+node_modules/
+.supabase/
+.vercel
+
+# Local migration dumps (may contain passwords / personal data)
+scripts/migrate-from-flask/export/
+scripts/migrate-from-flask/export-pg/
+temp-passwords.json
+id-map.json
+
+
+# Supabase CLI local state
+supabase/.temp/
+.env*

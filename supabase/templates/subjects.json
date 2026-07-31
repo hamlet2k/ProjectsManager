@@ -1,0 +1,15 @@
+{
+  "confirmation": "Confirm your email — Projects Manager",
+  "invite": "You're invited to Projects Manager",
+  "magic_link": "Your sign-in link — Projects Manager",
+  "recovery": "Reset your password — Projects Manager",
+  "email_change": "Confirm your new email — Projects Manager",
+  "reauthentication": "{{ .Token }} is your Projects Manager verification code",
+  "password_changed_notification": "Your password was changed — Projects Manager",
+  "email_changed_notification": "Your email was changed — Projects Manager",
+  "phone_changed_notification": "Your phone number was changed — Projects Manager",
+  "identity_linked_notification": "A sign-in method was linked — Projects Manager",
+  "identity_unlinked_notification": "A sign-in method was removed — Projects Manager",
+  "mfa_factor_enrolled_notification": "Verification method added — Projects Manager",
+  "mfa_factor_unenrolled_notification": "Verification method removed — Projects Manager"
+}
