@@ -428,7 +428,10 @@ export function ScopePage() {
       if (now - last < 90_000) return
       lastGhSyncAt.current.set(task.id, now)
       void syncTaskWithGitHub(task.id)
-        .then(() => qc.invalidateQueries({ queryKey: ['task-github', scopeId] }))
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+          qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
+        })
         .then(() => qc.invalidateQueries({ queryKey: ['tasks', scopeId] }))
         .then(() => qc.invalidateQueries({ queryKey: ['task-tags', scopeId] }))
         .then(() => qc.invalidateQueries({ queryKey: ['tags', scopeId] }))
@@ -682,6 +685,7 @@ export function ScopePage() {
             await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
             await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
             await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+            await qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
             scrollToTask(task.id)
           } catch (e) {
             toast.push(e instanceof Error ? e.message : 'GitHub action failed', 'error')
