@@ -1387,7 +1387,6 @@ function SortableTaskRow({
 
   const openAppBlockers = appBlockers.filter((b) => !b.task.completed)
   const openAppBlocking = appBlocking.filter((b) => !b.task.completed)
-  const depCount = appBlockers.length + appBlocking.length
 
   const cardOpen = expanded || tagEditOpen
   const taskRepo = repoKey(github?.github_repo_owner, github?.github_repo_name)
