@@ -37,6 +37,9 @@ type Props = {
   onImport: (tasks: ParsedImportTask[]) => Promise<void>
   /** Optional: open focused on a subset (e.g. one group). */
   initialTaskIds?: string[] | null
+  /** When set, shows “From GitHub” on the Import tab (import issue as task). */
+  onImportFromGithub?: () => void
+  githubRepoLabel?: string | null
 }
 
 const FORMAT_OPTIONS: { id: TransferFormat; label: string; hint: string }[] = [
@@ -59,6 +62,8 @@ export function TaskTransferModal({
   canImport,
   onImport,
   initialTaskIds = null,
+  onImportFromGithub,
+  githubRepoLabel = null,
 }: Props) {
   const toast = useToast()
   const prefs = useMemo(() => loadTransferPrefs(), [open])
@@ -360,6 +365,24 @@ export function TaskTransferModal({
                   onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
                 />
               </label>
+              {onImportFromGithub ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  title={
+                    githubRepoLabel
+                      ? `Import an issue from ${githubRepoLabel} as a new task`
+                      : 'Import an issue from the linked GitHub repository'
+                  }
+                  onClick={() => {
+                    onClose()
+                    onImportFromGithub()
+                  }}
+                >
+                  <Icons.Github size={14} /> From GitHub
+                </Button>
+              ) : null}
               {importFormat !== 'unknown' && importText.trim() ? (
                 <span className="text-xs text-[var(--color-muted)]">
                   Detected: <strong className="text-[var(--color-text)]">{importFormat}</strong>

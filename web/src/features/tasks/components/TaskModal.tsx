@@ -20,6 +20,8 @@ type Props = {
     tagIds: string[]
   }) => Promise<void>
   onDelete?: () => Promise<void>
+  /** New task only: create task from a GitHub issue instead. */
+  onImportFromGithub?: () => void
 }
 
 export function TaskModal({
@@ -30,6 +32,7 @@ export function TaskModal({
   selectedTagIds = [],
   onSubmit,
   onDelete,
+  onImportFromGithub,
 }: Props) {
   const confirm = useConfirm()
   const [name, setName] = useState('')
@@ -144,6 +147,20 @@ export function TaskModal({
               }}
             />
             <div className="quick-side">
+              {!initial && onImportFromGithub ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Create task from a GitHub issue"
+                  disabled={saving}
+                  onClick={() => {
+                    onClose()
+                    onImportFromGithub()
+                  }}
+                >
+                  <Icons.Github />
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="icon-btn"

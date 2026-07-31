@@ -62,13 +62,18 @@ type Props = {
   onCreateTag: (name: string) => Promise<Tag>
   /** Remove a tag from the project (cascades off all tasks). */
   onDeleteTag?: (tag: Tag) => Promise<void>
-  onGithubAction: (task: Task, action: 'create' | 'sync' | 'link') => Promise<void>
+  onGithubAction: (
+    task: Task,
+    action: 'create' | 'sync' | 'link' | 'choose',
+  ) => Promise<void>
   /** Soft GitHub refresh when details open (optional; parent throttles). */
   onExpandTask?: (task: Task) => void
   /** Open project GitHub settings (e.g. change default repo). */
   onOpenGithubSettings?: () => void
   /** Open import/export for a subset of tasks (e.g. tag group). */
   onOpenTransfer?: (taskIds: string[], mode?: 'export' | 'import') => void
+  /** Import a GitHub issue as a new task (same as From GitHub). */
+  onImportFromGithub?: () => void
   searchInputRef?: React.RefObject<HTMLInputElement | null>
   quickAddRef?: React.RefObject<HTMLInputElement | null>
 }
@@ -102,6 +107,7 @@ export function TaskBoard({
   onExpandTask,
   onOpenGithubSettings,
   onOpenTransfer,
+  onImportFromGithub,
   searchInputRef,
   quickAddRef,
 }: Props) {
@@ -813,6 +819,17 @@ export function TaskBoard({
                     disabled={savingQuick}
                   />
                   <div className="quick-side">
+                    {onImportFromGithub && githubEnabled ? (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Create task from a GitHub issue"
+                        disabled={savingQuick}
+                        onClick={() => onImportFromGithub()}
+                      >
+                        <Icons.Github />
+                      </button>
+                    ) : null}
                     {quickName ? (
                       <button
                         type="button"
@@ -1184,7 +1201,7 @@ function SortableTaskRow({
   onEdit: (task: Task) => void
   onConfirmDelete: (task: Task) => void
   onCopy: () => void
-  onGithub: (action: 'create' | 'sync' | 'link') => Promise<void>
+  onGithub: (action: 'create' | 'sync' | 'link' | 'choose') => Promise<void>
   onToggleTagEdit: () => void
   onSetTags: (ids: string[]) => Promise<void>
   onCreateTag: (name: string) => Promise<Tag>
@@ -1331,40 +1348,22 @@ function SortableTaskRow({
               <Icons.Copy />
             </button>
             {githubVisible && githubEnabled && canEdit && !github?.github_issue_number ? (
-              <>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  title="Create GitHub issue"
-                  disabled={ghBusy}
-                  onClick={async () => {
-                    setGhBusy(true)
-                    try {
-                      await onGithub('create')
-                    } finally {
-                      setGhBusy(false)
-                    }
-                  }}
-                >
-                  {ghBusy ? (
-                    <span
-                      className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-                      aria-hidden
-                    />
-                  ) : (
-                    <Icons.Github />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  title="Link existing GitHub issue"
-                  disabled={ghBusy}
-                  onClick={() => void onGithub('link')}
-                >
-                  <Icons.Link />
-                </button>
-              </>
+              <button
+                type="button"
+                className="icon-btn"
+                title="GitHub: create issue or link existing"
+                disabled={ghBusy}
+                onClick={() => void onGithub('choose')}
+              >
+                {ghBusy ? (
+                  <span
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    aria-hidden
+                  />
+                ) : (
+                  <Icons.Github />
+                )}
+              </button>
             ) : null}
             {githubVisible && github?.github_issue_number && githubEnabled && canEdit ? (
               <button

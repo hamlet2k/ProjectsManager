@@ -92,6 +92,9 @@ export function ScopePage() {
     taskId?: string
     taskName?: string
   } | null>(null)
+  /** Choose create vs link for an unlinked task */
+  const [ghChooseTask, setGhChooseTask] = useState<Task | null>(null)
+  const [ghChooseBusy, setGhChooseBusy] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
   const quickAddRef = useRef<HTMLInputElement>(null)
@@ -491,16 +494,6 @@ export function ScopePage() {
           >
             <Icons.Clipboard size={14} /> Import / Export
           </Button>
-          {ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              title={`Import a GitHub issue from ${displayRepo} as a new task`}
-              onClick={() => setIssuePicker({ mode: 'import' })}
-            >
-              <Icons.Github size={14} /> From GitHub
-            </Button>
-          ) : null}
           {access.canManageShares ? (
             <Button
               variant="secondary"
@@ -646,6 +639,10 @@ export function ScopePage() {
             toast.push('Enable GitHub in Settings and link a repo for this project first', 'error')
             return
           }
+          if (action === 'choose') {
+            setGhChooseTask(task)
+            return
+          }
           if (action === 'link') {
             setIssuePicker({ mode: 'link', taskId: task.id, taskName: task.name })
             return
@@ -660,7 +657,7 @@ export function ScopePage() {
               await ensureGithubSystemTagOnTask(task.id)
               toast.push(
                 res.project_added
-                  ? 'GitHub issue created and added to project board'
+                  ? 'GitHub issue created (also added to the Project board in settings)'
                   : 'GitHub issue created',
                 'success',
               )
@@ -694,6 +691,11 @@ export function ScopePage() {
           setTransferMode(mode)
           setTransferOpen(true)
         }}
+        onImportFromGithub={
+          ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
+            ? () => setIssuePicker({ mode: 'import' })
+            : undefined
+        }
       />
 
       <TaskModal
@@ -702,6 +704,11 @@ export function ScopePage() {
         initial={editingTask}
         tags={tags}
         selectedTagIds={selectedTagIds}
+        onImportFromGithub={
+          !editingTask && ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
+            ? () => setIssuePicker({ mode: 'import' })
+            : undefined
+        }
         onSubmit={async (values) => {
           if (editingTask) {
             await updateTask.mutateAsync({
@@ -738,6 +745,87 @@ export function ScopePage() {
         <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} scopeId={scope.id} />
       ) : null}
 
+      <Modal
+        open={Boolean(ghChooseTask)}
+        onClose={() => !ghChooseBusy && setGhChooseTask(null)}
+        title="GitHub for this task"
+        size="md"
+        footer={
+          <Button
+            variant="secondary"
+            disabled={ghChooseBusy}
+            onClick={() => setGhChooseTask(null)}
+          >
+            Cancel
+          </Button>
+        }
+      >
+        {ghChooseTask ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--color-muted)]">
+              Task “<strong className="text-[var(--color-text)]">{ghChooseTask.name}</strong>” is
+              not linked yet. Choose how to connect it to{' '}
+              <strong className="text-[var(--color-text)]">{displayRepo ?? 'GitHub'}</strong>.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                disabled={ghChooseBusy}
+                onClick={async () => {
+                  const task = ghChooseTask
+                  setGhChooseBusy(true)
+                  try {
+                    const res = await createIssueForTask({
+                      taskId: task.id,
+                      title: task.name,
+                      body: task.description ?? undefined,
+                    })
+                    await ensureGithubSystemTagOnTask(task.id)
+                    toast.push(
+                      res.project_added
+                        ? 'GitHub issue created (also added to the Project board in settings)'
+                        : 'GitHub issue created',
+                      'success',
+                    )
+                    await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+                    await qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+                    await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+                    await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+                    setGhChooseTask(null)
+                    scrollToTask(task.id)
+                  } catch (e) {
+                    toast.push(e instanceof Error ? e.message : 'Create failed', 'error')
+                  } finally {
+                    setGhChooseBusy(false)
+                  }
+                }}
+              >
+                <Icons.Github size={14} /> Create new GitHub issue
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={ghChooseBusy}
+                onClick={() => {
+                  const task = ghChooseTask
+                  setGhChooseTask(null)
+                  setIssuePicker({
+                    mode: 'link',
+                    taskId: task.id,
+                    taskName: task.name,
+                  })
+                }}
+              >
+                <Icons.Link size={14} /> Link existing issue…
+              </Button>
+            </div>
+            <p className="text-xs text-[var(--color-muted)]">
+              Optional: if this project’s GitHub settings name a <strong>Project board</strong>, new
+              or linked issues are also added to that board on GitHub (Projects v2). You can leave
+              the board empty — issue create/link still works without it.
+            </p>
+          </div>
+        ) : null}
+      </Modal>
+
       {issuePicker && displayRepo ? (
         <LinkIssueModal
           open={Boolean(issuePicker)}
@@ -755,7 +843,7 @@ export function ScopePage() {
               await ensureGithubSystemTagOnTask(issuePicker.taskId)
               toast.push(
                 res.project_added
-                  ? `Linked #${issue.number} (added to project board)`
+                  ? `Linked #${issue.number} (also added to Project board if configured)`
                   : `Linked issue #${issue.number}`,
                 'success',
               )
@@ -773,7 +861,7 @@ export function ScopePage() {
               })
               toast.push(
                 res.project_added
-                  ? `Imported #${issue.number} as task (on project board)`
+                  ? `Imported #${issue.number} as task (also on Project board if configured)`
                   : `Imported issue #${issue.number} as task`,
                 'success',
               )
@@ -801,6 +889,12 @@ export function ScopePage() {
         githubByTask={githubByTask}
         canImport={access.canEdit}
         initialTaskIds={transferTaskIds}
+        githubRepoLabel={displayRepo}
+        onImportFromGithub={
+          ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
+            ? () => setIssuePicker({ mode: 'import' })
+            : undefined
+        }
         onImport={async (parsed) => {
           const tagCache = new Map<string, string>(tags.map((t) => [t.name.toLowerCase(), t.id]))
           for (const item of parsed) {
@@ -1048,13 +1142,19 @@ export function ScopePage() {
                         setGhDraft((d) => (d ? { ...d, projectId: e.target.value } : d))
                       }
                     >
-                      <option value="">None</option>
+                      <option value="">None — do not add issues to a board</option>
                       {(projectsQuery.data?.projects ?? []).map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.title}
                         </option>
                       ))}
                     </select>
+                    <p className="mt-1 text-xs text-[var(--color-muted)]">
+                      This is a <strong>GitHub Projects</strong> board (the kanban/table on GitHub),
+                      not this app’s project. When set, newly <em>created</em>, <em>linked</em>, or{' '}
+                      <em>imported</em> issues are also added to that board. Leave empty if you only
+                      want Issues without board automation. Needs a PAT with Projects access.
+                    </p>
                   </Field>
                   <label className="flex items-start gap-2 text-sm">
                     <input
