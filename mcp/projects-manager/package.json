@@ -1,19 +1,47 @@
 {
-  "name": "@projects-manager/mcp",
+  "name": "projects-manager-mcp",
   "version": "1.0.0",
-  "private": true,
+  "description": "Grok CLI / MCP server for Projects Manager — list and manage tasks on boards you authorize",
   "type": "module",
-  "description": "Grok CLI MCP server — manage Projects Manager tasks on allowed boards",
+  "main": "./src/index.js",
   "bin": {
-    "projects-manager-mcp": "./src/index.js"
+    "projects-manager-mcp": "bin/projects-manager-mcp.js"
   },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "prepublishOnly": "node -e \"require('fs').accessSync('bin/projects-manager-mcp.js')\""
   },
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "mcp",
+    "grok",
+    "projects-manager",
+    "tasks",
+    "cli"
+  ],
+  "author": "Projects Manager",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamlet2k/ProjectsManager.git",
+    "directory": "mcp/projects-manager"
+  },
+  "bugs": {
+    "url": "https://github.com/hamlet2k/ProjectsManager/issues"
+  },
+  "homepage": "https://github.com/hamlet2k/ProjectsManager/tree/rebuild/supabase-vite/mcp/projects-manager#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

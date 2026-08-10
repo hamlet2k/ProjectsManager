@@ -39,16 +39,16 @@ export function CliAccessSection() {
 
   const setupSnippet = useMemo(() => {
     if (!revealedToken || !projectUrl) return ''
-    const mcpPath = '<path-to-repo>/mcp/projects-manager'
-    return `# From the projects-manager repo (once):
-#   cd mcp/projects-manager && npm install
+    return `# No repo clone needed — uses npm package projects-manager-mcp
+# (requires Node.js 18+ and Grok CLI)
 
-# Grok CLI — add MCP server (Windows PowerShell example):
 grok mcp add projects-manager \\
   -e PROJECTS_MANAGER_URL=${projectUrl} \\
   -e PROJECTS_MANAGER_TOKEN=${revealedToken} \\
   -e PROJECTS_MANAGER_ANON_KEY=${anonKey || '<your-anon-key>'} \\
-  -- node ${mcpPath}/src/index.js`
+  -- npx -y projects-manager-mcp@latest
+
+# Then restart Grok. Check: grok mcp list`
   }, [revealedToken, projectUrl, anonKey])
 
   const toggleScope = (id: string) => {
@@ -66,7 +66,10 @@ grok mcp add projects-manager \\
         <h2 className="font-semibold">Grok CLI access</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           Create a personal token so Grok CLI (via MCP) can list and manage tasks only on the
-          projects you allow. Tokens are shown once — store them like passwords.
+          projects you allow. Tokens are shown once — store them like passwords. End users install
+          the MCP with{' '}
+          <code className="text-[11px]">npx -y projects-manager-mcp@latest</code> (no app repo
+          needed once the package is on npm).
         </p>
       </div>
 

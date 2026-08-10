@@ -2,12 +2,15 @@
 /**
  * Grok CLI MCP server for Projects Manager.
  *
- * Env:
+ * Env (or mcp/projects-manager/.env):
  *   PROJECTS_MANAGER_URL   — Supabase project URL (https://xxx.supabase.co)
  *   PROJECTS_MANAGER_TOKEN — CLI token from Settings (pmcli_…)
  * Optional:
- *   PROJECTS_MANAGER_ANON_KEY — only if your gateway requires apikey header
+ *   PROJECTS_MANAGER_ANON_KEY — Supabase anon/publishable key (Edge apikey header)
  */
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -15,13 +18,34 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 
+// Load sibling .env without requiring dotenv package
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const envFile = join(__dirname, '..', '.env')
+if (existsSync(envFile)) {
+  for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const key = trimmed.slice(0, eq).trim()
+    let val = trimmed.slice(eq + 1).trim()
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1)
+    }
+    if (key && process.env[key] === undefined) process.env[key] = val
+  }
+}
+
 const baseUrl = (process.env.PROJECTS_MANAGER_URL || '').replace(/\/$/, '')
 const token = process.env.PROJECTS_MANAGER_TOKEN || ''
 const anonKey = process.env.PROJECTS_MANAGER_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
 
-if (!baseUrl || !token) {
+if (!baseUrl || !token || token.includes('REPLACE')) {
   console.error(
-    'projects-manager-mcp: set PROJECTS_MANAGER_URL and PROJECTS_MANAGER_TOKEN',
+    'projects-manager-mcp: set PROJECTS_MANAGER_URL and PROJECTS_MANAGER_TOKEN (Settings → Grok CLI access). Optional: mcp/projects-manager/.env',
   )
   process.exit(1)
 }

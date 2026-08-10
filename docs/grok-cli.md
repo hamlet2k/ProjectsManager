@@ -1,6 +1,8 @@
 # Grok CLI task access (MCP)
 
-Manage **Projects Manager** boards from **Grok CLI** using the Model Context Protocol (MCP). You choose which projects a token may touch; the CLI never gets broader access than that.
+Manage **Projects Manager** boards from **Grok CLI / Grok Build** using the Model Context Protocol (MCP). You choose which projects a token may touch.
+
+**End users do not need this monorepo** if the MCP package is on npm (`projects-manager-mcp`).
 
 ## What you get
 
@@ -25,33 +27,14 @@ Writes require a **read/write** token and **editor** (or owner) access on that b
 
 Revoke anytime from the same Settings list.
 
-## 2. Install the MCP package
-
-From this monorepo:
-
-```bash
-cd mcp/projects-manager
-npm install
-```
-
-## 3. Register with Grok CLI
+## 2. Register with Grok CLI (no repo clone)
 
 ```bash
 grok mcp add projects-manager \
   -e PROJECTS_MANAGER_URL="https://YOUR_PROJECT.supabase.co" \
   -e PROJECTS_MANAGER_TOKEN="pmcli_…" \
   -e PROJECTS_MANAGER_ANON_KEY="your-anon-key" \
-  -- node /absolute/path/to/mcp/projects-manager/src/index.js
-```
-
-Windows (PowerShell) — use full paths for `node` and `index.js` if needed:
-
-```powershell
-grok mcp add projects-manager `
-  -e PROJECTS_MANAGER_URL="https://YOUR_PROJECT.supabase.co" `
-  -e PROJECTS_MANAGER_TOKEN="pmcli_…" `
-  -e PROJECTS_MANAGER_ANON_KEY="your-anon-key" `
-  -- node C:\path\to\projects-manager-app\mcp\projects-manager\src\index.js
+  -- npx -y projects-manager-mcp@latest
 ```
 
 Check:
@@ -60,30 +43,32 @@ Check:
 grok mcp list
 ```
 
-## 4. Deploy backend (maintainers)
+Restart the Grok session after adding the server.
 
-```bash
-# Migration
-supabase db push
-# or apply 20260810000000_cli_access_tokens.sql
+### Where is the MCP server published?
 
-supabase functions deploy cli-api --no-verify-jwt
-```
+| Channel | What |
+|---------|------|
+| **npm** | Package name **`projects-manager-mcp`** → https://www.npmjs.com/package/projects-manager-mcp |
+| **Source** | This monorepo: `mcp/projects-manager/` |
+| **Backend API** | Supabase Edge Function `cli-api` on your app’s project |
 
-`--no-verify-jwt` is required so the Edge Function accepts **CLI PATs** instead of Supabase user JWTs (auth is the PAT itself).
+`npx -y projects-manager-mcp@latest` downloads from **npm** (not from your laptop path).
 
-## Architecture
+Until the first `npm publish`, the package will 404 on npm — maintainers: see **Publishing updates** below. Local dev can still use `node path/to/mcp/projects-manager/src/index.js`.
+
+## 3. Architecture
 
 ```text
-Grok CLI
-  → MCP stdio (mcp/projects-manager)
-    → POST /functions/v1/cli-api  Authorization: Bearer pmcli_…
-      → validate token hash, project allow-list, write flag
-      → service role + explicit membership checks
+Grok CLI / Grok Build
+  → npx projects-manager-mcp  (stdio MCP)
+    → POST /functions/v1/cli-api
+      Authorization: Bearer pmcli_…
+      → validate token, project allow-list, write flag
       → tasks / tags / scopes
 ```
 
-No LLM key is required for CLI task tools — only your PAT.
+No LLM key is required for these tools — only the PAT.
 
 ## Security notes
 
@@ -91,14 +76,73 @@ No LLM key is required for CLI task tools — only your PAT.
 - Prefer **project allow-lists** over “all projects” for long-lived tokens.  
 - Prefer **read-only** tokens for assistant-style Q&A.  
 - Revoke immediately if a token leaks.  
-- Tokens act as **you** (owner/share membership still enforced).
+
+## Publishing updates (maintainers)
+
+Yes — you can update the MCP server anytime. Users on `@latest` get new code when npx fetches a new version.
+
+### One-time setup
+
+1. Create an account on [npmjs.com](https://www.npmjs.com) (or use an org).  
+2. Claim the name `projects-manager-mcp` (first publish).  
+3. On the GitHub repo, add secret **`NPM_TOKEN`** (npm → Access Tokens → Automation).  
+4. Optionally: `npm login` on a maintainer machine for manual publishes.
+
+### Publish a new version
+
+**Option A — tag (CI)**
+
+```bash
+# bump version in mcp/projects-manager/package.json first, or let the workflow set it from the tag
+git tag mcp-v1.0.1
+git push origin mcp-v1.0.1
+```
+
+GitHub Action `.github/workflows/publish-mcp.yml` runs `npm publish`.
+
+**Option B — manual**
+
+```bash
+cd mcp/projects-manager
+npm version patch   # 1.0.0 → 1.0.1
+npm publish --access public
+git push --follow-tags
+```
+
+### What users do after you publish
+
+- Nothing special if they use `@latest` — next Grok/MCP start may download the new version.  
+- To force refresh: `npm cache clean --force` or re-run with `npx -y projects-manager-mcp@1.0.1`.  
+- App backend changes (`cli-api`, DB) deploy separately (`supabase functions deploy`); keep MCP and API compatible or bump major version.
+
+### Local path install (developers only)
+
+```bash
+cd mcp/projects-manager && npm install
+grok mcp add projects-manager \
+  -e PROJECTS_MANAGER_URL=... \
+  -e PROJECTS_MANAGER_TOKEN=... \
+  -e PROJECTS_MANAGER_ANON_KEY=... \
+  -- node /absolute/path/to/mcp/projects-manager/src/index.js
+```
+
+## Deploy backend (app maintainers)
+
+```bash
+supabase db push   # cli_access_tokens migrations
+supabase functions deploy cli-api --no-verify-jwt
+```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| Invalid or revoked CLI token | New token in Settings; check env `PROJECTS_MANAGER_TOKEN` |
-| Token is not allowed on this project | Token allow-list doesn’t include that board |
+| `npx` 404 for package | Package not published yet — run maintainer publish |
+| Invalid or revoked CLI token | New token in Settings |
+| Token is not allowed on this project | Token allow-list |
 | Token is read-only | Create a write-enabled token |
-| No access to this project | Share/accept invite or use an owner account |
-| HTTP 401 from Edge | Deploy `cli-api` with `--no-verify-jwt`; set `PROJECTS_MANAGER_ANON_KEY` |
+| HTTP 401 from Edge | Deploy `cli-api` with `--no-verify-jwt`; set anon key |
+
+## Future: remote MCP (no npx)
+
+A fully hosted HTTP MCP URL (only token + URL in Grok config, no Node on the laptop) is a possible next step. Today the published **npm** package is the zero-repo path for end users.
