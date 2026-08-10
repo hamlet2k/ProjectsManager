@@ -5,23 +5,17 @@ import { Icons } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import type { Tag, Task } from '@/lib/supabase/types'
 import type { TaskBoardViewPatch } from '@/features/tasks/components/TaskBoard'
-import { planAssistantActions, transcribeAudio, type AssistantPlan } from './api'
+import { planAssistantActions, type AssistantPlan } from './api'
 import { executeAssistantPlan, type ExecuteResult } from './executePlan'
 import {
-  blobToBase64,
-  canUseVoiceInput,
   checkSpeechEnvironment,
   collapseSpeechStutter,
-  extensionForAudioMime,
   getSpeechRecognitionCtor,
-  isAndroidBrowser,
   micAccessMessage,
   mergeSpeechFinals,
+  prefersNonContinuousSpeech,
   releaseCountdownMs,
-  shouldUseServerStt,
   speechUnsupportedMessage,
-  startAudioCapture,
-  type AudioCaptureSession,
   type SpeechRecognitionLike,
 } from './speech'
 import { eventMatchesBinding, formatBinding } from '@/lib/keyboardPrefs'
@@ -139,16 +133,9 @@ export function VoiceHoldFab({
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [countdownMs, setCountdownMs] = useState(0)
   const [lockHint, setLockHint] = useState(false)
-  const [sttOk, setSttOk] = useState(() => canUseVoiceInput())
-  const [busyLabel, setBusyLabel] = useState('Working…')
-  /** iOS only — server Whisper; Android/desktop use browser STT */
-  const iosServerStt =
-    typeof window !== 'undefined' ? shouldUseServerStt() : false
+  const [sttOk, setSttOk] = useState(() => Boolean(getSpeechRecognitionCtor()))
 
   const recRef = useRef<SpeechRecognitionLike | null>(null)
-  const mediaSessionRef = useRef<AudioCaptureSession | null>(null)
-  const finishingRef = useRef(false)
-  const startPromiseRef = useRef<Promise<boolean> | null>(null)
   const preListenRef = useRef('')
   const phaseRef = useRef<Phase>('idle')
   const transcriptRef = useRef('')
@@ -159,7 +146,9 @@ export function VoiceHoldFab({
   const countdownEndRef = useRef(0)
   const runIdRef = useRef(0)
   const histIdRef = useRef(0)
-  const androidStt = typeof navigator !== 'undefined' && isAndroidBrowser()
+  /** Android + iOS: short sessions (continuous=false) so Web Speech returns text */
+  const nonContinuousStt =
+    typeof navigator !== 'undefined' && prefersNonContinuousSpeech()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const historyEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -209,7 +198,7 @@ export function VoiceHoldFab({
     transcriptRef.current = transcript
   }, [transcript])
   useEffect(() => {
-    setSttOk(canUseVoiceInput())
+    setSttOk(Boolean(getSpeechRecognitionCtor()))
   }, [])
 
   const clearCountdown = useCallback(() => {
@@ -221,16 +210,6 @@ export function VoiceHoldFab({
   }, [])
 
   const stopListening = useCallback((opts?: { hard?: boolean }) => {
-    const media = mediaSessionRef.current
-    mediaSessionRef.current = null
-    if (media) {
-      try {
-        if (opts?.hard) media.cancel()
-        else void media.stop()
-      } catch {
-        /* ignore */
-      }
-    }
     const rec = recRef.current
     recRef.current = null
     if (!rec) return
@@ -250,7 +229,6 @@ export function VoiceHoldFab({
   const resetSession = useCallback(() => {
     clearCountdown()
     stopListening({ hard: true })
-    finishingRef.current = false
     lockedRef.current = false
     pointerIdRef.current = null
     setPhase('idle')
@@ -259,7 +237,6 @@ export function VoiceHoldFab({
     setResult(null)
     setHistory([])
     setLockHint(false)
-    setBusyLabel('Working…')
     preListenRef.current = ''
     runIdRef.current += 1
   }, [clearCountdown, stopListening])
@@ -272,27 +249,8 @@ export function VoiceHoldFab({
   }, [clearCountdown, stopListening])
 
   const startListening = useCallback(
-    async (opts?: { append?: boolean; keepFeedback?: boolean }): Promise<boolean> => {
+    (opts?: { append?: boolean; keepFeedback?: boolean }): boolean => {
       setError(null)
-
-      // --- iOS: MediaRecorder (text after release via Whisper) ---
-      if (iosServerStt) {
-        stopListening({ hard: true })
-        if (!opts?.append) {
-          preListenRef.current = ''
-          setTranscript('')
-          transcriptRef.current = ''
-        }
-        const started = await startAudioCapture()
-        if (!started.ok) {
-          setSttOk(started.reason !== 'denied')
-          setError(micAccessMessage(started.reason))
-          return false
-        }
-        mediaSessionRef.current = started.session
-        setSttOk(true)
-        return true
-      }
 
       const env = checkSpeechEnvironment()
       if (env !== 'ok') {
@@ -320,8 +278,8 @@ export function VoiceHoldFab({
       setError(null)
 
       const rec = new Ctor()
-      // Android Chrome: continuous + interim often emits progressive "finals"
-      rec.continuous = !androidStt
+      // Android + iOS: continuous=true often stalls (no transcript). Restart on end while holding.
+      rec.continuous = !nonContinuousStt
       rec.interimResults = true
       rec.maxAlternatives = 1
       rec.lang = navigator.language || 'en-US'
@@ -363,7 +321,7 @@ export function VoiceHoldFab({
         if (p === 'holding' || p === 'locked') {
           window.setTimeout(() => {
             if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
-              void startListening({ append: true, keepFeedback: true })
+              startListening({ append: true, keepFeedback: true })
             }
           }, 120)
           return
@@ -380,7 +338,7 @@ export function VoiceHoldFab({
         return false
       }
     },
-    [androidStt, iosServerStt, stopListening],
+    [nonContinuousStt, stopListening],
   )
 
   const pushHistory = useCallback((role: HistoryEntry['role'], text: string) => {
@@ -398,7 +356,6 @@ export function VoiceHoldFab({
       stopListening()
       lockedRef.current = false
       setTranscript(text)
-      setBusyLabel('Working…')
       setPhase('busy')
       setError(null)
       const myRun = ++runIdRef.current
@@ -504,122 +461,31 @@ export function VoiceHoldFab({
     [clearCountdown, history.length, resetSession, result?.ambiguous?.length, runAssistant],
   )
 
-  /**
-   * Release / unlock: browser STT uses live transcript;
-   * iOS records then server-transcribes (Whisper).
-   */
-  const finishAfterListen = useCallback(async () => {
-    if (finishingRef.current) return
-    finishingRef.current = true
+  /** Release / unlock: stop Web Speech and start send countdown from live transcript. */
+  const finishAfterListen = useCallback(() => {
     lockedRef.current = false
-
-    try {
-      if (startPromiseRef.current) {
-        try {
-          await startPromiseRef.current
-        } catch {
-          /* start already reported error */
-        }
-        startPromiseRef.current = null
-      }
-
-      if (iosServerStt) {
-        const session = mediaSessionRef.current
-        mediaSessionRef.current = null
-        if (!session) {
-          if (history.length > 0 || result?.ambiguous?.length) {
-            setPhase('followup')
-            phaseRef.current = 'followup'
-            return
-          }
-          if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
-            setPhase('editing')
-            phaseRef.current = 'editing'
-          }
-          return
-        }
-
-        setBusyLabel('Transcribing…')
-        setPhase('busy')
-        phaseRef.current = 'busy'
-        setError(null)
-
-        let blob: Blob
-        try {
-          blob = await session.stop()
-        } catch {
-          blob = new Blob([], { type: 'audio/webm' })
-        }
-
-        if (!blob || blob.size < 200) {
-          if (history.length > 0 || result?.ambiguous?.length) {
-            setPhase('followup')
-            phaseRef.current = 'followup'
-            setTranscript('')
-            return
-          }
-          resetSession()
-          return
-        }
-
-        try {
-          const mime = blob.type || 'audio/webm'
-          const audioBase64 = await blobToBase64(blob)
-          const lang = (navigator.language || 'en').slice(0, 2)
-          const { text: raw } = await transcribeAudio({
-            scopeId,
-            audioBase64,
-            mimeType: mime,
-            fileName: `voice.${extensionForAudioMime(mime)}`,
-            language: lang,
-          })
-          const text = collapseSpeechStutter(raw.trim())
-          if (!text) {
-            setError('Heard nothing — hold longer and speak clearly, or type instead.')
-            setPhase(history.length > 0 || result?.ambiguous?.length ? 'followup' : 'editing')
-            phaseRef.current =
-              history.length > 0 || result?.ambiguous?.length ? 'followup' : 'editing'
-            return
-          }
-          setBusyLabel('Working…')
-          beginCountdown(text)
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Transcription failed'
-          setError(msg)
-          setPhase(history.length > 0 || result?.ambiguous?.length ? 'followup' : 'editing')
-          phaseRef.current =
-            history.length > 0 || result?.ambiguous?.length ? 'followup' : 'editing'
-        }
-        return
-      }
-
-      // Browser Web Speech (Android / desktop)
-      if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
-        phaseRef.current = 'countdown'
-      }
-      stopListening()
-      const text = collapseSpeechStutter(transcriptRef.current.trim())
-      if (!text) {
-        if (history.length > 0 || result?.ambiguous?.length) {
-          setPhase('followup')
-          phaseRef.current = 'followup'
-          setTranscript('')
-          return
-        }
-        resetSession()
-        return
-      }
-      beginCountdown(text)
-    } finally {
-      finishingRef.current = false
+    // Leave holding/locked before stop() so onend will not auto-restart
+    if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
+      phaseRef.current = 'countdown'
     }
+    stopListening()
+    const text = collapseSpeechStutter(transcriptRef.current.trim())
+    if (!text) {
+      if (history.length > 0 || result?.ambiguous?.length) {
+        setPhase('followup')
+        phaseRef.current = 'followup'
+        setTranscript('')
+        return
+      }
+      resetSession()
+      return
+    }
+    beginCountdown(text)
   }, [
     beginCountdown,
     history.length,
-    iosServerStt,
     resetSession,
     result?.ambiguous?.length,
-    scopeId,
     stopListening,
   ])
 
@@ -705,11 +571,11 @@ export function VoiceHoldFab({
   }
 
   const stopLocked = useCallback(() => {
-    void finishAfterListen()
+    finishAfterListen()
   }, [finishAfterListen])
 
   const beginHold = useCallback(
-    async (fromKey = false) => {
+    (fromKey = false) => {
       if (!canEdit || phaseRef.current === 'busy') return
       if (phaseRef.current === 'locked') {
         stopLocked()
@@ -730,10 +596,7 @@ export function VoiceHoldFab({
       setError(null)
       clearCountdown()
       if (!keepFeedback) setResult(null)
-      const startP = startListening({ append: false, keepFeedback })
-      startPromiseRef.current = startP
-      const ok = await startP
-      if (startPromiseRef.current === startP) startPromiseRef.current = null
+      const ok = startListening({ append: false, keepFeedback })
       if (!ok) {
         // Permission denied / unsupported — leave panel open with error
         if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
@@ -754,14 +617,14 @@ export function VoiceHoldFab({
       if (isTypingTarget(e.target)) return
       if (!eventMatchesBinding(e, 'pushToTalk')) return
       e.preventDefault()
-      void beginHold(true)
+      beginHold(true)
     }
     const onUp = (e: KeyboardEvent) => {
       if (!eventMatchesBinding(e, 'pushToTalk')) return
       if (phaseRef.current !== 'holding' && phaseRef.current !== 'locked') return
       e.preventDefault()
       if (phaseRef.current === 'locked') return
-      void finishAfterListen()
+      finishAfterListen()
     }
     window.addEventListener('keydown', onDown)
     window.addEventListener('keyup', onUp)
@@ -786,7 +649,7 @@ export function VoiceHoldFab({
     e.currentTarget.setPointerCapture(e.pointerId)
     pointerIdRef.current = e.pointerId
     startXRef.current = e.clientX
-    void beginHold(false)
+    beginHold(false)
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -815,14 +678,14 @@ export function VoiceHoldFab({
       return
     }
 
-    void finishAfterListen()
+    finishAfterListen()
   }
 
   const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (pointerIdRef.current !== e.pointerId) return
     pointerIdRef.current = null
     if (lockedRef.current) return
-    void finishAfterListen()
+    finishAfterListen()
   }
 
   const panelOpen = phase !== 'idle'
@@ -866,7 +729,7 @@ export function VoiceHoldFab({
                 {phase === 'locked' && 'Locked · keep talking'}
                 {phase === 'countdown' && `Sending in ${countdownSec}s`}
                 {phase === 'editing' && 'Edit command'}
-                {phase === 'busy' && busyLabel}
+                {phase === 'busy' && 'Working…'}
                 {phase === 'followup' && 'Follow-up'}
               </span>
               {phase !== 'busy' ? (
@@ -947,17 +810,11 @@ export function VoiceHoldFab({
 
             {phase === 'holding' || phase === 'locked' ? (
               <p className="text-xs text-[var(--color-muted)]">
-                {iosServerStt
-                  ? phase === 'locked'
-                    ? 'Recording… tap ✓ when done (text appears after)'
-                    : lockHint
-                      ? 'Slide right to lock · text appears after you release'
-                      : 'Hold to record · release to transcribe · slide right to lock'
-                  : phase === 'locked'
-                    ? 'Locked — keep talking, then tap ✓ to send'
-                    : lockHint
-                      ? 'Slide right to lock for longer dictation'
-                      : 'Hold to speak · release to send · slide right to lock'}
+                {phase === 'locked'
+                  ? 'Locked — keep talking, then tap ✓ to send'
+                  : lockHint
+                    ? 'Slide right to lock for longer dictation'
+                    : 'Hold to speak · release to send · slide right to lock'}
               </p>
             ) : null}
 
@@ -991,11 +848,7 @@ export function VoiceHoldFab({
                   <span className="whitespace-pre-wrap break-words">{transcript}</span>
                 ) : (
                   <span className="text-[var(--color-muted)]">
-                    {listening
-                      ? iosServerStt
-                        ? 'Recording… (text after release)'
-                        : 'Speak now…'
-                      : 'No speech captured'}
+                    {listening ? 'Speak now…' : 'No speech captured'}
                   </span>
                 )}
               </button>

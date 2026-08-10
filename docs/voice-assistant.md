@@ -32,11 +32,10 @@ Natural language control for the **current project**: speak or type → plan →
 ```text
 [Mic / text in SPA]
         ↓
-  Android / Windows / desktop: free browser Web Speech (live text)
-  iOS only: MediaRecorder → Edge mode "transcribe" (Whisper) → text
-  Or type in the Voice modal / hold panel
+  Browser Web Speech API (SpeechRecognition) → live transcript text
+  (Chrome/Edge best; Android merge of progressive finals; free, no server STT)
         ↓
-[Edge Function: assistant]  ← plan via chat model (xAI/etc.)
+[Edge Function: assistant]  ← API keys stay server-side (mode: plan only)
         ↓ JSON actions
 [SPA executePlan] → createTask / setCompleted / createTag / …
         ↓
@@ -45,16 +44,12 @@ Natural language control for the **current project**: speak or type → plan →
 
 ### STT notes
 
-- **Android / Windows:** free browser STT. Only the plan step uses `ASSISTANT_*` (xAI).
-- **iOS Safari:** Web Speech does not return text (mic can still light up). App records audio and calls Whisper. If chat is xAI-only, set a separate OpenAI STT key:
-
-```bash
-supabase secrets set ASSISTANT_STT_API_KEY="sk-..." \
-  ASSISTANT_STT_BASE_URL="https://api.openai.com/v1" \
-  ASSISTANT_STT_MODEL="whisper-1"
-```
-
-- Requires **HTTPS** for the mic.
+- **Speech-to-text is free** in the browser (Web Speech API) on Windows, Android, and iOS Safari.
+- No PWA service worker, no server Whisper, no second API key for STT.
+- **Do not** call `getUserMedia` before `SpeechRecognition` (that can show the mic on iOS without returning text).
+- Mobile (Android + iOS) uses `continuous=false` and restarts while holding so transcripts keep flowing.
+- The **LLM** (xAI / etc.) runs only after text exists — for planning actions.
+- Requires **HTTPS** (or localhost).
 
 ## Deploy
 

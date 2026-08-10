@@ -7,12 +7,6 @@
  *   ASSISTANT_BASE_URL  — optional, default https://api.openai.com/v1
  *   ASSISTANT_MODEL     — optional, default gpt-4o-mini
  *   Also accepts OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL as fallbacks.
- *
- * iOS speech-to-text only (mode: transcribe → OpenAI Whisper /audio/transcriptions):
- *   ASSISTANT_STT_API_KEY   — OpenAI (or OpenRouter) key with audio; required if chat is xAI-only
- *   ASSISTANT_STT_BASE_URL  — default https://api.openai.com/v1
- *   ASSISTANT_STT_MODEL     — default whisper-1
- * Android/desktop use free browser STT and do not call this mode.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 
@@ -148,7 +142,7 @@ Deno.serve(async (req) => {
     if (userErr || !user) return json({ error: 'Not authenticated' }, 401)
 
     const body = (await req.json()) as {
-      mode?: 'plan' | 'generate_project_prompt' | 'enhance_task' | 'transcribe'
+      mode?: 'plan' | 'generate_project_prompt' | 'enhance_task'
       scope_id?: string
       project_name?: string
       project_prompt?: string | null
@@ -162,10 +156,6 @@ Deno.serve(async (req) => {
         description?: string | null
         tag_names?: string[]
       }
-      audio_base64?: string
-      mime_type?: string
-      file_name?: string
-      language?: string
     }
 
     const mode = body.mode || 'plan'
@@ -180,122 +170,6 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (scopeErr || !scopeRow) {
       return json({ error: 'Project not found or no access' }, 403)
-    }
-
-    // --- iOS only: audio → text (Whisper). Does not use the chat model. ---
-    if (mode === 'transcribe') {
-      const b64 = (body.audio_base64 ?? '').trim()
-      if (!b64) return json({ error: 'Missing audio_base64' }, 400)
-      if (b64.length > 11_000_000) {
-        return json({ error: 'Recording too long. Hold a shorter phrase and try again.' }, 413)
-      }
-
-      const sttKey =
-        Deno.env.get('ASSISTANT_STT_API_KEY') ||
-        Deno.env.get('OPENAI_API_KEY') ||
-        Deno.env.get('ASSISTANT_API_KEY')
-      if (!sttKey) {
-        return json(
-          {
-            error:
-              'iOS speech-to-text needs ASSISTANT_STT_API_KEY (OpenAI Whisper key). Chat can stay on xAI.',
-          },
-          503,
-        )
-      }
-
-      const chatBase = (
-        Deno.env.get('ASSISTANT_BASE_URL') ||
-        Deno.env.get('OPENAI_BASE_URL') ||
-        Deno.env.get('XAI_BASE_URL') ||
-        ''
-      ).replace(/\/$/, '')
-      const explicitSttBase = (
-        Deno.env.get('ASSISTANT_STT_BASE_URL') ||
-        Deno.env.get('OPENAI_BASE_URL') ||
-        ''
-      ).replace(/\/$/, '')
-      let sttBase = explicitSttBase
-      if (!sttBase) {
-        sttBase = /openai\.com|openrouter\.ai/i.test(chatBase)
-          ? chatBase
-          : 'https://api.openai.com/v1'
-      }
-
-      const sttModel = Deno.env.get('ASSISTANT_STT_MODEL') || 'whisper-1'
-      const mime = (body.mime_type || 'audio/webm').split(';')[0]!.trim() || 'audio/webm'
-      const ext =
-        mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac')
-          ? 'm4a'
-          : mime.includes('ogg')
-            ? 'ogg'
-            : mime.includes('mpeg') || mime.includes('mp3')
-              ? 'mp3'
-              : mime.includes('wav')
-                ? 'wav'
-                : 'webm'
-      const fileName = (body.file_name || `voice.${ext}`).replace(/[^\w.\-]+/g, '_')
-
-      let bytes: Uint8Array
-      try {
-        const bin = atob(b64)
-        bytes = new Uint8Array(bin.length)
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-      } catch {
-        return json({ error: 'Invalid audio encoding' }, 400)
-      }
-      if (bytes.byteLength < 64) {
-        return json({ error: 'Recording too short — hold the mic and speak a bit longer.' }, 400)
-      }
-
-      const form = new FormData()
-      const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-      form.append('file', new File([ab], fileName, { type: mime }))
-      form.append('model', sttModel)
-      const lang = (body.language || '').trim()
-      if (lang && /^[a-z]{2}(-[A-Za-z]{2})?$/.test(lang)) {
-        form.append('language', lang.slice(0, 2))
-      }
-
-      try {
-        const sttRes = await fetch(`${sttBase}/audio/transcriptions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${sttKey}`,
-            ...(Deno.env.get('ASSISTANT_HTTP_REFERER')
-              ? { 'HTTP-Referer': Deno.env.get('ASSISTANT_HTTP_REFERER')! }
-              : {}),
-            ...(Deno.env.get('ASSISTANT_APP_TITLE')
-              ? { 'X-Title': Deno.env.get('ASSISTANT_APP_TITLE')! }
-              : {}),
-          },
-          body: form,
-        })
-        if (!sttRes.ok) {
-          const errText = await sttRes.text()
-          console.error('STT error', sttRes.status, errText.slice(0, 500))
-          if (sttRes.status === 401 || sttRes.status === 403) {
-            return json(
-              {
-                error:
-                  'iOS speech auth failed. Set ASSISTANT_STT_API_KEY to an OpenAI key (Whisper). xAI chat keys cannot transcribe.',
-              },
-              502,
-            )
-          }
-          throw new Error(`Speech-to-text error (${sttRes.status}). Check ASSISTANT_STT_* secrets.`)
-        }
-        const sttJson = (await sttRes.json()) as { text?: string }
-        const text = String(sttJson.text ?? '')
-          .replace(/\s+/g, ' ')
-          .trim()
-        return json({ text, model: sttModel })
-      } catch (e) {
-        return json(
-          { error: e instanceof Error ? e.message : 'Transcription failed' },
-          502,
-        )
-      }
     }
 
     const apiKey =

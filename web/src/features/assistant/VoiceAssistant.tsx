@@ -6,22 +6,17 @@ import { Icons } from '@/components/icons'
 import { cn } from '@/lib/utils'
 import type { Tag, Task } from '@/lib/supabase/types'
 import type { TaskBoardViewPatch } from '@/features/tasks/components/TaskBoard'
-import { planAssistantActions, transcribeAudio, type AssistantPlan } from './api'
+import { planAssistantActions, type AssistantPlan } from './api'
 import { executeAssistantPlan, type ExecuteResult } from './executePlan'
 import {
-  blobToBase64,
-  canUseVoiceInput,
   checkSpeechEnvironment,
   collapseSpeechStutter,
-  extensionForAudioMime,
   getSpeechRecognitionCtor,
   isAndroidBrowser,
   micAccessMessage,
   mergeSpeechFinals,
-  shouldUseServerStt,
+  prefersNonContinuousSpeech,
   speechUnsupportedMessage,
-  startAudioCapture,
-  type AudioCaptureSession,
   type SpeechRecognitionLike,
 } from './speech'
 
@@ -81,27 +76,15 @@ export function VoiceAssistant({
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<AssistantPlan | null>(null)
   const [result, setResult] = useState<ExecuteResult | null>(null)
-  const [sttSupported, setSttSupported] = useState(() => canUseVoiceInput())
-  const [serverStt, setServerStt] = useState(
-    () => (typeof window !== 'undefined' ? shouldUseServerStt() : false),
-  )
+  const [sttSupported, setSttSupported] = useState(() => Boolean(getSpeechRecognitionCtor()))
   const recRef = useRef<SpeechRecognitionLike | null>(null)
-  const mediaSessionRef = useRef<AudioCaptureSession | null>(null)
   /** Text that existed before the current Listen session (typed / prior takes). */
   const preListenRef = useRef('')
   const androidStt = typeof navigator !== 'undefined' && isAndroidBrowser()
+  const nonContinuousStt =
+    typeof navigator !== 'undefined' && prefersNonContinuousSpeech()
 
   const stopListening = useCallback((opts?: { hard?: boolean }) => {
-    const media = mediaSessionRef.current
-    mediaSessionRef.current = null
-    if (media) {
-      try {
-        if (opts?.hard) media.cancel()
-        else void media.stop()
-      } catch {
-        /* ignore */
-      }
-    }
     const rec = recRef.current
     recRef.current = null
     if (rec) {
@@ -132,32 +115,13 @@ export function VoiceAssistant({
   }, [open, stopListening])
 
   useEffect(() => {
-    setServerStt(shouldUseServerStt())
-    setSttSupported(canUseVoiceInput())
+    setSttSupported(Boolean(getSpeechRecognitionCtor()))
   }, [])
 
-  const startListening = async () => {
+  const startListening = () => {
     setError(null)
     setResult(null)
     setPlan(null)
-
-    if (serverStt || shouldUseServerStt()) {
-      setServerStt(true)
-      stopListening({ hard: true })
-      preListenRef.current = transcript.trim()
-      const started = await startAudioCapture()
-      if (!started.ok) {
-        setError(micAccessMessage(started.reason))
-        if (started.reason === 'denied' || started.reason === 'unsupported') {
-          setSttSupported(false)
-        }
-        return
-      }
-      mediaSessionRef.current = started.session
-      setSttSupported(true)
-      setListening(true)
-      return
-    }
 
     const env = checkSpeechEnvironment()
     if (env !== 'ok') {
@@ -176,8 +140,8 @@ export function VoiceAssistant({
     stopListening()
     preListenRef.current = transcript.trim()
     const rec = new Ctor()
-    // Android Chrome: continuous + interim often emits progressive "finals"
-    rec.continuous = !androidStt
+    // Android + iOS: continuous=false so Web Speech returns text (restart if needed)
+    rec.continuous = !nonContinuousStt
     rec.interimResults = true
     rec.maxAlternatives = 1
     rec.lang = navigator.language || 'en-US'
@@ -224,44 +188,6 @@ export function VoiceAssistant({
     } catch {
       setError('Could not start the microphone. Try again or type instead.')
       setListening(false)
-    }
-  }
-
-  const stopAndTranscribe = async () => {
-    const session = mediaSessionRef.current
-    mediaSessionRef.current = null
-    setListening(false)
-    if (!session) return
-    setBusy(true)
-    setError(null)
-    try {
-      const blob = await session.stop()
-      if (!blob || blob.size < 200) {
-        setError('Recording too short — hold Listen and speak a bit longer.')
-        return
-      }
-      const mime = blob.type || 'audio/webm'
-      const audioBase64 = await blobToBase64(blob)
-      const lang = (navigator.language || 'en').slice(0, 2)
-      const { text: raw } = await transcribeAudio({
-        scopeId,
-        audioBase64,
-        mimeType: mime,
-        fileName: `voice.${extensionForAudioMime(mime)}`,
-        language: lang,
-      })
-      const piece = collapseSpeechStutter(raw.trim())
-      if (!piece) {
-        setError('Heard nothing — speak clearly and try again, or type below.')
-        return
-      }
-      setTranscript(
-        collapseSpeechStutter([preListenRef.current, piece].filter(Boolean).join(' ')),
-      )
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Transcription failed')
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -438,10 +364,8 @@ export function VoiceAssistant({
             variant={listening ? 'danger' : 'secondary'}
             disabled={busy || !canEdit || !sttSupported}
             onClick={() => {
-              if (listening) {
-                if (serverStt || mediaSessionRef.current) void stopAndTranscribe()
-                else stopListening()
-              } else void startListening()
+              if (listening) stopListening()
+              else startListening()
             }}
             title={sttSupported ? (listening ? 'Stop listening' : 'Start microphone') : 'Mic not supported'}
           >
@@ -455,16 +379,12 @@ export function VoiceAssistant({
           ) : (
             <span className="text-xs text-[var(--color-muted)]">
               {listening
-                ? serverStt
-                  ? 'Recording… tap Stop when done (text appears after)'
-                  : androidStt
-                    ? 'Listening… speak, then pause (tap Listen again if needed)'
-                    : 'Listening… speak naturally'
-                : serverStt
-                  ? 'Tap Listen, speak, Stop → text, then Do it (iOS)'
-                  : androidStt
-                    ? 'Tap Listen, speak one phrase, then Do it'
-                    : 'Tap Listen, then Do it'}
+                ? androidStt
+                  ? 'Listening… speak, then pause (tap Listen again if needed)'
+                  : 'Listening… speak naturally'
+                : androidStt
+                  ? 'Tap Listen, speak one phrase, then Do it'
+                  : 'Tap Listen, then Do it'}
             </span>
           )}
         </div>
