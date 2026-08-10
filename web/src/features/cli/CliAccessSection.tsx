@@ -39,13 +39,16 @@ export function CliAccessSection() {
 
   const setupSnippet = useMemo(() => {
     if (!revealedToken || !projectUrl) return ''
+    const url = projectUrl
+    const tok = revealedToken
+    const key = anonKey || '<your-anon-key>'
     return `# No repo clone needed — uses npm package projects-manager-mcp
 # (requires Node.js 18+ and Grok CLI)
 
 grok mcp add projects-manager \\
-  -e PROJECTS_MANAGER_URL=${projectUrl} \\
-  -e PROJECTS_MANAGER_TOKEN=${revealedToken} \\
-  -e PROJECTS_MANAGER_ANON_KEY=${anonKey || '<your-anon-key>'} \\
+  -e "PROJECTS_MANAGER_URL=${url}" \\
+  -e "PROJECTS_MANAGER_TOKEN=${tok}" \\
+  -e "PROJECTS_MANAGER_ANON_KEY=${key}" \\
   -- npx -y projects-manager-mcp@latest
 
 # Then restart Grok. Check: grok mcp list`

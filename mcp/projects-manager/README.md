@@ -12,9 +12,9 @@ Users do **not** need the full app monorepo — only this package (via npm) plus
 
 ```bash
 grok mcp add projects-manager \
-  -e PROJECTS_MANAGER_URL="https://YOUR_PROJECT.supabase.co" \
-  -e PROJECTS_MANAGER_TOKEN="pmcli_…" \
-  -e PROJECTS_MANAGER_ANON_KEY="your-anon-key" \
+  -e "PROJECTS_MANAGER_URL=https://YOUR_PROJECT.supabase.co" \
+  -e "PROJECTS_MANAGER_TOKEN=pmcli_…" \
+  -e "PROJECTS_MANAGER_ANON_KEY=your-anon-key" \
   -- npx -y projects-manager-mcp@latest
 ```
 
@@ -22,9 +22,9 @@ Windows PowerShell:
 
 ```powershell
 grok mcp add projects-manager `
-  -e PROJECTS_MANAGER_URL="https://YOUR_PROJECT.supabase.co" `
-  -e PROJECTS_MANAGER_TOKEN="pmcli_…" `
-  -e PROJECTS_MANAGER_ANON_KEY="your-anon-key" `
+  -e "PROJECTS_MANAGER_URL=https://YOUR_PROJECT.supabase.co" `
+  -e "PROJECTS_MANAGER_TOKEN=pmcli_…" `
+  -e "PROJECTS_MANAGER_ANON_KEY=your-anon-key" `
   -- npx -y projects-manager-mcp@latest
 ```
 
