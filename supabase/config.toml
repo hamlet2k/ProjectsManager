@@ -20,21 +20,26 @@ port = 54323
 
 [auth]
 enabled = true
-site_url = "http://localhost:5173"
+# Production site (local dev still listed in redirects)
+site_url = "https://projects-manager-navy.vercel.app"
 additional_redirect_urls = [
+  "http://localhost:5173",
   "http://localhost:5173/**",
   "http://localhost:5173/auth/callback",
   "http://localhost:5173/reset-password",
+  "https://projects-manager-navy.vercel.app",
   "https://projects-manager-navy.vercel.app/**",
   "https://projects-manager-navy.vercel.app/auth/callback",
   "https://projects-manager-navy.vercel.app/reset-password",
   "https://*.vercel.app/**",
 ]
 enable_signup = true
+# Required for Settings → Link Google/GitHub on an existing account (auth.linkIdentity)
+enable_manual_linking = true
 
 [auth.email]
 enable_signup = true
-enable_confirmations = false
+enable_confirmations = true
 
 # Branded templates (see supabase/templates/)
 [auth.email.template.invite]

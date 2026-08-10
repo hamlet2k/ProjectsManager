@@ -1056,38 +1056,66 @@ a:hover .project-title {
   box-shadow: 0 0 0 2px var(--color-surface);
 }
 
-/* Sort control embedded in sticky pill bubble */
+/* Sort pill + sketchy dropdown (matches notebook / tag-chip language) */
 .sticky-pill-sort {
-  gap: 0.35rem;
-  padding-right: 0.65rem;
+  gap: 0.4rem;
+  padding-right: 0.85rem;
 }
 
-.sticky-sort-select {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+.sticky-pill-sort.is-open {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent),
+    0 4px 14px rgba(15, 23, 42, 0.14),
+    var(--shadow-sketch);
+}
+
+.sticky-sort-label {
   font-weight: 700;
-  font-size: 0.95rem;
-  max-width: 6.5rem;
-  padding: 0 0.15rem;
+  white-space: nowrap;
+}
+
+.sticky-sort-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 40;
+  min-width: 13.5rem;
+  padding: 0.65rem 0.7rem;
   margin: 0;
+}
+
+.sticky-sort-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sketch, 0.5rem);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  padding: 0.45rem 0.55rem;
   cursor: pointer;
-  outline: none;
 }
 
-.sticky-sort-select:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
-  outline-offset: 2px;
-  border-radius: 0.25rem;
+.sticky-sort-option:hover {
+  background: var(--color-surface-2, color-mix(in srgb, var(--color-surface) 88%, var(--color-text)));
+  border-color: var(--color-border);
 }
 
-@media (max-width: 640px) {
-  .sticky-sort-select {
-    max-width: 5.25rem;
-    font-size: 0.85rem;
-  }
+.sticky-sort-option.is-active {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+}
+
+.sticky-sort-option-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.05rem;
 }
 
 /*

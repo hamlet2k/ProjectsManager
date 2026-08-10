@@ -42,6 +42,7 @@ import {
   loadLastNewTaskTagIds,
   saveLastNewTaskTagIds,
 } from '@/features/tasks/lastNewTaskTags'
+import { SortMenu } from '@/features/tasks/components/SortMenu'
 import {
   getProjectJson,
   getProjectPref,
@@ -1251,27 +1252,7 @@ export function TaskBoard({
           )}
           <div className="flex gap-2 sm:gap-3">
             {/* Sort — always visible (voice set_view uses same sortBy state) */}
-            <label
-              className="sticky-pill sticky-pill-bubble sticky-pill-sort cursor-pointer"
-              title="Sort order"
-            >
-              <Icons.List size="1.1em" className="shrink-0 opacity-80" />
-              <span className="max-sm:sr-only">Sort</span>
-              <select
-                className="sticky-sort-select"
-                value={sortBy}
-                aria-label="Sort tasks"
-                onChange={(e) => setSortBy(e.target.value as SortMode)}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <option value="rank">Rank</option>
-                <option value="name">Name</option>
-                <option value="due">Due</option>
-                <option value="created">Created</option>
-                <option value="tags">Tags</option>
-              </select>
-              {sortBy !== 'rank' ? <span className="sticky-pill-dot" /> : null}
-            </label>
+            <SortMenu value={sortBy} onChange={setSortBy} />
             {showingPills ? (
               <>
                 <button
@@ -1340,48 +1321,8 @@ export function TaskBoard({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                <label className="block min-w-0 flex-1 text-sm">
-                  <span className="mb-1 block font-medium text-[var(--color-muted)]">
-                    Search tasks
-                  </span>
-                  <div className="field-input-wrap">
-                    <input
-                      ref={searchRef}
-                      className="field-input !pr-9"
-                      placeholder={
-                        githubVisible
-                          ? 'Search name, description, #issue…'
-                          : 'Search by name or description'
-                      }
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape' && search) {
-                          e.preventDefault()
-                          setSearch('')
-                        }
-                        if (e.key === 'Enter') {
-                          collapseFiltersIfMobile()
-                        }
-                      }}
-                    />
-                    {search ? (
-                      <button
-                        type="button"
-                        className="field-input-clear"
-                        title={`${TASK_SHORTCUTS.clearSearch.description} (${TASK_SHORTCUTS.clearSearch.combo()})`}
-                        onClick={() => {
-                          setSearch('')
-                          searchRef.current?.focus()
-                        }}
-                      >
-                        <Icons.X size="0.85em" />
-                      </button>
-                    ) : null}
-                  </div>
-                </label>
-                <label className="flex items-center gap-2 pb-2 text-sm text-[var(--color-muted)]">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
                   <input
                     type="checkbox"
                     className="h-4 w-8 accent-[var(--color-primary)]"
@@ -1393,11 +1334,20 @@ export function TaskBoard({
                   />
                   Show completed
                 </label>
+                {search.trim() ? (
+                  <p className="text-xs text-[var(--color-muted)]">
+                    Active search: “{search.trim()}” — use sticky{' '}
+                    <strong>Search</strong> to edit (voice/AI can still set search).
+                    <button
+                      type="button"
+                      className="ml-1 underline decoration-wavy"
+                      onClick={() => setSearch('')}
+                    >
+                      Clear search
+                    </button>
+                  </p>
+                ) : null}
               </div>
-              <p className="text-xs text-[var(--color-muted)]">
-                Sort is on the sticky <strong>Sort</strong> control (also used by voice / AI view
-                commands). Clear all still resets sort to Rank.
-              </p>
 
               <div className="space-y-3">
                 <div>

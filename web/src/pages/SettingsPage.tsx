@@ -207,8 +207,9 @@ export function SettingsPage() {
         <div className="border-t border-[var(--color-border)] pt-4">
           <h3 className="text-sm font-semibold">Linked sign-in</h3>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            Google and GitHub for account login (separate from the GitHub tasks integration below).
-            You must keep at least one sign-in method.
+            Google and GitHub for <strong>account login</strong> (not the GitHub tasks integration).
+            Supabase will not let you remove your <em>last</em> sign-in method — that would lock you
+            out of the account. Link a second method first, then you can unlink one.
           </p>
           <ul className="mt-3 space-y-2">
             {(
@@ -231,7 +232,6 @@ export function SettingsPage() {
                           ? String(identity.identity_data.email)
                           : 'Connected'
                         : 'Not linked'}
-                      {hasEmail && p.linked ? ' · email/password also available' : null}
                     </p>
                   </div>
                   {p.linked ? (
@@ -241,14 +241,21 @@ export function SettingsPage() {
                       disabled={oauthBusy != null || !canUnlinkOAuth || !identity}
                       title={
                         !canUnlinkOAuth
-                          ? 'Add another sign-in method before unlinking'
+                          ? 'Link another sign-in method first (email or the other OAuth provider)'
                           : `Unlink ${p.label}`
                       }
                       onClick={async () => {
                         if (!identity) return
+                        if (!canUnlinkOAuth) {
+                          toast.push(
+                            'Link another sign-in method first — you cannot remove your only way to log in.',
+                            'error',
+                          )
+                          return
+                        }
                         const ok = await confirm({
                           title: `Unlink ${p.label}?`,
-                          message: `You will no longer be able to sign in with ${p.label} until you link it again.`,
+                          message: `You will no longer sign in with ${p.label} until you link it again.`,
                           confirmLabel: 'Unlink',
                           danger: true,
                         })
@@ -258,10 +265,11 @@ export function SettingsPage() {
                           await unlinkOAuthIdentity(identity)
                           toast.push(`${p.label} unlinked`, 'success')
                         } catch (e) {
-                          toast.push(
-                            e instanceof Error ? e.message : `Could not unlink ${p.label}`,
-                            'error',
-                          )
+                          const raw = e instanceof Error ? e.message : String(e)
+                          const msg = /last|single|identity|cannot/i.test(raw)
+                            ? 'Cannot unlink your only sign-in method. Link email or another provider first.'
+                            : raw || `Could not unlink ${p.label}`
+                          toast.push(msg, 'error')
                         } finally {
                           setOauthBusy(null)
                         }
@@ -278,11 +286,13 @@ export function SettingsPage() {
                         setOauthBusy(p.id)
                         try {
                           await linkOAuthProvider(p.id)
+                          // Redirects to provider when manual linking is enabled
                         } catch (e) {
-                          toast.push(
-                            e instanceof Error ? e.message : `Could not link ${p.label}`,
-                            'error',
-                          )
+                          const raw = e instanceof Error ? e.message : String(e)
+                          const msg = /manual link/i.test(raw)
+                            ? 'Manual account linking is off in Supabase Auth. Enable “Allow manual linking” (Authentication → Providers / settings), then try again.'
+                            : raw || `Could not link ${p.label}`
+                          toast.push(msg, 'error')
                           setOauthBusy(null)
                         }
                       }}
@@ -300,7 +310,12 @@ export function SettingsPage() {
                   {user?.email ?? profile?.email ?? 'Configured'} · manage password below
                 </p>
               </li>
-            ) : null}
+            ) : (
+              <li className="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-muted)]">
+                No email/password on this account yet. Set a password below after recovery, or keep
+                at least one OAuth provider linked.
+              </li>
+            )}
           </ul>
         </div>
       </section>
