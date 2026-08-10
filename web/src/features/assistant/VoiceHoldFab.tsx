@@ -278,24 +278,38 @@ export function VoiceHoldFab({
       setError(null)
 
       const rec = new Ctor()
-      // Android + iOS: continuous=true often stalls (no transcript). Restart on end while holding.
+      // Android: continuous=false + restart. iOS/iPad/desktop: continuous=true (Sprites-style).
       rec.continuous = !nonContinuousStt
       rec.interimResults = true
-      rec.maxAlternatives = 1
+      rec.maxAlternatives = nonContinuousStt ? 1 : 3
       rec.lang = navigator.language || 'en-US'
 
       rec.onresult = (ev) => {
-        const finals: string[] = []
-        let interim = ''
-        for (let i = 0; i < ev.results.length; i++) {
-          const piece = ev.results[i]![0]!.transcript ?? ''
-          if (ev.results[i]!.isFinal) finals.push(piece)
-          else interim += piece
+        if (nonContinuousStt) {
+          // Android progressive "finals" → merge carefully
+          const finals: string[] = []
+          let interim = ''
+          for (let i = 0; i < ev.results.length; i++) {
+            const piece = ev.results[i]![0]!.transcript ?? ''
+            if (ev.results[i]!.isFinal) finals.push(piece)
+            else interim += piece
+          }
+          const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
+          const sessionInterim = interim.replace(/\s+/g, ' ').trim()
+          const display = collapseSpeechStutter(
+            [preListenRef.current, sessionFinal, sessionInterim].filter(Boolean).join(' '),
+          )
+          transcriptRef.current = display
+          setTranscript(display)
+          return
         }
-        const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
-        const sessionInterim = interim.replace(/\s+/g, ' ').trim()
+        // iOS / desktop (Sprites pattern): concatenate all result alternatives
+        let text = ''
+        for (let i = 0; i < ev.results.length; i++) {
+          text += `${ev.results[i]![0]?.transcript ?? ''} `
+        }
         const display = collapseSpeechStutter(
-          [preListenRef.current, sessionFinal, sessionInterim].filter(Boolean).join(' '),
+          [preListenRef.current, text.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' '),
         )
         transcriptRef.current = display
         setTranscript(display)
@@ -303,6 +317,8 @@ export function VoiceHoldFab({
 
       rec.onerror = (ev) => {
         if (ev.error === 'aborted' || ev.error === 'no-speech') return
+        // iOS sometimes fires network spuriously while still returning results later
+        if (ev.error === 'network' && !nonContinuousStt) return
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           setError(micAccessMessage('denied'))
           setSttOk(false)
@@ -319,11 +335,21 @@ export function VoiceHoldFab({
         recRef.current = null
         const p = phaseRef.current
         if (p === 'holding' || p === 'locked') {
-          window.setTimeout(() => {
+          // Restart only when still holding. Prefer sync restart on iOS (gesture chain);
+          // Android keeps a short delay to avoid engine thrash.
+          const restart = () => {
             if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
               startListening({ append: true, keepFeedback: true })
             }
-          }, 120)
+          }
+          if (nonContinuousStt) window.setTimeout(restart, 120)
+          else {
+            try {
+              restart()
+            } catch {
+              window.setTimeout(restart, 80)
+            }
+          }
           return
         }
         setTranscript((t) => collapseSpeechStutter(t))

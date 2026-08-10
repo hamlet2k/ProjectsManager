@@ -44,12 +44,12 @@ Natural language control for the **current project**: speak or type → plan →
 
 ### STT notes
 
-- **Speech-to-text is free** in the browser (Web Speech API) on Windows, Android, and iOS Safari.
-- No PWA service worker, no server Whisper, no second API key for STT.
-- **Do not** call `getUserMedia` before `SpeechRecognition` (that can show the mic on iOS without returning text).
-- Mobile (Android + iOS) uses `continuous=false` and restarts while holding so transcripts keep flowing.
-- The **LLM** (xAI / etc.) runs only after text exists — for planning actions.
-- Requires **HTTPS** (or localhost).
+- Free **browser** Web Speech (same approach as the Sprites app). No Whisper, no second STT key.
+- **Android:** `continuous=false` + restart while holding (progressive finals merge).
+- **iOS / iPad / desktop:** `continuous=true` from the hold gesture (iPad was broken when we forced Android’s `continuous=false` + delayed restart).
+- Do **not** call `getUserMedia` before `SpeechRecognition`.
+- The **LLM** runs only after text exists (plan step).
+- Requires **HTTPS**.
 
 ## Deploy
 

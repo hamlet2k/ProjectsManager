@@ -42,12 +42,17 @@ export function isIosBrowser(): boolean {
 }
 
 /**
- * Mobile WebKit/Chrome: use continuous=false + onend restart while holding.
- * continuous=true often yields no text on iOS Safari (mic indicator still shows).
- * Never call getUserMedia before SpeechRecognition — that can steal the mic on iOS.
+ * Android Chrome: continuous=true + interim often emits progressive "finals".
+ * Use continuous=false + onend restart while holding (works on Android).
+ *
+ * iOS/iPad: match the working Sprites app — continuous=true from the original
+ * pointer gesture. continuous=false + setTimeout restart often loses user-gesture
+ * context on iPad and returns no text (while the same device works in other tabs).
+ *
+ * Never call getUserMedia before SpeechRecognition — can steal the mic on iOS.
  */
 export function prefersNonContinuousSpeech(): boolean {
-  return isAndroidBrowser() || isIosBrowser()
+  return isAndroidBrowser()
 }
 
 export type MicAccessResult = 'ok' | 'denied' | 'insecure' | 'unsupported'

@@ -140,28 +140,40 @@ export function VoiceAssistant({
     stopListening()
     preListenRef.current = transcript.trim()
     const rec = new Ctor()
-    // Android + iOS: continuous=false so Web Speech returns text (restart if needed)
+    // Android: continuous=false. iOS/iPad/desktop: continuous=true (matches Sprites).
     rec.continuous = !nonContinuousStt
     rec.interimResults = true
-    rec.maxAlternatives = 1
+    rec.maxAlternatives = nonContinuousStt ? 1 : 3
     rec.lang = navigator.language || 'en-US'
     rec.onresult = (ev) => {
-      const finals: string[] = []
-      let interim = ''
-      for (let i = 0; i < ev.results.length; i++) {
-        const piece = ev.results[i]![0]!.transcript ?? ''
-        if (ev.results[i]!.isFinal) finals.push(piece)
-        else interim += piece
+      if (nonContinuousStt) {
+        const finals: string[] = []
+        let interim = ''
+        for (let i = 0; i < ev.results.length; i++) {
+          const piece = ev.results[i]![0]!.transcript ?? ''
+          if (ev.results[i]!.isFinal) finals.push(piece)
+          else interim += piece
+        }
+        const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
+        const sessionInterim = interim.replace(/\s+/g, ' ').trim()
+        const display = [preListenRef.current, sessionFinal, sessionInterim]
+          .filter(Boolean)
+          .join(' ')
+        setTranscript(collapseSpeechStutter(display))
+        return
       }
-      const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
-      const sessionInterim = interim.replace(/\s+/g, ' ').trim()
-      const display = [preListenRef.current, sessionFinal, sessionInterim]
+      let text = ''
+      for (let i = 0; i < ev.results.length; i++) {
+        text += `${ev.results[i]![0]?.transcript ?? ''} `
+      }
+      const display = [preListenRef.current, text.replace(/\s+/g, ' ').trim()]
         .filter(Boolean)
         .join(' ')
       setTranscript(collapseSpeechStutter(display))
     }
     rec.onerror = (ev) => {
       if (ev.error === 'aborted' || ev.error === 'no-speech') return
+      if (ev.error === 'network' && !nonContinuousStt) return
       if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
         setError(micAccessMessage('denied'))
         setListening(false)
