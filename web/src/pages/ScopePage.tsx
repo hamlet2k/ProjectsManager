@@ -55,7 +55,6 @@ import { Field } from '@/components/ui/Input'
 import { Icons } from '@/components/icons'
 import { TaskTransferModal } from '@/features/tasks/components/TaskTransferModal'
 import { ScopeFormModal } from '@/features/scopes/components/ScopeFormModal'
-import { VoiceAssistant } from '@/features/assistant/VoiceAssistant'
 import { VoiceHoldFab } from '@/features/assistant/VoiceHoldFab'
 import type { TaskBoardViewApi } from '@/features/tasks/components/TaskBoard'
 import { isGithubSystemTag } from '@/features/github/systemTag'
@@ -102,7 +101,7 @@ export function ScopePage() {
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<'export' | 'import'>('export')
   const [transferTaskIds, setTransferTaskIds] = useState<string[] | null>(null)
-  const [voiceOpen, setVoiceOpen] = useState(false)
+
   const [issuePicker, setIssuePicker] = useState<{
     mode: 'link' | 'import'
     taskId?: string
@@ -571,16 +570,6 @@ export function ScopePage() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {access.canEdit ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              title="Voice or type natural language commands for this project"
-              onClick={() => setVoiceOpen(true)}
-            >
-              <Icons.Mic size={14} /> Voice
-            </Button>
-          ) : null}
           <Button
             variant="secondary"
             size="sm"
@@ -1210,71 +1199,8 @@ export function ScopePage() {
         />
       ) : null}
 
-      <VoiceAssistant
-        open={voiceOpen}
-        onClose={() => setVoiceOpen(false)}
-        scopeId={scopeId!}
-        projectName={scope.name}
-        tasks={tasks}
-        tags={tags}
-        tagsByTask={tagsByTaskNames}
-        canEdit={access.canEdit}
-        createTask={async (input) => {
-          const task = await createTask.mutateAsync({
-            name: input.name,
-            description: input.description,
-            endDate: input.endDate,
-            tagIds: input.tagIds,
-          })
-          return task
-        }}
-        createTag={async (name) => {
-          const tag = await createTag.mutateAsync(name)
-          return tag
-        }}
-        setCompleted={async (taskId, completed) => {
-          await toggleComplete.mutateAsync({ taskId, completed })
-        }}
-        setTaskTags={async (taskId, tagIds) => {
-          await setTaskTags(taskId, tagIds)
-          await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
-          await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
-        }}
-        updateTask={async (input) => {
-          const task = await updateTask.mutateAsync({
-            id: input.id,
-            patch: {
-              ...(input.name !== undefined ? { name: input.name } : {}),
-              ...(input.description !== undefined ? { description: input.description } : {}),
-              ...(input.endDate !== undefined ? { end_date: input.endDate } : {}),
-            },
-          })
-          return task
-        }}
-        applyView={(patch) => taskBoardViewApiRef.current?.applyView(patch) ?? ['Board not ready']}
-        projectPrompt={scope.assistant_prompt}
-        onFocusTask={(id) => scrollToTask(id)}
-        onDone={(result) => {
-          void qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
-          void qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
-          void qc.invalidateQueries({ queryKey: ['tags', scopeId] })
-          if (!result) return
-          if (result.summaryLines.length) {
-            toast.push(
-              result.summaryLines.join(' · '),
-              result.errors.length ? 'error' : 'success',
-            )
-          } else if (result.errors.length) {
-            toast.push(result.errors.join(' · '), 'error')
-          } else if (result.ambiguous.length) {
-            toast.push('Pick which task you meant', 'success')
-          }
-        }}
-      />
-
       {access.canEdit ? (
         <VoiceHoldFab
-          hidden={voiceOpen}
           scopeId={scopeId!}
           projectName={scope.name}
           tasks={tasks}

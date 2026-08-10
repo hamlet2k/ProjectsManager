@@ -503,6 +503,10 @@ export function TaskBoard({
    * Smooth-scroll to a task row and play the same flash as new-task create.
    * Optionally expands the row and ensures completed tasks are visible.
    * Retries when the row is not in the DOM yet (e.g. tag regroup after create).
+   *
+   * Grouped sorts (tags/due): use document scroll position from getBoundingClientRect
+   * instead of scrollIntoView — nested/group layout often makes scrollIntoView land
+   * at the list end instead of the row.
    */
   const revealTask = useCallback(
     (taskId: string, opts?: { expand?: boolean; delayMs?: number }) => {
@@ -516,9 +520,10 @@ export function TaskBoard({
         setTagEditTaskId(null)
       }
 
-      // Tag groups re-layout after create — need more time for the row to mount in the right group
+      // Tag/due groups re-layout after create — wait longer for the row in the right group
+      const grouped = sortBy === 'tags' || sortBy === 'due'
       const baseDelay = opts?.delayMs ?? (unhidingCompleted ? 140 : 60)
-      const delayMs = sortBy === 'tags' || sortBy === 'due' ? Math.max(baseDelay, 160) : baseDelay
+      const delayMs = grouped ? Math.max(baseDelay, 280) : baseDelay
 
       if (flashClearTimer.current != null) {
         window.clearTimeout(flashClearTimer.current)
@@ -528,12 +533,31 @@ export function TaskBoard({
       const scrollToRow = (attempt: number) => {
         const el = document.getElementById(`task-row-${taskId}`)
         if (el) {
-          // center keeps sticky chrome from covering the row; avoid scrolling to list end
-          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+          const chrome = document.querySelector('.sticky-task-chrome') as HTMLElement | null
+          const chromeH = chrome?.getBoundingClientRect().height ?? 0
+          // Prefer nearest group heading offset when present (tags/due sections)
+          const groupSection = el.closest('[data-task-group]') as HTMLElement | null
+          const rect = el.getBoundingClientRect()
+          const absoluteTop = rect.top + window.scrollY
+          // Leave room for sticky chrome + a little breathing room; keep row in upper-middle viewport
+          const targetY = Math.max(0, absoluteTop - chromeH - 48)
+          window.scrollTo({ top: targetY, behavior: attempt === 0 ? 'smooth' : 'auto' })
+          // Second pass after layout settles (groups often shift after first paint)
+          if (grouped && attempt < 3) {
+            window.setTimeout(() => {
+              const el2 = document.getElementById(`task-row-${taskId}`)
+              if (!el2) return
+              const chrome2 = document.querySelector('.sticky-task-chrome') as HTMLElement | null
+              const h2 = chrome2?.getBoundingClientRect().height ?? 0
+              const y2 = el2.getBoundingClientRect().top + window.scrollY - h2 - 48
+              window.scrollTo({ top: Math.max(0, y2), behavior: 'smooth' })
+            }, 120)
+          }
+          void groupSection
           return
         }
-        if (attempt < 8) {
-          window.setTimeout(() => scrollToRow(attempt + 1), 50 + attempt * 30)
+        if (attempt < 14) {
+          window.setTimeout(() => scrollToRow(attempt + 1), 60 + attempt * 40)
         }
       }
 
@@ -546,7 +570,7 @@ export function TaskBoard({
         flashClearTimer.current = window.setTimeout(() => {
           setFlashTaskId(null)
           flashClearTimer.current = null
-        }, 2200 + delayMs)
+        }, 2800 + delayMs)
       }, 0)
     },
     [tasks, showCompleted, sortBy],
@@ -1195,9 +1219,14 @@ export function TaskBoard({
           showChromeScrim && 'is-chrome-focused',
         )}
       >
-        {/* Floating pills when a panel is collapsed — elevated bubble style */}
-        {showingPills ? (
-          <div className="pointer-events-auto sticky-pill-bar mb-3 flex items-center justify-between gap-3">
+        {/* Floating pills — elevated bubble style; Sort stays when panels expand */}
+        <div
+          className={cn(
+            'pointer-events-auto sticky-pill-bar mb-3 flex items-center justify-between gap-3',
+            !showingPills && 'justify-end',
+          )}
+        >
+          {showingPills ? (
             <div className="flex gap-3">
               {canEdit && !addOpen ? (
                 <button
@@ -1217,42 +1246,68 @@ export function TaskBoard({
                 <span />
               )}
             </div>
-            <div className="flex gap-2 sm:gap-3">
-              {/* Quick search — available without a keyboard (mobile) and via Ctrl+K */}
-              <button
-                type="button"
-                className="sticky-pill sticky-pill-bubble"
-                title={`Quick search (${TASK_SHORTCUTS.quickSearch.combo()})`}
-                onClick={() => {
-                  setQuickSearchOpen(true)
-                  queueMicrotask(() => quickSearchInputRef.current?.focus())
-                }}
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2 sm:gap-3">
+            {/* Sort — always visible (voice set_view uses same sortBy state) */}
+            <label
+              className="sticky-pill sticky-pill-bubble sticky-pill-sort cursor-pointer"
+              title="Sort order"
+            >
+              <Icons.List size="1.1em" className="shrink-0 opacity-80" />
+              <span className="max-sm:sr-only">Sort</span>
+              <select
+                className="sticky-sort-select"
+                value={sortBy}
+                aria-label="Sort tasks"
+                onChange={(e) => setSortBy(e.target.value as SortMode)}
+                onClick={(e) => e.stopPropagation()}
               >
-                <Icons.Search size="1.15em" />
-                <span className="max-sm:sr-only">Search</span>
-                {search.trim() ? <span className="sticky-pill-dot" /> : null}
-              </button>
-              {!filtersOpen ? (
+                <option value="rank">Rank</option>
+                <option value="name">Name</option>
+                <option value="due">Due</option>
+                <option value="created">Created</option>
+                <option value="tags">Tags</option>
+              </select>
+              {sortBy !== 'rank' ? <span className="sticky-pill-dot" /> : null}
+            </label>
+            {showingPills ? (
+              <>
                 <button
                   type="button"
                   className="sticky-pill sticky-pill-bubble"
-                  title="Filters"
-                  onClick={() => openFilters()}
+                  title={`Quick search (${TASK_SHORTCUTS.quickSearch.combo()})`}
+                  onClick={() => {
+                    setQuickSearchOpen(true)
+                    queueMicrotask(() => quickSearchInputRef.current?.focus())
+                  }}
                 >
-                  <Icons.Filter size="1.2em" />
-                  <span>Filters</span>
-                  {activeTagIds.length > 0 ||
-                  search ||
-                  sortBy !== 'rank' ||
-                  showCompleted ||
-                  githubRepoFilter ? (
-                    <span className="sticky-pill-dot" />
-                  ) : null}
+                  <Icons.Search size="1.15em" />
+                  <span className="max-sm:sr-only">Search</span>
+                  {search.trim() ? <span className="sticky-pill-dot" /> : null}
                 </button>
-              ) : null}
-            </div>
+                {!filtersOpen ? (
+                  <button
+                    type="button"
+                    className="sticky-pill sticky-pill-bubble"
+                    title="Filters"
+                    onClick={() => openFilters()}
+                  >
+                    <Icons.Filter size="1.2em" />
+                    <span>Filters</span>
+                    {activeTagIds.length > 0 ||
+                    search ||
+                    showCompleted ||
+                    githubRepoFilter ? (
+                      <span className="sticky-pill-dot" />
+                    ) : null}
+                  </button>
+                ) : null}
+              </>
+            ) : null}
           </div>
-        ) : null}
+        </div>
 
         <div className="pointer-events-auto space-y-3">
           {filtersOpen ? (
@@ -1262,7 +1317,6 @@ export function TaskBoard({
                 <div className="flex items-center gap-1">
                   {(search ||
                     activeTagIds.length > 0 ||
-                    sortBy !== 'rank' ||
                     showCompleted ||
                     githubRepoFilter) && (
                     <button
@@ -1327,23 +1381,6 @@ export function TaskBoard({
                     ) : null}
                   </div>
                 </label>
-                <label className="block w-full text-sm md:w-44">
-                  <span className="mb-1 block font-medium text-[var(--color-muted)]">Sort by</span>
-                  <select
-                    className="field-input"
-                    value={sortBy}
-                    onChange={(e) => {
-                      setSortBy(e.target.value as SortMode)
-                      collapseFiltersIfMobile()
-                    }}
-                  >
-                    <option value="rank">Rank</option>
-                    <option value="name">Name</option>
-                    <option value="due">Due date (groups)</option>
-                    <option value="created">Created</option>
-                    <option value="tags">Tags (groups)</option>
-                  </select>
-                </label>
                 <label className="flex items-center gap-2 pb-2 text-sm text-[var(--color-muted)]">
                   <input
                     type="checkbox"
@@ -1357,6 +1394,10 @@ export function TaskBoard({
                   Show completed
                 </label>
               </div>
+              <p className="text-xs text-[var(--color-muted)]">
+                Sort is on the sticky <strong>Sort</strong> control (also used by voice / AI view
+                commands). Clear all still resets sort to Rank.
+              </p>
 
               <div className="space-y-3">
                 <div>
@@ -1796,7 +1837,7 @@ export function TaskBoard({
           </div>
         ) : (
           groups.map((group) => (
-            <div key={group.key} className="space-y-2">
+            <div key={group.key} className="space-y-2" data-task-group={group.key}>
               {sortBy === 'tags' || sortBy === 'due' ? (
                 <div className="task-group-header sticky z-10 flex flex-wrap items-center gap-2 bg-[var(--color-bg)]/95 py-1.5 backdrop-blur-sm">
                   <h3 className="task-group-title text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">

@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
+import type { Session, User, UserIdentity } from '@supabase/supabase-js'
 import { getSupabase, isSupabaseConfigured, tryGetSupabase } from '@/lib/supabase/client'
 import type { Profile, ThemePref } from '@/lib/supabase/types'
 
@@ -31,6 +31,10 @@ type AuthContextValue = {
   signInWithMagicLink: (email: string) => Promise<void>
   /** OAuth: Google or GitHub (Supabase Auth providers — not the GitHub task integration). */
   signInWithOAuth: (provider: 'google' | 'github') => Promise<void>
+  /** Link another OAuth provider to the current account (redirects). */
+  linkOAuthProvider: (provider: 'google' | 'github') => Promise<void>
+  /** Unlink a provider identity (must keep at least one sign-in method). */
+  unlinkOAuthIdentity: (identity: UserIdentity) => Promise<void>
   /** Send password-reset email (Supabase recovery link). */
   resetPasswordForEmail: (email: string) => Promise<void>
   /**
@@ -202,6 +206,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }, [])
 
+  const linkOAuthProvider = useCallback(async (provider: 'google' | 'github') => {
+    const { error } = await getSupabase().auth.linkIdentity({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: provider === 'github' ? 'read:user user:email' : undefined,
+      },
+    })
+    if (error) throw error
+  }, [])
+
+  const unlinkOAuthIdentity = useCallback(async (identity: UserIdentity) => {
+    const { error } = await getSupabase().auth.unlinkIdentity(identity)
+    if (error) throw error
+    // Refresh session so user.identities updates in context
+    const { data, error: uErr } = await getSupabase().auth.getUser()
+    if (uErr) throw uErr
+    if (data.user) {
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              user: data.user!,
+            }
+          : prev,
+      )
+    }
+  }, [])
+
   const resetPasswordForEmail = useCallback(async (email: string) => {
     const { error } = await getSupabase().auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/reset-password`,
@@ -273,6 +306,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signInWithMagicLink,
       signInWithOAuth,
+      linkOAuthProvider,
+      unlinkOAuthIdentity,
       resetPasswordForEmail,
       updatePassword,
       signOut,
@@ -289,6 +324,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signInWithMagicLink,
       signInWithOAuth,
+      linkOAuthProvider,
+      unlinkOAuthIdentity,
       resetPasswordForEmail,
       updatePassword,
       signOut,

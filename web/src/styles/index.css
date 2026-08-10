@@ -1056,6 +1056,40 @@ a:hover .project-title {
   box-shadow: 0 0 0 2px var(--color-surface);
 }
 
+/* Sort control embedded in sticky pill bubble */
+.sticky-pill-sort {
+  gap: 0.35rem;
+  padding-right: 0.65rem;
+}
+
+.sticky-sort-select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.95rem;
+  max-width: 6.5rem;
+  padding: 0 0.15rem;
+  margin: 0;
+  cursor: pointer;
+  outline: none;
+}
+
+.sticky-sort-select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .sticky-sort-select {
+    max-width: 5.25rem;
+    font-size: 0.85rem;
+  }
+}
+
 /*
  * Sticky layer order (high → low):
  *   1) App nav (z ~40)

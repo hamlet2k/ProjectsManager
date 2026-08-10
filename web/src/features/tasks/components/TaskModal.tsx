@@ -205,10 +205,14 @@ export function TaskModal({
             <Button
               disabled={saving || enhancing || !name.trim()}
               onClick={() => void save()}
-              title={`${TASK_SHORTCUTS.saveModal.description} (${TASK_SHORTCUTS.saveModal.combo()})`}
+              title={
+                initial
+                  ? `${TASK_SHORTCUTS.saveModal.description} (${TASK_SHORTCUTS.saveModal.combo()})`
+                  : `Save and close (${TASK_SHORTCUTS.saveModal.combo()} · Enter in title)`
+              }
               aria-keyshortcuts="Control+S Meta+S"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : initial ? 'Save' : 'Save & close'}
             </Button>
           </div>
         </div>

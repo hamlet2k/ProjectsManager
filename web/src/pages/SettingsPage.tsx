@@ -120,7 +120,14 @@ function KeyboardShortcutsSection() {
 }
 
 export function SettingsPage() {
-  const { profile, updateProfile, updatePassword } = useAuth()
+  const {
+    profile,
+    user,
+    updateProfile,
+    updatePassword,
+    linkOAuthProvider,
+    unlinkOAuthIdentity,
+  } = useAuth()
   const { theme, setTheme } = useTheme()
   const toast = useToast()
   const confirm = useConfirm()
@@ -133,11 +140,19 @@ export function SettingsPage() {
     token_hint: string | null
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [oauthBusy, setOauthBusy] = useState<'google' | 'github' | null>(null)
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordBusy, setPasswordBusy] = useState(false)
+
+  const identities = user?.identities ?? []
+  const hasGoogle = identities.some((i) => i.provider === 'google')
+  const hasGithub = identities.some((i) => i.provider === 'github')
+  const hasEmail = identities.some((i) => i.provider === 'email')
+  // Can unlink OAuth only if another method remains (email or second OAuth)
+  const canUnlinkOAuth = identities.length > 1
 
   useEffect(() => {
     if (profile) {
@@ -188,6 +203,106 @@ export function SettingsPage() {
         >
           Save profile
         </Button>
+
+        <div className="border-t border-[var(--color-border)] pt-4">
+          <h3 className="text-sm font-semibold">Linked sign-in</h3>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            Google and GitHub for account login (separate from the GitHub tasks integration below).
+            You must keep at least one sign-in method.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {(
+              [
+                { id: 'google' as const, label: 'Google', linked: hasGoogle },
+                { id: 'github' as const, label: 'GitHub', linked: hasGithub },
+              ] as const
+            ).map((p) => {
+              const identity = identities.find((i) => i.provider === p.id)
+              return (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">{p.label}</p>
+                    <p className="text-xs text-[var(--color-muted)]">
+                      {p.linked
+                        ? identity?.identity_data?.email
+                          ? String(identity.identity_data.email)
+                          : 'Connected'
+                        : 'Not linked'}
+                      {hasEmail && p.linked ? ' · email/password also available' : null}
+                    </p>
+                  </div>
+                  {p.linked ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={oauthBusy != null || !canUnlinkOAuth || !identity}
+                      title={
+                        !canUnlinkOAuth
+                          ? 'Add another sign-in method before unlinking'
+                          : `Unlink ${p.label}`
+                      }
+                      onClick={async () => {
+                        if (!identity) return
+                        const ok = await confirm({
+                          title: `Unlink ${p.label}?`,
+                          message: `You will no longer be able to sign in with ${p.label} until you link it again.`,
+                          confirmLabel: 'Unlink',
+                          danger: true,
+                        })
+                        if (!ok) return
+                        setOauthBusy(p.id)
+                        try {
+                          await unlinkOAuthIdentity(identity)
+                          toast.push(`${p.label} unlinked`, 'success')
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : `Could not unlink ${p.label}`,
+                            'error',
+                          )
+                        } finally {
+                          setOauthBusy(null)
+                        }
+                      }}
+                    >
+                      {oauthBusy === p.id ? '…' : 'Unlink'}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={oauthBusy != null}
+                      onClick={async () => {
+                        setOauthBusy(p.id)
+                        try {
+                          await linkOAuthProvider(p.id)
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : `Could not link ${p.label}`,
+                            'error',
+                          )
+                          setOauthBusy(null)
+                        }
+                      }}
+                    >
+                      {oauthBusy === p.id ? 'Redirecting…' : 'Link'}
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
+            {hasEmail ? (
+              <li className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm">
+                <p className="font-medium">Email &amp; password</p>
+                <p className="text-xs text-[var(--color-muted)]">
+                  {user?.email ?? profile?.email ?? 'Configured'} · manage password below
+                </p>
+              </li>
+            ) : null}
+          </ul>
+        </div>
       </section>
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
