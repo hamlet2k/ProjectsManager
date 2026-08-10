@@ -55,6 +55,11 @@ import { Field } from '@/components/ui/Input'
 import { Icons } from '@/components/icons'
 import { TaskTransferModal } from '@/features/tasks/components/TaskTransferModal'
 import { ScopeFormModal } from '@/features/scopes/components/ScopeFormModal'
+import { VoiceAssistant } from '@/features/assistant/VoiceAssistant'
+import { VoiceHoldFab } from '@/features/assistant/VoiceHoldFab'
+import type { TaskBoardViewApi } from '@/features/tasks/components/TaskBoard'
+import { isGithubSystemTag } from '@/features/github/systemTag'
+import { enhanceTaskDraft } from '@/features/assistant/api'
 
 export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
@@ -97,6 +102,7 @@ export function ScopePage() {
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferMode, setTransferMode] = useState<'export' | 'import'>('export')
   const [transferTaskIds, setTransferTaskIds] = useState<string[] | null>(null)
+  const [voiceOpen, setVoiceOpen] = useState(false)
   const [issuePicker, setIssuePicker] = useState<{
     mode: 'link' | 'import'
     taskId?: string
@@ -108,6 +114,7 @@ export function ScopePage() {
 
   const searchRef = useRef<HTMLInputElement>(null)
   const quickAddRef = useRef<HTMLInputElement>(null)
+  const taskBoardViewApiRef = useRef<TaskBoardViewApi | null>(null)
   /** Throttle soft GitHub sync on expand (parity with classic app, without spam). */
   const lastGhSyncAt = useRef<Map<string, number>>(new Map())
 
@@ -123,6 +130,24 @@ export function ScopePage() {
     if (!editingTask) return []
     return taskTags.filter((tt) => tt.task_id === editingTask.id).map((tt) => tt.tag_id)
   }, [editingTask, taskTags])
+
+  const tagNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of tags) m.set(t.id, t.name)
+    return m
+  }, [tags])
+
+  const tagsByTaskNames = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const tt of taskTags) {
+      const name = tagNameById.get(tt.tag_id)
+      if (!name) continue
+      const list = m.get(tt.task_id) ?? []
+      list.push(name)
+      m.set(tt.task_id, list)
+    }
+    return m
+  }, [taskTags, tagNameById])
 
   const scopeGhConfigsQuery = useQuery({
     queryKey: ['scope-github-configs', scopeId],
@@ -546,6 +571,16 @@ export function ScopePage() {
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {access.canEdit ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Voice or type natural language commands for this project"
+              onClick={() => setVoiceOpen(true)}
+            >
+              <Icons.Mic size={14} /> Voice
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="sm"
@@ -604,6 +639,8 @@ export function ScopePage() {
         defaultGithubRepo={displayRepo}
         searchInputRef={searchRef}
         quickAddRef={quickAddRef}
+        viewApiRef={taskBoardViewApiRef}
+        scopeId={scopeId}
         focusTaskId={focusTaskId}
         onFocusTaskHandled={() => setFocusTaskId(null)}
         onToggleComplete={async (task, completed) => {
@@ -765,10 +802,41 @@ export function ScopePage() {
                 'error',
               )
             }
-            return
+            return task
           }
           toast.push('Task added', 'success')
+          return task
         }}
+        onEnhanceDraft={
+          access.canEdit
+            ? async (draft) => {
+                const res = await enhanceTaskDraft({
+                  scopeId: scopeId!,
+                  projectName: scope.name,
+                  projectPrompt: scope.assistant_prompt,
+                  tags: tags.filter((t) => !isGithubSystemTag(t.name)).map((t) => t.name),
+                  name: draft.name,
+                  description: draft.description,
+                  tagNames: draft.tagIds
+                    .map((id) => tags.find((t) => t.id === id)?.name)
+                    .filter((n): n is string => Boolean(n)),
+                })
+                const tagIds: string[] = []
+                for (const raw of res.tag_names) {
+                  const key = raw.toLowerCase()
+                  let tag = tags.find((t) => t.name.toLowerCase() === key)
+                  if (!tag) tag = await createTag.mutateAsync(raw)
+                  if (!tagIds.includes(tag.id)) tagIds.push(tag.id)
+                }
+                return {
+                  name: res.name,
+                  description: res.description ?? '',
+                  tagIds,
+                  endDate: res.end_date,
+                }
+              }
+            : undefined
+        }
         onOpenDetailedAdd={() => {
           setEditingTask(null)
           setTaskModalOpen(true)
@@ -888,6 +956,7 @@ export function ScopePage() {
         open={taskModalOpen}
         onClose={() => setTaskModalOpen(false)}
         initial={editingTask}
+        scopeId={scopeId}
         tags={tags}
         selectedTagIds={selectedTagIds}
         onCreateTag={
@@ -904,6 +973,39 @@ export function ScopePage() {
             ? () => setIssuePicker({ mode: 'import' })
             : undefined
         }
+        onEnhance={
+          access.canEdit
+            ? async (draft) => {
+                const res = await enhanceTaskDraft({
+                  scopeId: scopeId!,
+                  projectName: scope.name,
+                  projectPrompt: scope.assistant_prompt,
+                  tags: tags.filter((t) => !isGithubSystemTag(t.name)).map((t) => t.name),
+                  name: draft.name,
+                  description: draft.description,
+                  tagNames: draft.tagIds
+                    .map((id) => tags.find((t) => t.id === id)?.name)
+                    .filter((n): n is string => Boolean(n)),
+                })
+                const tagIds: string[] = []
+                for (const raw of res.tag_names) {
+                  const key = raw.toLowerCase()
+                  let tag = tags.find((t) => t.name.toLowerCase() === key)
+                  if (!tag) {
+                    tag = await createTag.mutateAsync(raw)
+                  }
+                  if (!tagIds.includes(tag.id)) tagIds.push(tag.id)
+                }
+                return {
+                  name: res.name,
+                  description: res.description ?? '',
+                  tagIds,
+                  endDate: res.end_date,
+                }
+              }
+            : undefined
+        }
+        onCreated={(id) => scrollToTask(id)}
         onSubmit={async (values) => {
           if (editingTask) {
             await updateTask.mutateAsync({
@@ -916,44 +1018,45 @@ export function ScopePage() {
               tagIds: values.tagIds,
             })
             toast.push('Task updated', 'success')
-          } else {
-            const task = await createTask.mutateAsync({
-              name: values.name,
-              description: values.description || null,
-              endDate: values.endDate,
-              tagIds: values.tagIds,
-            })
-            if (
-              values.createGithubIssue &&
-              ghCaps.canMutate &&
-              ghCaps.scopeIntegrated &&
-              task?.id
-            ) {
-              try {
-                const res = await createIssueForTask({
-                  taskId: task.id,
-                  title: task.name,
-                  body: task.description ?? undefined,
-                })
-                await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
-                toast.push(
-                  res.project_added
-                    ? 'Task created · GitHub issue created (on Project board)'
-                    : 'Task created · GitHub issue created',
-                  'success',
-                )
-              } catch (e) {
-                toast.push(
-                  e instanceof Error
-                    ? `Task created, but GitHub issue failed: ${e.message}`
-                    : 'Task created, but GitHub issue failed',
-                  'error',
-                )
-              }
-            } else {
-              toast.push('Task created', 'success')
-            }
+            return
           }
+          const task = await createTask.mutateAsync({
+            name: values.name,
+            description: values.description || null,
+            endDate: values.endDate,
+            tagIds: values.tagIds,
+          })
+          if (
+            values.createGithubIssue &&
+            ghCaps.canMutate &&
+            ghCaps.scopeIntegrated &&
+            task?.id
+          ) {
+            try {
+              const res = await createIssueForTask({
+                taskId: task.id,
+                title: task.name,
+                body: task.description ?? undefined,
+              })
+              await qc.invalidateQueries({ queryKey: ['task-github', scopeId] })
+              toast.push(
+                res.project_added
+                  ? 'Task created · GitHub issue created (on Project board)'
+                  : 'Task created · GitHub issue created',
+                'success',
+              )
+            } catch (e) {
+              toast.push(
+                e instanceof Error
+                  ? `Task created, but GitHub issue failed: ${e.message}`
+                  : 'Task created, but GitHub issue failed',
+                'error',
+              )
+            }
+          } else {
+            toast.push('Task created', 'success')
+          }
+          return task
         }}
         githubConfig={
           editingTask ? githubByTask.get(editingTask.id) ?? null : null
@@ -1107,9 +1210,131 @@ export function ScopePage() {
         />
       ) : null}
 
+      <VoiceAssistant
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        scopeId={scopeId!}
+        projectName={scope.name}
+        tasks={tasks}
+        tags={tags}
+        tagsByTask={tagsByTaskNames}
+        canEdit={access.canEdit}
+        createTask={async (input) => {
+          const task = await createTask.mutateAsync({
+            name: input.name,
+            description: input.description,
+            endDate: input.endDate,
+            tagIds: input.tagIds,
+          })
+          return task
+        }}
+        createTag={async (name) => {
+          const tag = await createTag.mutateAsync(name)
+          return tag
+        }}
+        setCompleted={async (taskId, completed) => {
+          await toggleComplete.mutateAsync({ taskId, completed })
+        }}
+        setTaskTags={async (taskId, tagIds) => {
+          await setTaskTags(taskId, tagIds)
+          await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+          await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+        }}
+        updateTask={async (input) => {
+          const task = await updateTask.mutateAsync({
+            id: input.id,
+            patch: {
+              ...(input.name !== undefined ? { name: input.name } : {}),
+              ...(input.description !== undefined ? { description: input.description } : {}),
+              ...(input.endDate !== undefined ? { end_date: input.endDate } : {}),
+            },
+          })
+          return task
+        }}
+        applyView={(patch) => taskBoardViewApiRef.current?.applyView(patch) ?? ['Board not ready']}
+        projectPrompt={scope.assistant_prompt}
+        onFocusTask={(id) => scrollToTask(id)}
+        onDone={(result) => {
+          void qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+          void qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+          void qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+          if (!result) return
+          if (result.summaryLines.length) {
+            toast.push(
+              result.summaryLines.join(' · '),
+              result.errors.length ? 'error' : 'success',
+            )
+          } else if (result.errors.length) {
+            toast.push(result.errors.join(' · '), 'error')
+          } else if (result.ambiguous.length) {
+            toast.push('Pick which task you meant', 'success')
+          }
+        }}
+      />
+
+      {access.canEdit ? (
+        <VoiceHoldFab
+          hidden={voiceOpen}
+          scopeId={scopeId!}
+          projectName={scope.name}
+          tasks={tasks}
+          tags={tags}
+          tagsByTask={tagsByTaskNames}
+          canEdit={access.canEdit}
+          projectPrompt={scope.assistant_prompt}
+          createTask={async (input) => {
+            const task = await createTask.mutateAsync({
+              name: input.name,
+              description: input.description,
+              endDate: input.endDate,
+              tagIds: input.tagIds,
+            })
+            return task
+          }}
+          createTag={async (name) => createTag.mutateAsync(name)}
+          setCompleted={async (taskId, completed) => {
+            await toggleComplete.mutateAsync({ taskId, completed })
+          }}
+          setTaskTags={async (taskId, tagIds) => {
+            await setTaskTags(taskId, tagIds)
+            await qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+            await qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+          }}
+          updateTask={async (input) => {
+            const task = await updateTask.mutateAsync({
+              id: input.id,
+              patch: {
+                ...(input.name !== undefined ? { name: input.name } : {}),
+                ...(input.description !== undefined ? { description: input.description } : {}),
+                ...(input.endDate !== undefined ? { end_date: input.endDate } : {}),
+              },
+            })
+            return task
+          }}
+          applyView={(patch) => taskBoardViewApiRef.current?.applyView(patch) ?? ['Board not ready']}
+          onFocusTask={(id) => scrollToTask(id)}
+          onDone={(result, meta) => {
+            void qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+            void qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+            void qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+            // Follow-ups stay in the floating panel (history + chips) — no toast
+            if (meta?.followUp || !result) return
+            if (result.summaryLines.length) {
+              toast.push(
+                result.summaryLines.join(' · '),
+                result.errors.length ? 'error' : 'success',
+              )
+            } else if (result.errors.length) {
+              toast.push(result.errors.join(' · '), 'error')
+            }
+          }}
+        />
+      ) : null}
+
       <ScopeFormModal
         open={editProjectOpen}
         initial={scope}
+        existingTagNames={tags.filter((t) => !isGithubSystemTag(t.name)).map((t) => t.name)}
         onClose={() => setEditProjectOpen(false)}
         onSubmit={async (values) => {
           await updateScope.mutateAsync({
@@ -1118,6 +1343,7 @@ export function ScopePage() {
             description: values.description || null,
             dependencies_enabled: values.dependenciesEnabled,
             advanced_export_enabled: values.advancedExportEnabled,
+            assistant_prompt: values.assistantPrompt || null,
           })
           toast.push('Project updated', 'success')
           await qc.invalidateQueries({ queryKey: ['scope', scopeId] })
@@ -1140,6 +1366,9 @@ export function ScopePage() {
         canImport={access.canEdit}
         initialTaskIds={transferTaskIds}
         githubRepoLabel={displayRepo}
+        projectVoicePrompt={scope.assistant_prompt}
+        scopeId={scopeId}
+        existingTagNames={tags.filter((t) => !isGithubSystemTag(t.name)).map((t) => t.name)}
         onImportFromGithub={
           ghCaps.canMutate && ghCaps.scopeIntegrated && displayRepo
             ? () => setIssuePicker({ mode: 'import' })

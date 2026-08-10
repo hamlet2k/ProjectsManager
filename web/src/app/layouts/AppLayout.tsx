@@ -191,7 +191,7 @@ export function AppLayout() {
             className={cn(iconBtn, 'hidden sm:inline-flex text-[#FF5E5B] hover:text-[#FF5E5B]')}
             title="Support on Ko-fi"
           >
-            <Icons.Cup />
+            <Icons.Heart />
           </a>
 
           <div className="relative" ref={notifRef}>
@@ -451,7 +451,7 @@ export function AppLayout() {
                     rel="noreferrer"
                     onClick={closeMenu}
                   >
-                    <Icons.Cup size="1.1em" className="shrink-0 text-[#FF5E5B]" />
+                    <Icons.HeartFill size="1.1em" className="shrink-0 text-[#FF5E5B]" />
                     Support on Ko-fi
                   </a>
 

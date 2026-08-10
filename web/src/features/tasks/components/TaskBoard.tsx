@@ -24,11 +24,8 @@ import {
   summarizeLinkedRepos,
 } from '@/features/github/repoAccent'
 import { copyToClipboard, cn } from '@/lib/utils'
-import {
-  isModKey,
-  isTypingTarget,
-  TASK_SHORTCUTS,
-} from '@/lib/keyboardShortcuts'
+import { isTypingTarget, TASK_SHORTCUTS } from '@/lib/keyboardShortcuts'
+import { eventMatchesBinding } from '@/lib/keyboardPrefs'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Icons } from '@/components/icons'
@@ -45,6 +42,13 @@ import {
   loadLastNewTaskTagIds,
   saveLastNewTaskTagIds,
 } from '@/features/tasks/lastNewTaskTags'
+import {
+  getProjectJson,
+  getProjectPref,
+  migrateGlobalToProject,
+  setProjectJson,
+  setProjectPref,
+} from '@/lib/projectPrefs'
 
 export type SortMode = 'rank' | 'name' | 'due' | 'created' | 'tags'
 
@@ -55,6 +59,22 @@ export type QuickAddPayload = {
   tagIds?: string[]
   /** When true and GitHub is enabled, create a linked issue after the task. */
   createGithubIssue?: boolean
+}
+
+/** Voice/assistant-driven board filters (applied via viewApiRef). */
+export type TaskBoardViewPatch = {
+  /** Search box text; null or "" clears search */
+  search?: string | null
+  sort_by?: SortMode
+  show_completed?: boolean
+  /** Replace tag filter with these names (matched case-insensitively). [] clears tag filter. */
+  tag_names?: string[]
+  /** Reset search, tags, sort→rank, hide completed */
+  clear_filters?: boolean
+}
+
+export type TaskBoardViewApi = {
+  applyView: (patch: TaskBoardViewPatch) => string[]
 }
 
 type Props = {
@@ -96,10 +116,21 @@ type Props = {
    */
   advancedExportEnabled?: boolean
   onReorder: (orderedIds: string[]) => void
-  onQuickAdd: (input: QuickAddPayload) => Promise<void>
+  onQuickAdd: (input: QuickAddPayload) => Promise<void | { id?: string } | Task>
   onOpenDetailedAdd: () => void
   onSetTaskTags: (taskId: string, tagIds: string[]) => Promise<void>
   onCreateTag: (name: string) => Promise<Tag>
+  /** AI enhance for quick-add (optional) */
+  onEnhanceDraft?: (draft: {
+    name: string
+    description: string
+    tagIds: string[]
+  }) => Promise<{
+    name: string
+    description: string
+    tagIds: string[]
+    endDate?: string | null
+  }>
   /** Remove a tag from the project (cascades off all tasks). */
   onDeleteTag?: (tag: Tag) => Promise<void>
   onGithubAction: (
@@ -125,6 +156,10 @@ type Props = {
    */
   focusTaskId?: string | null
   onFocusTaskHandled?: () => void
+  /** Parent holds this; board assigns applyView for the voice assistant. */
+  viewApiRef?: React.MutableRefObject<TaskBoardViewApi | null>
+  /** Project id — scopes filter/tag prefs and last-new-task tags */
+  scopeId?: string
 }
 
 type TaskGroup = {
@@ -158,6 +193,7 @@ export function TaskBoard({
   onOpenDetailedAdd,
   onSetTaskTags,
   onCreateTag,
+  onEnhanceDraft,
   onDeleteTag,
   onGithubAction,
   onExpandTask,
@@ -170,30 +206,51 @@ export function TaskBoard({
   quickAddRef,
   focusTaskId = null,
   onFocusTaskHandled,
+  viewApiRef,
+  scopeId,
 }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const [search, setSearch] = useState(() => localStorage.getItem('pm-task-search') ?? '')
-  const [sortBy, setSortBy] = useState<SortMode>(
-    () => (localStorage.getItem('pm-task-sort') as SortMode) || 'rank',
-  )
-  const [showCompleted, setShowCompleted] = useState(
-    () => localStorage.getItem('pm-show-completed') === 'true',
-  )
+
+  const loadBoardPrefs = (sid: string | undefined) => {
+    if (sid) {
+      migrateGlobalToProject(sid, 'task-search', 'pm-task-search')
+      migrateGlobalToProject(sid, 'task-sort', 'pm-task-sort')
+      migrateGlobalToProject(sid, 'show-completed', 'pm-show-completed')
+      migrateGlobalToProject(sid, 'active-tags', 'pm-active-tags')
+      migrateGlobalToProject(sid, 'create-gh-on-add', 'pm-create-gh-on-add')
+    }
+    const sort = (getProjectPref(sid, 'task-sort', 'rank') as SortMode) || 'rank'
+    const allowed: SortMode[] = ['rank', 'name', 'due', 'created', 'tags']
+    return {
+      search: getProjectPref(sid, 'task-search', ''),
+      sortBy: allowed.includes(sort) ? sort : 'rank',
+      showCompleted: getProjectPref(sid, 'show-completed', 'false') === 'true',
+      activeTagIds: getProjectJson<string[]>(sid, 'active-tags', []),
+      createGithubOnAdd: getProjectPref(sid, 'create-gh-on-add', 'false') === 'true',
+    }
+  }
+
+  const initialPrefs = loadBoardPrefs(scopeId)
+  const [search, setSearch] = useState(initialPrefs.search)
+  const [sortBy, setSortBy] = useState<SortMode>(initialPrefs.sortBy)
+  const [showCompleted, setShowCompleted] = useState(initialPrefs.showCompleted)
   /** Filter tasks by linked issue repo (`owner/name`), null = all */
   const [githubRepoFilter, setGithubRepoFilter] = useState<string | null>(null)
-  const [activeTagIds, setActiveTagIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pm-active-tags') || '[]') as string[]
-    } catch {
-      return []
-    }
-  })
+  const [activeTagIds, setActiveTagIds] = useState<string[]>(initialPrefs.activeTagIds)
 
   // Sticky panels: visible open state + preferred state when returning to top
   const isMobile = useMediaQuery('(max-width: 767.98px)')
   const [filtersOpen, setFiltersOpen] = useState(() => !isMobile)
   const [addOpen, setAddOpen] = useState(() => !isMobile)
+  /**
+   * Scrim / “active surface” only after the user intentionally opens Filters/Add
+   * (pill, shortcut, etc.). Scroll auto-collapse → auto-expand must NOT re-focus.
+   */
+  const [chromeFocus, setChromeFocus] = useState(false)
+  /** Floating quick-search overlay (not the full Filters panel). */
+  const [quickSearchOpen, setQuickSearchOpen] = useState(false)
+  const quickSearchInputRef = useRef<HTMLInputElement>(null)
   /** User preference when at page top (survives scroll collapse). */
   const wantFiltersAtTop = useRef(!isMobile)
   const wantAddAtTop = useRef(!isMobile)
@@ -203,16 +260,29 @@ export function TaskBoard({
   const [quickName, setQuickName] = useState('')
   const [quickDescription, setQuickDescription] = useState('')
   const [quickEndDate, setQuickEndDate] = useState('')
-  const [quickTagIds, setQuickTagIds] = useState<string[]>(() => loadLastNewTaskTagIds())
-  const [savingQuick, setSavingQuick] = useState(false)
-  /** Persist “also create GitHub issue” (default off; remember last choice). */
-  const [createGithubOnAdd, setCreateGithubOnAdd] = useState(
-    () => localStorage.getItem('pm-create-gh-on-add') === 'true',
+  const [quickTagIds, setQuickTagIds] = useState<string[]>(() =>
+    loadLastNewTaskTagIds(scopeId),
   )
+  const [savingQuick, setSavingQuick] = useState(false)
+  /** Persist “also create GitHub issue” (default off; remember last choice) — per project. */
+  const [createGithubOnAdd, setCreateGithubOnAdd] = useState(initialPrefs.createGithubOnAdd)
+
+  // Reload board prefs when switching projects
+  useEffect(() => {
+    const p = loadBoardPrefs(scopeId)
+    setSearch(p.search)
+    setSortBy(p.sortBy)
+    setShowCompleted(p.showCompleted)
+    setActiveTagIds(Array.isArray(p.activeTagIds) ? p.activeTagIds : [])
+    setCreateGithubOnAdd(p.createGithubOnAdd)
+    setQuickTagIds(loadLastNewTaskTagIds(scopeId, tags.map((t) => t.id)))
+    knownTaskIds.current = null
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional on scope switch only
+  }, [scopeId])
 
   useEffect(() => {
-    localStorage.setItem('pm-create-gh-on-add', String(createGithubOnAdd))
-  }, [createGithubOnAdd])
+    setProjectPref(scopeId, 'create-gh-on-add', String(createGithubOnAdd))
+  }, [createGithubOnAdd, scopeId])
 
   const [tagEditTaskId, setTagEditTaskId] = useState<string | null>(null)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
@@ -242,6 +312,7 @@ export function TaskBoard({
   const openFilters = () => {
     wantFiltersAtTop.current = true
     setFiltersOpen(true)
+    setChromeFocus(true)
   }
   const closeFilters = () => {
     wantFiltersAtTop.current = false
@@ -250,24 +321,30 @@ export function TaskBoard({
   const openAdd = () => {
     wantAddAtTop.current = true
     setAddOpen(true)
+    setChromeFocus(true)
   }
   const closeAdd = () => {
     wantAddAtTop.current = false
     setAddOpen(false)
   }
 
+  // Drop focus chrome once nothing is expanded
   useEffect(() => {
-    localStorage.setItem('pm-task-search', search)
-  }, [search])
+    if (!filtersOpen && !addOpen) setChromeFocus(false)
+  }, [filtersOpen, addOpen])
+
   useEffect(() => {
-    localStorage.setItem('pm-task-sort', sortBy)
-  }, [sortBy])
+    setProjectPref(scopeId, 'task-search', search)
+  }, [search, scopeId])
   useEffect(() => {
-    localStorage.setItem('pm-show-completed', String(showCompleted))
-  }, [showCompleted])
+    setProjectPref(scopeId, 'task-sort', sortBy)
+  }, [sortBy, scopeId])
   useEffect(() => {
-    localStorage.setItem('pm-active-tags', JSON.stringify(activeTagIds))
-  }, [activeTagIds])
+    setProjectPref(scopeId, 'show-completed', String(showCompleted))
+  }, [showCompleted, scopeId])
+  useEffect(() => {
+    setProjectJson(scopeId, 'active-tags', activeTagIds)
+  }, [activeTagIds, scopeId])
 
   /*
    * Scroll expand/collapse with hysteresis + cooldown.
@@ -296,15 +373,18 @@ export function TaskBoard({
       if (wasAtTop.current) {
         if (y >= COLLAPSE_Y) {
           wasAtTop.current = false
-          // Auto-collapse UI only (keep want* for restore)
+          // Auto-collapse UI only (keep want* for restore; clear focus scrim)
           setFiltersOpen(false)
           setAddOpen(false)
+          setChromeFocus(false)
           lock()
         }
       } else if (y <= EXPAND_Y) {
         wasAtTop.current = true
+        // Restore preferred open panels without re-applying focus scrim
         setFiltersOpen(wantFiltersAtTop.current)
         setAddOpen(wantAddAtTop.current)
+        setChromeFocus(false)
         lock()
       }
     }
@@ -320,15 +400,109 @@ export function TaskBoard({
     setSortBy('rank')
     setShowCompleted(false)
     setGithubRepoFilter(null)
-    localStorage.setItem('pm-task-search', '')
-    localStorage.setItem('pm-task-sort', 'rank')
-    localStorage.setItem('pm-show-completed', 'false')
-    localStorage.setItem('pm-active-tags', '[]')
-  }, [])
+    setProjectPref(scopeId, 'task-search', '')
+    setProjectPref(scopeId, 'task-sort', 'rank')
+    setProjectPref(scopeId, 'show-completed', 'false')
+    setProjectJson(scopeId, 'active-tags', [])
+  }, [scopeId])
+
+  /** Imperative view control for voice assistant (search / sort / completed / tags). */
+  useEffect(() => {
+    if (!viewApiRef) return
+    viewApiRef.current = {
+      applyView: (patch) => {
+        const lines: string[] = []
+        if (patch.clear_filters) {
+          clearAllFilters()
+          if (isMobile) closeFilters()
+          else openFilters()
+          lines.push('Cleared filters (rank sort, no search/tags, completed hidden)')
+          return lines
+        }
+        if (patch.search !== undefined) {
+          const q = (patch.search ?? '').trim()
+          setSearch(q)
+          lines.push(q ? `Search: “${q}”` : 'Cleared search')
+        }
+        if (patch.sort_by) {
+          const allowed: SortMode[] = ['rank', 'name', 'due', 'created', 'tags']
+          if (allowed.includes(patch.sort_by)) {
+            setSortBy(patch.sort_by)
+            const labels: Record<SortMode, string> = {
+              rank: 'Rank',
+              name: 'Name',
+              due: 'Due date',
+              created: 'Created',
+              tags: 'Tags',
+            }
+            lines.push(`Sorted by ${labels[patch.sort_by]}`)
+          }
+        }
+        if (typeof patch.show_completed === 'boolean') {
+          setShowCompleted(patch.show_completed)
+          lines.push(patch.show_completed ? 'Showing completed tasks' : 'Hiding completed tasks')
+        }
+        if (patch.tag_names !== undefined) {
+          const wanted = patch.tag_names
+            .map((n) => n.replace(/^#/, '').trim().toLowerCase())
+            .filter(Boolean)
+          if (wanted.length === 0) {
+            setActiveTagIds([])
+            lines.push('Cleared tag filters')
+          } else {
+            const ids: string[] = []
+            const labels: string[] = []
+            const missing: string[] = []
+            for (const w of wanted) {
+              const tag = tags.find(
+                (t) => !isGithubSystemTag(t.name) && t.name.toLowerCase() === w,
+              )
+              if (tag) {
+                if (!ids.includes(tag.id)) {
+                  ids.push(tag.id)
+                  labels.push(tag.name)
+                }
+              } else {
+                // partial match
+                const partial = tags.find(
+                  (t) =>
+                    !isGithubSystemTag(t.name) && t.name.toLowerCase().includes(w),
+                )
+                if (partial && !ids.includes(partial.id)) {
+                  ids.push(partial.id)
+                  labels.push(partial.name)
+                } else {
+                  missing.push(w)
+                }
+              }
+            }
+            setActiveTagIds(ids)
+            if (labels.length) lines.push(`Filter tags: ${labels.map((t) => `#${t}`).join(' ')}`)
+            if (missing.length) lines.push(`Unknown tags: ${missing.join(', ')}`)
+          }
+        }
+        if (lines.length) {
+          setChromeFocus(false)
+          // Mobile: keep filters collapsed so results stay on screen.
+          // Desktop: open the filter chrome so the change is visible in the sticky panel.
+          if (isMobile) {
+            closeFilters()
+          } else {
+            openFilters()
+          }
+        }
+        return lines.length ? lines : ['View unchanged']
+      },
+    }
+    return () => {
+      viewApiRef.current = null
+    }
+  }, [viewApiRef, tags, clearAllFilters, isMobile])
 
   /**
    * Smooth-scroll to a task row and play the same flash as new-task create.
    * Optionally expands the row and ensures completed tasks are visible.
+   * Retries when the row is not in the DOM yet (e.g. tag regroup after create).
    */
   const revealTask = useCallback(
     (taskId: string, opts?: { expand?: boolean; delayMs?: number }) => {
@@ -342,12 +516,25 @@ export function TaskBoard({
         setTagEditTaskId(null)
       }
 
-      // Extra delay when the row may not exist yet (just re-enabled “show completed”, or tag regroup)
-      const delayMs = opts?.delayMs ?? (unhidingCompleted ? 140 : 60)
+      // Tag groups re-layout after create — need more time for the row to mount in the right group
+      const baseDelay = opts?.delayMs ?? (unhidingCompleted ? 140 : 60)
+      const delayMs = sortBy === 'tags' || sortBy === 'due' ? Math.max(baseDelay, 160) : baseDelay
 
       if (flashClearTimer.current != null) {
         window.clearTimeout(flashClearTimer.current)
         flashClearTimer.current = null
+      }
+
+      const scrollToRow = (attempt: number) => {
+        const el = document.getElementById(`task-row-${taskId}`)
+        if (el) {
+          // center keeps sticky chrome from covering the row; avoid scrolling to list end
+          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+          return
+        }
+        if (attempt < 8) {
+          window.setTimeout(() => scrollToRow(attempt + 1), 50 + attempt * 30)
+        }
       }
 
       // Clear then re-set so CSS animation restarts when targeting the same row again
@@ -355,18 +542,14 @@ export function TaskBoard({
       window.setTimeout(() => {
         setFlashTaskId(taskId)
         setFlashNonce((n) => n + 1)
-        window.setTimeout(() => {
-          document
-            .getElementById(`task-row-${taskId}`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        }, delayMs)
+        window.setTimeout(() => scrollToRow(0), delayMs)
         flashClearTimer.current = window.setTimeout(() => {
           setFlashTaskId(null)
           flashClearTimer.current = null
         }, 2200 + delayMs)
       }, 0)
     },
-    [tasks, showCompleted],
+    [tasks, showCompleted, sortBy],
   )
 
   // Scroll to + flash newly created tasks (quick-add or modal)
@@ -687,7 +870,7 @@ export function TaskBoard({
     setQuickEndDate('')
     if (!opts?.keepTags) {
       // Restore remembered tags (valid for this project)
-      setQuickTagIds(loadLastNewTaskTagIds(tags.map((t) => t.id)))
+      setQuickTagIds(loadLastNewTaskTagIds(scopeId, tags.map((t) => t.id)))
     }
     setQuickDetails(false)
   }
@@ -701,28 +884,56 @@ export function TaskBoard({
     })
   }, [tags])
 
-  const submitQuick = async () => {
+  const submitQuick = async (opts?: { keepOpen?: boolean }) => {
     const name = quickName.trim()
     if (!name) return
     setSavingQuick(true)
     try {
-      saveLastNewTaskTagIds(quickTagIds)
-      await onQuickAdd({
+      saveLastNewTaskTagIds(scopeId, quickTagIds)
+      const result = await onQuickAdd({
         name,
         description: quickDescription.trim() || null,
         endDate: quickEndDate ? new Date(quickEndDate).toISOString() : null,
         tagIds: quickTagIds,
         createGithubIssue: Boolean(githubEnabled && createGithubOnAdd),
       })
+      const newId =
+        result && typeof result === 'object' && 'id' in result && result.id
+          ? String(result.id)
+          : null
+      if (newId) revealTask(newId, { delayMs: 80 })
       // Keep last tags for the next task; clear the rest of the form
       resetQuick({ keepTags: true })
-      quickRef.current?.focus()
+      // Collapse add panel so results stay visible (desktop + mobile)
+      if (!opts?.keepOpen) {
+        closeAdd()
+      } else {
+        quickRef.current?.focus()
+      }
     } catch (err) {
       toast.push(err instanceof Error ? err.message : 'Could not add task', 'error')
     } finally {
       setSavingQuick(false)
     }
   }
+
+  // Click outside expanded Filters / Add panels → collapse (modal-like)
+  useEffect(() => {
+    if (!filtersOpen && !addOpen) return
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t) return
+      if (t.closest('.sticky-task-chrome')) return
+      if (t.closest('.voice-hold-fab') || t.closest('.voice-hold-scrim')) return
+      if (t.closest('[role="dialog"]')) return
+      closeFilters()
+      closeAdd()
+      setChromeFocus(false)
+    }
+    // capture so we run before stopPropagation on panels
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [filtersOpen, addOpen])
 
   // Global / contextual shortcuts for the task board (see lib/keyboardShortcuts.ts)
   useEffect(() => {
@@ -756,13 +967,17 @@ export function TaskBoard({
           resetQuick()
           return
         }
+        if (filtersOpen || addOpen) {
+          e.preventDefault()
+          closeFilters()
+          closeAdd()
+          return
+        }
         return
       }
 
-      if (!isModKey(e)) return
-
-      // Ctrl/Cmd+Backspace — clear all filters
-      if (e.key === 'Backspace') {
+      // Remappable shortcuts (Settings → Keyboard)
+      if (eventMatchesBinding(e, 'clearAllFilters')) {
         if (typing && !inSearch) return
         e.preventDefault()
         clearAllFilters()
@@ -771,8 +986,7 @@ export function TaskBoard({
         return
       }
 
-      // Ctrl/Cmd+↑ — focus quick-add
-      if (e.key === 'ArrowUp') {
+      if (eventMatchesBinding(e, 'focusAdd')) {
         if (typing && !inQuick && !inSearch) return
         e.preventDefault()
         openAdd()
@@ -781,8 +995,7 @@ export function TaskBoard({
         return
       }
 
-      // Ctrl/Cmd+↓ — quick-add details, or toggle expand first visible task
-      if (e.key === 'ArrowDown') {
+      if (eventMatchesBinding(e, 'quickDetails')) {
         if (document.activeElement === quickRef.current || inQuick) {
           e.preventDefault()
           setQuickDetails(true)
@@ -803,11 +1016,18 @@ export function TaskBoard({
         return
       }
 
-      // Ctrl/Cmd+Enter — save quick-add
-      if (e.key === 'Enter' && inQuick && canEdit) {
+      if (eventMatchesBinding(e, 'saveQuick') && inQuick && canEdit) {
         if (!quickName.trim() || savingQuick) return
         e.preventDefault()
         void submitQuick()
+        return
+      }
+
+      if (eventMatchesBinding(e, 'quickSearch')) {
+        if (typing && !inSearch) return
+        e.preventDefault()
+        setQuickSearchOpen(true)
+        queueMicrotask(() => quickSearchInputRef.current?.focus())
       }
     }
     document.addEventListener('keydown', onKey)
@@ -826,6 +1046,8 @@ export function TaskBoard({
     canEdit,
     savingQuick,
     revealTask,
+    filtersOpen,
+    addOpen,
   ])
 
   const stickySolid = filtersOpen || addOpen
@@ -833,15 +1055,144 @@ export function TaskBoard({
   const chromeMode =
     filtersOpen && addOpen ? 'panels' : showingPills && !stickySolid ? 'pills' : 'mixed'
 
+  const showChromeScrim = stickySolid && chromeFocus
+
   return (
-    <div className="scope-task-layout space-y-4" data-chrome={chromeMode}>
-      {/* Sticky header + floating pills */}
+    <div
+      className="scope-task-layout space-y-4"
+      data-chrome={chromeMode}
+      data-chrome-open={stickySolid ? 'true' : undefined}
+      data-chrome-focus={showChromeScrim ? 'true' : undefined}
+    >
+      {/* Mobile: floating search when both panels are open (no pill bar) */}
+      {isMobile && !showingPills && !quickSearchOpen ? (
+        <button
+          type="button"
+          className={cn(
+            'fixed z-[36] flex h-12 w-12 items-center justify-center rounded-full',
+            'border-2 border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-text)]',
+            'shadow-[0_6px_18px_rgba(15,23,42,0.2),var(--shadow-sketch)]',
+            'left-4 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))]',
+          )}
+          title="Quick search"
+          aria-label="Quick search"
+          onClick={() => {
+            setQuickSearchOpen(true)
+            queueMicrotask(() => quickSearchInputRef.current?.focus())
+          }}
+        >
+          <Icons.Search size="1.2em" />
+          {search.trim() ? (
+            <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--color-primary)] ring-2 ring-[var(--color-surface)]" />
+          ) : null}
+        </button>
+      ) : null}
+
+      {/* Quick search overlay — not the full Filters panel */}
+      {quickSearchOpen ? (
+        <div className="fixed inset-0 z-[45] flex items-start justify-center pt-[min(20vh,8rem)] px-3">
+          <button
+            type="button"
+            className="absolute inset-0 border-0 bg-black/40 backdrop-blur-[2px]"
+            aria-label="Close quick search"
+            onClick={() => setQuickSearchOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-label="Quick search"
+            className="relative z-[1] w-full max-w-lg rounded-[var(--radius-sketch)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 shadow-[0_12px_40px_rgba(15,23,42,0.22),var(--shadow-sketch)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <Icons.Search size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+              <input
+                ref={quickSearchInputRef}
+                className="field-input min-w-0 flex-1 !border-0 !shadow-none focus:!ring-0"
+                placeholder="Search tasks…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    if (search) setSearch('')
+                    else setQuickSearchOpen(false)
+                  }
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setQuickSearchOpen(false)
+                  }
+                }}
+                autoFocus
+              />
+              {search ? (
+                <button
+                  type="button"
+                  className="icon-btn !h-8 !w-8"
+                  title="Clear search"
+                  onClick={() => setSearch('')}
+                >
+                  <Icons.X size="0.85em" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="icon-btn !h-8 !w-8"
+                title="Close"
+                onClick={() => setQuickSearchOpen(false)}
+              >
+                <Icons.X size="0.85em" />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-muted)]">
+              {filtered.length} match{filtered.length === 1 ? '' : 'es'}
+              {search.trim() ? ` for “${search.trim()}”` : ''}
+              {!isMobile ? (
+                <>
+                  {' '}
+                  · <kbd className="kbd">{TASK_SHORTCUTS.quickSearch.combo()}</kbd> open · Esc
+                  clear/close · Enter apply
+                </>
+              ) : (
+                <> · Tap outside or ✕ to close</>
+              )}
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {/*
+        Dim the board under Filters / Add only when the user intentionally opened them.
+        Scroll auto-expand restores panels without re-focusing (no scrim).
+        - Mobile: modal-like scrim; tap outside collapses panels.
+        - Desktop: lighter, non-blocking scrim so filter + click-task still works.
+      */}
+      {showChromeScrim ? (
+        <button
+          type="button"
+          className={cn(
+            'task-chrome-scrim fixed inset-0 z-[25] border-0 p-0 transition-opacity duration-200',
+            isMobile
+              ? 'cursor-pointer bg-black/45 backdrop-blur-[2px]'
+              : 'pointer-events-none cursor-default bg-black/25 backdrop-blur-[1px]',
+          )}
+          aria-label={isMobile ? 'Dismiss filters and add panel' : undefined}
+          tabIndex={isMobile ? 0 : -1}
+          onClick={
+            isMobile
+              ? () => {
+                  closeFilters()
+                  closeAdd()
+                }
+              : undefined
+          }
+        />
+      ) : null}
+
+      {/* Sticky header + floating pills — wrapper stays transparent so scrim shows through */}
       <div
         className={cn(
-          'sticky-task-chrome sticky z-20 -mx-1 px-1 py-2 transition-colors',
-          stickySolid
-            ? 'is-expanded bg-[var(--color-bg)]/95 backdrop-blur-md'
-            : 'pointer-events-none bg-transparent',
+          'sticky-task-chrome sticky z-20 -mx-1 px-1 py-2 transition-colors bg-transparent',
+          stickySolid ? 'is-expanded is-chrome-open' : 'pointer-events-none',
+          showChromeScrim && 'is-chrome-focused',
         )}
       >
         {/* Floating pills when a panel is collapsed — elevated bubble style */}
@@ -866,7 +1217,21 @@ export function TaskBoard({
                 <span />
               )}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2 sm:gap-3">
+              {/* Quick search — available without a keyboard (mobile) and via Ctrl+K */}
+              <button
+                type="button"
+                className="sticky-pill sticky-pill-bubble"
+                title={`Quick search (${TASK_SHORTCUTS.quickSearch.combo()})`}
+                onClick={() => {
+                  setQuickSearchOpen(true)
+                  queueMicrotask(() => quickSearchInputRef.current?.focus())
+                }}
+              >
+                <Icons.Search size="1.15em" />
+                <span className="max-sm:sr-only">Search</span>
+                {search.trim() ? <span className="sticky-pill-dot" /> : null}
+              </button>
               {!filtersOpen ? (
                 <button
                   type="button"
@@ -1222,6 +1587,47 @@ export function TaskBoard({
                     title={`${TASK_SHORTCUTS.focusAdd.description} (${TASK_SHORTCUTS.focusAdd.combo()})`}
                   />
                   <div className="quick-side">
+                    {onEnhanceDraft ? (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="AI enhance title, description, and tags"
+                        disabled={
+                          savingQuick ||
+                          (!quickName.trim() && !quickDescription.trim())
+                        }
+                        onClick={() => {
+                          void (async () => {
+                            if (!onEnhanceDraft) return
+                            setSavingQuick(true)
+                            try {
+                              setQuickDetails(true)
+                              const res = await onEnhanceDraft({
+                                name: quickName,
+                                description: quickDescription,
+                                tagIds: quickTagIds,
+                              })
+                              setQuickName(res.name)
+                              setQuickDescription(res.description)
+                              setQuickTagIds(res.tagIds)
+                              if (res.endDate) {
+                                setQuickEndDate(res.endDate.slice(0, 10))
+                              }
+                              toast.push('Draft enhanced', 'success')
+                            } catch (e) {
+                              toast.push(
+                                e instanceof Error ? e.message : 'Enhance failed',
+                                'error',
+                              )
+                            } finally {
+                              setSavingQuick(false)
+                            }
+                          })()
+                        }}
+                      >
+                        <Icons.Sparkles size="0.95em" />
+                      </button>
+                    ) : null}
                     {quickName ? (
                       <button
                         type="button"
@@ -1229,7 +1635,7 @@ export function TaskBoard({
                         title={`Clear (${TASK_SHORTCUTS.collapseEsc.combo()} when focused here)`}
                         onClick={() => resetQuick()}
                       >
-                        <Icons.X />
+                        <Icons.X size="0.9em" />
                       </button>
                     ) : null}
                     <button
@@ -1239,7 +1645,7 @@ export function TaskBoard({
                       aria-keyshortcuts="Control+Enter Meta+Enter"
                       disabled={savingQuick || !quickName.trim()}
                     >
-                      <Icons.Save />
+                      <Icons.Save size="0.95em" />
                     </button>
                   </div>
                 </div>
@@ -1352,7 +1758,7 @@ export function TaskBoard({
                       </button>
                     </p>
                   </div>
-                ) : (
+                ) : !isMobile ? (
                   <p className="px-1 text-xs text-[var(--color-muted)]">
                     <span className="kbd">{TASK_SHORTCUTS.quickDetails.combo()}</span> details ·{' '}
                     <span className="kbd">{TASK_SHORTCUTS.focusAdd.combo()}</span> focus add ·{' '}
@@ -1360,7 +1766,7 @@ export function TaskBoard({
                     <span className="kbd">{TASK_SHORTCUTS.clearAllFilters.combo()}</span> clear
                     filters
                   </p>
-                )}
+                ) : null}
               </form>
             </section>
           ) : null}
@@ -1805,6 +2211,7 @@ function SortableTaskRow({
   })
   const [ghBusy, setGhBusy] = useState(false)
 
+  const toast = useToast()
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -2099,9 +2506,14 @@ function SortableTaskRow({
             <button
               type="button"
               className="icon-btn danger"
-              title="Delete"
-              disabled={!canEdit}
-              onClick={() => onConfirmDelete(task)}
+              title={canEdit ? 'Delete' : 'View-only — you cannot delete tasks'}
+              onClick={() => {
+                if (!canEdit) {
+                  toast.push('You need edit access to delete tasks', 'error')
+                  return
+                }
+                onConfirmDelete(task)
+              }}
             >
               <Icons.Trash />
             </button>

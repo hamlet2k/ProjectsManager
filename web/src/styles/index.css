@@ -829,18 +829,21 @@ a:hover .project-title {
 .quick-add {
   display: flex;
   align-items: stretch;
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sketch-sm);
+  /* allow side icons to stay fully visible; clip only the field chrome */
   overflow: hidden;
   background: var(--color-surface);
   box-shadow: var(--shadow-sketch);
 }
 
 .quick-add input {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0; /* let the field shrink so .quick-side never overflows */
   border: 0;
   background: transparent;
-  padding: 0.7rem 0.85rem;
+  padding: 0.7rem 0.5rem 0.7rem 0.65rem;
   font-size: 1rem;
   font-family: inherit;
   color: var(--color-text);
@@ -849,11 +852,44 @@ a:hover .project-title {
 
 .quick-add .quick-side {
   display: flex;
+  flex-shrink: 0; /* keep sparkles / clear / save all tappable */
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.4rem;
+  gap: 0.15rem;
+  padding: 0.2rem 0.3rem;
   border-left: 1px solid var(--color-border);
   background: var(--color-surface-2);
+}
+
+/* Compact action icons when 3+ tools share the title row (esp. mobile + clear) */
+.quick-add .quick-side .icon-btn {
+  width: 2.15rem;
+  height: 2.15rem;
+  min-width: 2.15rem;
+  padding: 0;
+}
+
+@media (max-width: 767.98px) {
+  .quick-add > button:first-of-type {
+    padding-left: 0.45rem;
+    padding-right: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .quick-add input {
+    padding: 0.65rem 0.35rem;
+    font-size: 0.95rem;
+  }
+
+  .quick-add .quick-side {
+    gap: 0.05rem;
+    padding: 0.15rem 0.2rem;
+  }
+
+  .quick-add .quick-side .icon-btn {
+    width: 1.95rem;
+    height: 1.95rem;
+    min-width: 1.95rem;
+  }
 }
 
 .field-input {
@@ -1024,6 +1060,7 @@ a:hover .project-title {
  * Sticky layer order (high → low):
  *   1) App nav (z ~40)
  *   2) Add/Filters chrome (pills + expanded panels) — always above groups
+ *   2b) task-chrome-scrim (z 25) — dims list under open panels
  *   3) Tag group headers — flush under nav, but UNDER chrome so they never
  *      cover floating pills or expanded filter/add panels when scrolling.
  */
@@ -1044,12 +1081,18 @@ a:hover .project-title {
 
 /* Elevated panels when sticky over the list (shadow only — keep sketchy borders) */
 .notebook-panel.floating-elevated {
+  position: relative;
+  z-index: 1;
   box-shadow:
     0 6px 20px rgba(15, 23, 42, 0.12),
     0 2px 6px rgba(15, 23, 42, 0.06),
     var(--shadow-sketch);
   background: var(--color-surface);
   border-color: var(--color-border-strong);
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
 }
 
 .dark .notebook-panel.floating-elevated {
@@ -1057,6 +1100,37 @@ a:hover .project-title {
     0 8px 24px rgba(0, 0, 0, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.25),
     var(--shadow-sketch);
+}
+
+/* Scrim up: pop Filters/Add so they read as the active surface over a monochrome list */
+.scope-task-layout:has(.task-chrome-scrim) .notebook-panel.floating-elevated {
+  box-shadow:
+    0 14px 36px rgba(15, 23, 42, 0.2),
+    0 4px 12px rgba(15, 23, 42, 0.1),
+    var(--shadow-sketch);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+  /* Subtle lift without fighting sticky layout */
+  transform: translateY(0);
+}
+
+.dark .scope-task-layout:has(.task-chrome-scrim) .notebook-panel.floating-elevated {
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    0 4px 14px rgba(0, 0, 0, 0.35),
+    var(--shadow-sketch);
+}
+
+/* Expanded sticky strip: no solid “card” plate — panels float over the scrim */
+.sticky-task-chrome.is-chrome-open {
+  isolation: isolate;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.sticky-task-chrome.is-chrome-focused {
+  /* Space between filters/add remains see-through to the blurred board */
+  background: transparent !important;
 }
 
 .task-group-header {

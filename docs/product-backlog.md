@@ -67,29 +67,28 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 
 ### P3 — Chatbot / voice / AI
 
-- [ ] Header chatbot + overlay + shortcut  
-- [ ] Chat → app actions  
-- [ ] Mic / STT  
-- [ ] AI suggest title/description; per-project prompts  
+- [x] **MVP voice assistant** on project page: mic (browser STT) + typed fallback → Edge Function plan → create / complete / uncomplete (+ tags, due)  
+- [x] Ambiguous complete: pick from candidate chips  
+- [x] Push-to-talk FAB + hold/lock; add_tags / update_task on existing tasks  
+- [x] Smart create (title/description/tags) + set_view (search/sort/completed/tag filter)  
+- [x] Per-project AI context prompt (user brief → generated prompt → save)  
+- [x] AI enhance title/description/tags on task create/edit  
+- [ ] Richer chat history / multi-turn memory  
+- [ ] Delete / reorder / GitHub link tools (with confirms)  
 - [ ] Create task from image  
+- [ ] Optional MCP surface over the same tools  
+- [ ] **Admin page: manage LLM configuration** (provider, model, base URL, keys via secure flow, test call, defaults) — currently secrets are set only via Supabase CLI/dashboard  
 
 ### P4 — Platform / release
 
 - [ ] Automated tests (unit + e2e)  
 - [x] Ko-fi / support affordance in UI  
-- [ ] Offline / desktop (long-term)  
+- [ ] **PWA installable + offline app shell** (deferred — install shell complicated mic STT without clear benefit)  
+- [ ] Offline task data / background sync (long-term)  
 - [ ] Help site + contextual help links  
 - [x] Advanced import/export + project simple-copy flag  
 - [x] UI “projects” (DB still `scopes`)  
-
-### Explicitly deferred
-
-| Item | Why |
-|------|-----|
-| Flask session/forms stack | Replaced by Supabase Auth + SPA |
-| Subtasks | Product decision |
-| Multi-repo-per-project as first-class | One default repo; legacy links read-only |
-| Shared-repo detach UX | Dropped for one-binding model |
+- [x] Shared project live-ish updates (Realtime + focus/poll fallback)  
 
 ### Partially done
 
@@ -97,14 +96,17 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 |------|--------|
 | Feedback | GitHub issue via Feedback Bot when configured; not a full in-app inbox |
 | Multi-repo history | Filter chips + accents; default repo for new issues |
+| Voice assistant | Live; LLM via Edge secrets (OpenAI / xAI / OpenRouter). Admin UI still backlog |
+| Shared sync | Realtime subscribed; refetch on focus + periodic poll as safety net |
 
 ---
 
 ## How we’ll use this
 
-1. **Next focus:** webhooks (P2), help system (P4), then chatbot/AI (P3).  
+1. **Next focus:** admin LLM config page, webhooks (P2), or help (P4).  
 2. GitHub behavior: **`docs/github-integration-matrix.md`**.  
-3. This file is the **authoritative** backlog for the SPA stack.  
+3. Voice setup: **`docs/voice-assistant.md`**.  
+4. This file is the **authoritative** backlog for the SPA stack.  
 
 ---
 

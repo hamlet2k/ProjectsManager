@@ -26,50 +26,65 @@ import type { Task } from '@/lib/supabase/types'
 export function useScopeTasks(scopeId: string | undefined) {
   const qc = useQueryClient()
 
+  // Shared projects: refetch periodically + on focus so collaborators see updates
+  // even if Realtime is slow/unavailable. Realtime invalidates sooner when it works.
+  const pollMs = 12_000
+
   const tasksQuery = useQuery({
     queryKey: ['tasks', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTasks(scopeId!),
+    refetchInterval: pollMs,
+    refetchOnWindowFocus: true,
   })
 
   const tagsQuery = useQuery({
     queryKey: ['tags', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTags(scopeId!),
+    refetchInterval: pollMs,
+    refetchOnWindowFocus: true,
   })
 
   const taskTagsQuery = useQuery({
     queryKey: ['task-tags', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTaskTags(scopeId!),
+    refetchInterval: pollMs,
+    refetchOnWindowFocus: true,
   })
 
   const depsQuery = useQuery({
     queryKey: ['task-deps', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTaskDependencies(scopeId!),
+    refetchInterval: pollMs,
+    refetchOnWindowFocus: true,
   })
 
   useEffect(() => {
     if (!scopeId) return
     const supabase = getSupabase()
+    const invalidateAll = () => {
+      void qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
+      void qc.invalidateQueries({ queryKey: ['tags', scopeId] })
+      void qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+      void qc.invalidateQueries({ queryKey: ['task-deps', scopeId] })
+    }
     const channel = supabase
       .channel(`scope-data:${scopeId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks', filter: `scope_id=eq.${scopeId}` },
-        () => {
-          qc.invalidateQueries({ queryKey: ['tasks', scopeId] })
-          qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
-        },
+        invalidateAll,
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tags', filter: `scope_id=eq.${scopeId}` },
-        () => qc.invalidateQueries({ queryKey: ['tags', scopeId] }),
+        invalidateAll,
       )
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_tags' }, () => {
-        qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
+        void qc.invalidateQueries({ queryKey: ['task-tags', scopeId] })
       })
       .on(
         'postgres_changes',
@@ -79,9 +94,14 @@ export function useScopeTasks(scopeId: string | undefined) {
           table: 'task_dependencies',
           filter: `scope_id=eq.${scopeId}`,
         },
-        () => qc.invalidateQueries({ queryKey: ['task-deps', scopeId] }),
+        () => void qc.invalidateQueries({ queryKey: ['task-deps', scopeId] }),
       )
-      .subscribe()
+      .subscribe((status) => {
+        // If Realtime fails silently, polling above still keeps data fresh
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[realtime] scope channel', status)
+        }
+      })
     return () => {
       void supabase.removeChannel(channel)
     }

@@ -204,6 +204,7 @@ export function DashboardPage() {
                 description: values.description || null,
                 dependencies_enabled: values.dependenciesEnabled,
                 advanced_export_enabled: values.advancedExportEnabled,
+                assistant_prompt: values.assistantPrompt || null,
               })
               toast.push('Project updated', 'success')
             } else {
@@ -211,12 +212,17 @@ export function DashboardPage() {
                 name: values.name,
                 description: values.description || undefined,
               })
-              // RPC create uses DB defaults (on); patch if user chose simpler tools
-              if (!values.dependenciesEnabled || !values.advancedExportEnabled) {
+              // RPC create uses DB defaults (on); patch flags / AI prompt if needed
+              if (
+                !values.dependenciesEnabled ||
+                !values.advancedExportEnabled ||
+                values.assistantPrompt.trim()
+              ) {
                 await updateScope.mutateAsync({
                   id: created.id,
                   dependencies_enabled: values.dependenciesEnabled,
                   advanced_export_enabled: values.advancedExportEnabled,
+                  assistant_prompt: values.assistantPrompt.trim() || null,
                 })
               }
               toast.push('Project created', 'success')

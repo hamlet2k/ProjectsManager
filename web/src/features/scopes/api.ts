@@ -100,6 +100,7 @@ export async function updateScope(
       | 'rank'
       | 'dependencies_enabled'
       | 'advanced_export_enabled'
+      | 'assistant_prompt'
     >
   >,
 ) {

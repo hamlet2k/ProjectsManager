@@ -61,6 +61,7 @@ export const Icons = {
   Flag: (p: IconProps) => <Bi name="flag" {...p} />,
   Tag: (p: IconProps) => <Bi name="tags" {...p} />,
   Filter: (p: IconProps) => <Bi name="funnel" {...p} />,
+  Search: (p: IconProps) => <Bi name="search" {...p} />,
   /** Create / sync issue affordance (circle + mark) */
   Issue: (p: IconProps) => <Bi name="record-circle" {...p} />,
   /** Link existing GitHub issue */
@@ -73,6 +74,13 @@ export const Icons = {
   People: (p: IconProps) => <Bi name="people" {...p} />,
   Help: (p: IconProps) => <Bi name="question-circle" {...p} />,
   Markdown: (p: IconProps) => <Bi name="markdown" {...p} />,
-  /** Coffee / support (Ko-fi style cup) */
-  Cup: (p: IconProps) => <Bi name="cup-hot" {...p} />,
+  /** Support / like (heart) */
+  Heart: (p: IconProps) => <Bi name="heart" {...p} />,
+  HeartFill: (p: IconProps) => <Bi name="heart-fill" {...p} />,
+  /** @deprecated use Heart — kept for any leftover Cup refs */
+  Cup: (p: IconProps) => <Bi name="heart" {...p} />,
+  /** Voice assistant microphone */
+  Mic: (p: IconProps) => <Bi name="mic" {...p} />,
+  MicMute: (p: IconProps) => <Bi name="mic-mute" {...p} />,
+  Sparkles: (p: IconProps) => <Bi name="stars" {...p} />,
 }

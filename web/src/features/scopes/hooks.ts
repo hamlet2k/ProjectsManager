@@ -78,6 +78,7 @@ export function useUpdateScope() {
       rank?: number
       dependencies_enabled?: boolean
       advanced_export_enabled?: boolean
+      assistant_prompt?: string | null
     }) => {
       const { id, ...patch } = input
       return updateScope(id, patch)

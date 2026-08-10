@@ -22,6 +22,7 @@ import {
   slugifyFilename,
   type ParsedImportTask,
 } from '@/features/tasks/transfer/formats'
+import { generateProjectPrompt } from '@/features/assistant/api'
 
 type Mode = 'export' | 'import'
 
@@ -42,6 +43,11 @@ type Props = {
   /** When set, shows “From GitHub” on the Import tab (import issue as task). */
   onImportFromGithub?: () => void
   githubRepoLabel?: string | null
+  /** Project voice AI prompt — used as default for AI backlog export instructions. */
+  projectVoicePrompt?: string | null
+  /** For regenerating export-only AI instructions */
+  scopeId?: string
+  existingTagNames?: string[]
 }
 
 const FORMAT_OPTIONS: { id: TransferFormat; label: string; hint: string }[] = [
@@ -65,6 +71,9 @@ export function TaskTransferModal({
   initialTaskIds = null,
   onImportFromGithub,
   githubRepoLabel = null,
+  projectVoicePrompt = null,
+  scopeId,
+  existingTagNames = [],
 }: Props) {
   const toast = useToast()
   const prefs = useMemo(() => loadTransferPrefs(), [open])
@@ -75,6 +84,8 @@ export function TaskTransferModal({
   const [asChecklist, setAsChecklist] = useState(prefs.asChecklist)
   const [includeCompleted, setIncludeCompleted] = useState(true)
   const [aiInstructions, setAiInstructions] = useState(prefs.aiInstructions)
+  const [exportStyleBrief, setExportStyleBrief] = useState('')
+  const [regenBusy, setRegenBusy] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const [importText, setImportText] = useState('')
@@ -89,13 +100,16 @@ export function TaskTransferModal({
     setFormat(normalizeTransferFormat(p.format))
     setFullMetadata(p.fullMetadata)
     setAsChecklist(p.asChecklist)
-    setAiInstructions(p.aiInstructions)
+    // Prefer project voice prompt for AI backlog; fall back to last export prefs
+    const voice = (projectVoicePrompt ?? '').trim()
+    setAiInstructions(voice || p.aiInstructions)
+    setExportStyleBrief('')
     setIncludeCompleted(true)
     setImportText('')
     setImportPreview([])
     setImportFormat('unknown')
     setImportWarnings([])
-  }, [open, initialMode])
+  }, [open, initialMode, projectVoicePrompt])
 
   const tagNameById = useMemo(() => {
     const m = new Map<string, string>()
@@ -197,6 +211,7 @@ export function TaskTransferModal({
       ok ? `Copied ${exportCount} task(s) (${formatLabel(format)})` : 'Copy failed',
       ok ? 'success' : 'error',
     )
+    if (ok) onClose()
   }
 
   const handleDownload = () => {
@@ -367,15 +382,17 @@ export function TaskTransferModal({
                   </span>
                 </span>
               </label>
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={includeCompleted}
-                  onChange={(e) => setIncludeCompleted(e.target.checked)}
-                />
-                <span>Include completed tasks</span>
-              </label>
+              {!singleTaskExport ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={includeCompleted}
+                    onChange={(e) => setIncludeCompleted(e.target.checked)}
+                  />
+                  <span>Include completed tasks</span>
+                </label>
+              ) : null}
               {singleTaskExport ? (
                 <p className="text-xs text-[var(--color-muted)]">
                   Exporting this task only. Choose format, then Copy or Download.
@@ -393,18 +410,83 @@ export function TaskTransferModal({
             </div>
 
             {format === 'ai_backlog' ? (
-              <Field label="Instructions for the AI">
-                <Textarea
-                  className="min-h-[88px]"
-                  value={aiInstructions}
-                  onChange={(e) => setAiInstructions(e.target.value)}
-                  placeholder="What should an AI coding agent do with this backlog?"
-                />
-                <p className="mt-1 text-xs text-[var(--color-muted)]">
-                  Included under <strong>Instructions for the AI</strong> in the markdown export.
-                  Paste into Cursor, Codex, Claude, etc.
-                </p>
-              </Field>
+              <div className="space-y-2">
+                <Field label="Instructions for the AI (export only)">
+                  <Textarea
+                    className="min-h-[88px]"
+                    value={aiInstructions}
+                    onChange={(e) => setAiInstructions(e.target.value)}
+                    placeholder="What should an AI coding agent do with this backlog?"
+                  />
+                  <p className="mt-1 text-xs text-[var(--color-muted)]">
+                    Defaults from this project’s voice AI prompt when set. Edit freely — does not
+                    change the project voice settings. Paste into Cursor, Codex, Claude, etc.
+                  </p>
+                </Field>
+                <Field label="Regenerate style (optional)">
+                  <Textarea
+                    className="min-h-[56px]"
+                    value={exportStyleBrief}
+                    onChange={(e) => setExportStyleBrief(e.target.value)}
+                    placeholder="e.g. Focus on security first; use imperative agent style; short bullet goals"
+                    disabled={regenBusy}
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={regenBusy || !scopeId}
+                    onClick={() => {
+                      void (async () => {
+                        if (!scopeId) return
+                        setRegenBusy(true)
+                        try {
+                          const res = await generateProjectPrompt({
+                            scopeId,
+                            projectName,
+                            userBrief:
+                              (projectVoicePrompt || '').trim() ||
+                              `Project ${projectName}. Tags: ${existingTagNames.join(', ')}`,
+                            tags: existingTagNames,
+                            exportStyleBrief:
+                              exportStyleBrief.trim() ||
+                              'Write a clear AI backlog preamble for coding agents working this task list.',
+                          })
+                          setAiInstructions(res.prompt)
+                          persistOptions({ aiInstructions: res.prompt })
+                          toast.push('Export AI instructions regenerated', 'success')
+                        } catch (e) {
+                          toast.push(
+                            e instanceof Error ? e.message : 'Could not regenerate',
+                            'error',
+                          )
+                        } finally {
+                          setRegenBusy(false)
+                        }
+                      })()
+                    }}
+                  >
+                    <Icons.Sparkles size={14} />
+                    {regenBusy ? 'Regenerating…' : 'Regenerate with AI'}
+                  </Button>
+                  {projectVoicePrompt?.trim() ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={regenBusy}
+                      onClick={() => {
+                        setAiInstructions(projectVoicePrompt.trim())
+                        toast.push('Reset to project voice prompt', 'success')
+                      }}
+                    >
+                      Use project voice prompt
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
 
             <Field label={`Preview (${exportCount} task${exportCount === 1 ? '' : 's'})`}>

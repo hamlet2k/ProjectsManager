@@ -1,7 +1,10 @@
 /**
  * Shared keyboard shortcut helpers (issue #118 / P1).
  * Mod = Ctrl on Windows/Linux, ⌘ on macOS.
+ * Remappable labels: see keyboardPrefs.ts
  */
+
+import { formatBinding } from './keyboardPrefs'
 
 export function isModKey(e: { ctrlKey: boolean; metaKey: boolean }): boolean {
   return e.ctrlKey || e.metaKey
@@ -39,41 +42,51 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   return false
 }
 
-/** Catalog for UI tooltips / help chips */
+/** Catalog for UI tooltips / help chips (labels respect Settings remaps) */
 export const TASK_SHORTCUTS = {
   focusAdd: {
-    id: 'focusAdd',
-    combo: () => modLabel('↑'),
+    id: 'focusAdd' as const,
+    combo: () => formatBinding('focusAdd'),
     description: 'Focus quick-add task field',
   },
   quickDetails: {
-    id: 'quickDetails',
-    combo: () => modLabel('↓'),
+    id: 'quickDetails' as const,
+    combo: () => formatBinding('quickDetails'),
     description: 'Expand quick-add details (when add field focused)',
   },
   saveQuick: {
-    id: 'saveQuick',
-    combo: () => modLabel('Enter'),
+    id: 'saveQuick' as const,
+    combo: () => formatBinding('saveQuick'),
     description: 'Save new task from quick-add',
   },
   clearSearch: {
-    id: 'clearSearch',
+    id: 'clearSearch' as const,
     combo: () => 'Esc',
     description: 'Clear search when search is focused',
   },
   clearAllFilters: {
-    id: 'clearAllFilters',
-    combo: () => modLabel('Backspace'),
+    id: 'clearAllFilters' as const,
+    combo: () => formatBinding('clearAllFilters'),
     description: 'Clear search, tags, and reset filters',
   },
   collapseEsc: {
-    id: 'collapseEsc',
+    id: 'collapseEsc' as const,
     combo: () => 'Esc',
     description: 'Close tag editor / collapse expanded task / clear search',
   },
   saveModal: {
-    id: 'saveModal',
-    combo: () => modLabel('S'),
+    id: 'saveModal' as const,
+    combo: () => formatBinding('saveModal'),
     description: 'Save task in the edit/new modal',
+  },
+  pushToTalk: {
+    id: 'pushToTalk' as const,
+    combo: () => formatBinding('pushToTalk'),
+    description: 'Hold for voice push-to-talk',
+  },
+  quickSearch: {
+    id: 'quickSearch' as const,
+    combo: () => formatBinding('quickSearch'),
+    description: 'Open quick search overlay',
   },
 } as const

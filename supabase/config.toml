@@ -39,65 +39,69 @@ enable_confirmations = false
 # Branded templates (see supabase/templates/)
 [auth.email.template.invite]
 subject = "You're invited to Projects Manager"
-content_path = "./supabase/templates/invite.html"
+content_path = "supabase/templates/invite.html"
 
 [auth.email.template.confirmation]
 subject = "Confirm your email — Projects Manager"
-content_path = "./supabase/templates/confirmation.html"
+content_path = "supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
 subject = "Reset your password — Projects Manager"
-content_path = "./supabase/templates/recovery.html"
+content_path = "supabase/templates/recovery.html"
 
 [auth.email.template.magic_link]
 subject = "Your sign-in link — Projects Manager"
-content_path = "./supabase/templates/magic_link.html"
+content_path = "supabase/templates/magic_link.html"
 
 [auth.email.template.email_change]
 subject = "Confirm your new email — Projects Manager"
-content_path = "./supabase/templates/email_change.html"
+content_path = "supabase/templates/email_change.html"
 
 [auth.email.template.reauthentication]
 subject = "{{ .Token }} is your Projects Manager verification code"
-content_path = "./supabase/templates/reauthentication.html"
+content_path = "supabase/templates/reauthentication.html"
 
+# Notification templates: paths relative to this config file (supabase/)
 [auth.email.notification.password_changed]
 enabled = true
 subject = "Your password was changed — Projects Manager"
-content_path = "./supabase/templates/password_changed_notification.html"
+content_path = "./templates/password_changed_notification.html"
 
 [auth.email.notification.email_changed]
 enabled = true
 subject = "Your email was changed — Projects Manager"
-content_path = "./supabase/templates/email_changed_notification.html"
+content_path = "./templates/email_changed_notification.html"
 
 [auth.email.notification.phone_changed]
 enabled = true
 subject = "Your phone number was changed — Projects Manager"
-content_path = "./supabase/templates/phone_changed_notification.html"
+content_path = "./templates/phone_changed_notification.html"
 
 [auth.email.notification.identity_linked]
 enabled = true
 subject = "A sign-in method was linked — Projects Manager"
-content_path = "./supabase/templates/identity_linked_notification.html"
+content_path = "./templates/identity_linked_notification.html"
 
 [auth.email.notification.identity_unlinked]
 enabled = true
 subject = "A sign-in method was removed — Projects Manager"
-content_path = "./supabase/templates/identity_unlinked_notification.html"
+content_path = "./templates/identity_unlinked_notification.html"
 
 [auth.email.notification.mfa_factor_enrolled]
 enabled = true
 subject = "Verification method added — Projects Manager"
-content_path = "./supabase/templates/mfa_factor_enrolled_notification.html"
+content_path = "./templates/mfa_factor_enrolled_notification.html"
 
 [auth.email.notification.mfa_factor_unenrolled]
 enabled = true
 subject = "Verification method removed — Projects Manager"
-content_path = "./supabase/templates/mfa_factor_unenrolled_notification.html"
+content_path = "./templates/mfa_factor_unenrolled_notification.html"
 
 [functions.github-proxy]
 verify_jwt = true
 
 [functions.github-credentials]
+verify_jwt = true
+
+[functions.assistant]
 verify_jwt = true

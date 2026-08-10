@@ -38,6 +38,10 @@ export type Scope = {
    * When false, copy actions paste plain checklist text immediately.
    */
   advanced_export_enabled?: boolean
+  /**
+   * Optional project-specific AI instructions (terminology, domain, how to tag).
+   */
+  assistant_prompt?: string | null
   created_at: string
   updated_at: string
 }

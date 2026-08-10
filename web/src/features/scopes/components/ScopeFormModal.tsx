@@ -3,6 +3,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Textarea } from '@/components/ui/Input'
 import type { Scope } from '@/lib/supabase/types'
+import { generateProjectPrompt } from '@/features/assistant/api'
+import { Icons } from '@/components/icons'
 
 export type ScopeFormValues = {
   name: string
@@ -11,21 +13,33 @@ export type ScopeFormValues = {
   dependenciesEnabled: boolean
   /** Project UX: full export modal from copy (default on). */
   advancedExportEnabled: boolean
+  /** Project AI instructions for the voice assistant. */
+  assistantPrompt: string
 }
 
 type Props = {
   open: boolean
   onClose: () => void
   initial?: Scope | null
+  /** Existing tag names — helps the LLM generate a better project prompt. */
+  existingTagNames?: string[]
   onSubmit: (values: ScopeFormValues) => Promise<void>
 }
 
-export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
+export function ScopeFormModal({
+  open,
+  onClose,
+  initial,
+  existingTagNames = [],
+  onSubmit,
+}: Props) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [dependenciesEnabled, setDependenciesEnabled] = useState(true)
   const [advancedExportEnabled, setAdvancedExportEnabled] = useState(true)
+  const [assistantPrompt, setAssistantPrompt] = useState('')
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -34,22 +48,59 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
       setDescription(initial?.description ?? '')
       setDependenciesEnabled(initial?.dependencies_enabled !== false)
       setAdvancedExportEnabled(initial?.advanced_export_enabled !== false)
+      setAssistantPrompt(initial?.assistant_prompt ?? '')
       setError(null)
     }
   }, [open, initial])
+
+  /**
+   * Uses the project description as the source brief:
+   * generates a polished voice-assistant prompt and optionally cleans up the description.
+   */
+  const runGenerate = async () => {
+    const brief = description.trim() || name.trim()
+    if (!brief || !initial?.id) {
+      setError(
+        initial?.id
+          ? 'Write a project description first (what the project is about, tags, terminology).'
+          : 'Save the project first, then edit it to generate an AI prompt.',
+      )
+      return
+    }
+    setGenerating(true)
+    setError(null)
+    try {
+      const res = await generateProjectPrompt({
+        scopeId: initial.id,
+        projectName: name.trim() || initial.name,
+        userBrief: brief,
+        tags: existingTagNames,
+      })
+      setAssistantPrompt(res.prompt)
+      // If the model also returned a cleaned description, prefer it
+      if (res.formatted_description?.trim()) {
+        setDescription(res.formatted_description.trim())
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not generate prompt')
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={initial ? 'Edit project' : 'New project'}
+      size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={saving}>
+          <Button variant="secondary" onClick={onClose} disabled={saving || generating}>
             Cancel
           </Button>
           <Button
-            disabled={saving || !name.trim()}
+            disabled={saving || generating || !name.trim()}
             onClick={async () => {
               setSaving(true)
               setError(null)
@@ -59,6 +110,7 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
                   description: description.trim(),
                   dependenciesEnabled,
                   advancedExportEnabled,
+                  assistantPrompt: assistantPrompt.trim(),
                 })
                 onClose()
               } catch (e) {
@@ -88,17 +140,18 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
             id="scope-desc"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Optional notes about this project space"
+            placeholder="What this project is about — used as the source for the AI voice prompt (e.g. shopping list; tags are store names)."
+            className="min-h-[100px]"
+            disabled={generating || saving}
           />
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            This description is the brief for “Generate AI prompt” (terminology, tags, how you work).
+          </p>
         </Field>
 
         <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
             Project tools
-          </p>
-          <p className="text-xs text-[var(--color-muted)]">
-            Turn off what you don’t need for a simpler board. Shared with everyone on this project.
-            Defaults stay on for power workflows.
           </p>
           <label className="flex items-start gap-2 text-sm">
             <input
@@ -110,8 +163,7 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
             <span>
               Task dependencies
               <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
-                Blocked-by / blocks pills and manage button. Existing links are kept if you turn this
-                off later.
+                Blocked-by / blocks pills and manage button.
               </span>
             </span>
           </label>
@@ -125,12 +177,49 @@ export function ScopeFormModal({ open, onClose, initial, onSubmit }: Props) {
             <span>
               Advanced export on copy
               <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
-                When on, the copy icon opens Import / Export (formats, AI backlog, JSON…). When off,
-                copy pastes a simple checklist immediately. The full Import / Export button still
-                works either way.
+                When on, copy opens Import / Export. When off, copy pastes a simple checklist.
               </span>
             </span>
           </label>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+            AI / voice prompt
+          </p>
+          <p className="text-xs text-[var(--color-muted)]">
+            Generate a tuned assistant prompt from the project description, refine it, then Save.
+            Voice and “enhance task” use this prompt.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={generating || saving || !initial?.id || !description.trim()}
+              onClick={() => void runGenerate()}
+              title={
+                !initial?.id
+                  ? 'Save the project once, then edit to generate'
+                  : !description.trim()
+                    ? 'Add a description first'
+                    : 'Format description into a voice-assistant prompt'
+              }
+            >
+              <Icons.Sparkles size={14} />
+              {generating ? 'Generating…' : 'Generate AI prompt'}
+            </Button>
+          </div>
+          <Field label="Saved AI prompt (used by voice)" htmlFor="scope-ai-prompt">
+            <Textarea
+              id="scope-ai-prompt"
+              value={assistantPrompt}
+              onChange={(e) => setAssistantPrompt(e.target.value)}
+              placeholder="Generated or hand-written instructions for the voice assistant…"
+              className="min-h-[120px]"
+              disabled={generating || saving}
+            />
+          </Field>
         </div>
       </div>
     </Modal>

@@ -13,6 +13,110 @@ import {
   testGitHubConnection,
 } from '@/features/github/api'
 import type { ThemePref } from '@/lib/supabase/types'
+import {
+  SHORTCUT_CATALOG,
+  chordFromEvent,
+  formatBinding,
+  resetAllBindings,
+  resetBinding,
+  setBinding,
+  type ShortcutId,
+} from '@/lib/keyboardPrefs'
+
+function KeyboardShortcutsSection() {
+  const toast = useToast()
+  const [listeningId, setListeningId] = useState<ShortcutId | null>(null)
+  const [, bump] = useState(0)
+
+  useEffect(() => {
+    const fn = () => bump((n) => n + 1)
+    window.addEventListener('pm-keyboard-prefs-changed', fn)
+    return () => window.removeEventListener('pm-keyboard-prefs-changed', fn)
+  }, [])
+
+  useEffect(() => {
+    if (!listeningId) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') {
+        setListeningId(null)
+        return
+      }
+      const chord = chordFromEvent(e)
+      if (!chord) return
+      setBinding(listeningId, chord.keys, chord.mod)
+      setListeningId(null)
+      toast.push('Shortcut updated', 'success')
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [listeningId, toast])
+
+  return (
+    <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="font-semibold">Keyboard shortcuts</h2>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            Click a row, then press the new key combo. Esc cancels capture. Stored on this device.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            resetAllBindings()
+            toast.push('Shortcuts reset to defaults', 'success')
+          }}
+        >
+          Reset all
+        </Button>
+      </div>
+      <ul className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)]">
+        {SHORTCUT_CATALOG.map((item) => (
+          <li
+            key={item.id}
+            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm"
+          >
+            <div className="min-w-0">
+              <p className="font-medium">{item.description}</p>
+              <p className="text-xs text-[var(--color-muted)]">
+                {listeningId === item.id ? (
+                  <span className="text-[var(--color-primary)]">Press a key combo…</span>
+                ) : (
+                  <kbd className="kbd">{formatBinding(item.id)}</kbd>
+                )}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setListeningId(item.id)}
+              >
+                {listeningId === item.id ? 'Listening…' : 'Change'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  resetBinding(item.id)
+                  toast.push('Reset shortcut', 'success')
+                }}
+              >
+                Default
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
 export function SettingsPage() {
   const { profile, updateProfile, updatePassword } = useAuth()
@@ -51,7 +155,9 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">Profile, theme, and GitHub access.</p>
+        <p className="mt-1 text-sm text-[var(--color-muted)]">
+          Profile, keyboard shortcuts, theme, and GitHub access.
+        </p>
       </div>
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
@@ -146,6 +252,8 @@ export function SettingsPage() {
           {passwordBusy ? 'Updating…' : 'Update password'}
         </Button>
       </section>
+
+      <KeyboardShortcutsSection />
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <h2 className="font-semibold">Theme</h2>
