@@ -32,10 +32,11 @@ Natural language control for the **current project**: speak or type → plan →
 ```text
 [Mic / text in SPA]
         ↓
-  Browser Web Speech API (SpeechRecognition) → live transcript text
-  (Chrome/Edge best; Android merge of progressive finals; free, no server STT)
+  Android / Windows / desktop: free browser Web Speech (live text)
+  iOS only: MediaRecorder → Edge mode "transcribe" (Whisper) → text
+  Or type in the Voice modal / hold panel
         ↓
-[Edge Function: assistant]  ← API keys stay server-side (mode: plan only)
+[Edge Function: assistant]  ← plan via chat model (xAI/etc.)
         ↓ JSON actions
 [SPA executePlan] → createTask / setCompleted / createTag / …
         ↓
@@ -44,10 +45,16 @@ Natural language control for the **current project**: speak or type → plan →
 
 ### STT notes
 
-- **Speech-to-text is free** in the browser (Web Speech API). No MediaRecorder, Whisper, or `mode: transcribe` path.
-- The **LLM** (xAI / OpenAI / OpenRouter via Edge secrets) is used only after text exists — for planning actions.
-- **iOS Safari** often has weak or non-functional Web Speech STT. Prefer the Voice modal and **type** instead, or use Chrome/Edge on Android/desktop for the mic.
-- Requires a **secure context** (HTTPS or localhost) for the mic.
+- **Android / Windows:** free browser STT. Only the plan step uses `ASSISTANT_*` (xAI).
+- **iOS Safari:** Web Speech does not return text (mic can still light up). App records audio and calls Whisper. If chat is xAI-only, set a separate OpenAI STT key:
+
+```bash
+supabase secrets set ASSISTANT_STT_API_KEY="sk-..." \
+  ASSISTANT_STT_BASE_URL="https://api.openai.com/v1" \
+  ASSISTANT_STT_MODEL="whisper-1"
+```
+
+- Requires **HTTPS** for the mic.
 
 ## Deploy
 

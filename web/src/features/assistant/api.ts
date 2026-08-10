@@ -138,3 +138,21 @@ export async function enhanceTaskDraft(input: {
   })
 }
 
+/** iOS only: server Whisper-compatible transcription. */
+export async function transcribeAudio(input: {
+  scopeId: string
+  audioBase64: string
+  mimeType: string
+  fileName?: string
+  language?: string
+}): Promise<{ text: string; model?: string }> {
+  return invokeAssistant<{ text: string; model?: string }>({
+    mode: 'transcribe',
+    scope_id: input.scopeId,
+    audio_base64: input.audioBase64,
+    mime_type: input.mimeType,
+    file_name: input.fileName,
+    language: input.language,
+  })
+}
+

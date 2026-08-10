@@ -54,6 +54,28 @@ export function checkSpeechEnvironment(): MicAccessResult {
   return 'ok'
 }
 
+/**
+ * iOS Safari/WebKit never reliably returns Web Speech text (mic can still light up).
+ * On iOS we record with MediaRecorder and transcribe server-side (Whisper).
+ * Android / desktop keep free browser STT.
+ */
+export function shouldUseServerStt(): boolean {
+  if (typeof window === 'undefined') return false
+  return isIosBrowser() && canUseMediaRecorder()
+}
+
+export function canUseMediaRecorder(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!window.isSecureContext) return false
+  return typeof MediaRecorder !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)
+}
+
+/** Mic usable: browser STT, or iOS record+server path. */
+export function canUseVoiceInput(): boolean {
+  if (shouldUseServerStt()) return true
+  return Boolean(getSpeechRecognitionCtor())
+}
+
 export function micAccessMessage(result: MicAccessResult): string {
   switch (result) {
     case 'denied':
@@ -62,7 +84,7 @@ export function micAccessMessage(result: MicAccessResult): string {
       return 'Microphone needs HTTPS (or localhost). Open the production site to use voice.'
     case 'unsupported':
       if (isIosBrowser()) {
-        return 'Voice typing is limited on iPhone/iPad Safari. Type with the Voice button, or use Chrome/Edge on Android or desktop.'
+        return 'Could not start voice recording on this iPhone/iPad. Allow the microphone, or type with Voice.'
       }
       return 'Speech recognition is not available here. Use the Voice button to type (Chrome or Edge work best).'
     default:
@@ -72,12 +94,162 @@ export function micAccessMessage(result: MicAccessResult): string {
 
 export function speechUnsupportedMessage(): string {
   if (isIosBrowser()) {
-    return 'Voice typing is limited on this device/browser (iOS Safari). Type with Voice, or use Android Chrome / desktop Chrome/Edge for the mic.'
+    if (!canUseMediaRecorder()) {
+      return 'This iPhone/iPad browser cannot record audio. Update iOS/Safari, or type with Voice.'
+    }
+    return 'Could not start voice recording. Allow the microphone, or type with Voice.'
   }
   if (typeof window !== 'undefined' && !window.isSecureContext) {
     return 'Microphone needs a secure connection (HTTPS).'
   }
   return 'Speech recognition is not supported here. Type with the Voice button (Chrome/Edge best).'
+}
+
+function pickRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return undefined
+  const candidates = [
+    'audio/mp4',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/aac',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ]
+  for (const t of candidates) {
+    try {
+      if (MediaRecorder.isTypeSupported(t)) return t
+    } catch {
+      /* ignore */
+    }
+  }
+  return undefined
+}
+
+export function extensionForAudioMime(mime: string): string {
+  const m = mime.toLowerCase()
+  if (m.includes('mp4') || m.includes('m4a') || m.includes('aac')) return 'm4a'
+  if (m.includes('ogg')) return 'ogg'
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3'
+  if (m.includes('wav')) return 'wav'
+  return 'webm'
+}
+
+export type AudioCaptureSession = {
+  stop: () => Promise<Blob>
+  cancel: () => void
+}
+
+/** iOS hold-to-talk: keep stream open until release, then stop() → Blob for Whisper. */
+export async function startAudioCapture(): Promise<
+  { ok: true; session: AudioCaptureSession } | { ok: false; reason: MicAccessResult }
+> {
+  if (!canUseMediaRecorder()) {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      return { ok: false, reason: 'insecure' }
+    }
+    return { ok: false, reason: 'unsupported' }
+  }
+
+  let stream: MediaStream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    })
+  } catch (e) {
+    const name = e instanceof DOMException ? e.name : ''
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+      return { ok: false, reason: 'denied' }
+    }
+    return { ok: false, reason: 'unsupported' }
+  }
+
+  const mimeType = pickRecorderMimeType()
+  let recorder: MediaRecorder
+  try {
+    recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+  } catch {
+    for (const t of stream.getTracks()) t.stop()
+    return { ok: false, reason: 'unsupported' }
+  }
+
+  const chunks: BlobPart[] = []
+  let stopped = false
+  let stopResolve: ((blob: Blob) => void) | null = null
+  const stopPromise = new Promise<Blob>((resolve) => {
+    stopResolve = resolve
+  })
+
+  recorder.ondataavailable = (ev) => {
+    if (ev.data && ev.data.size > 0) chunks.push(ev.data)
+  }
+  recorder.onstop = () => {
+    stopped = true
+    for (const t of stream.getTracks()) t.stop()
+    const type = recorder.mimeType || mimeType || 'audio/webm'
+    stopResolve?.(new Blob(chunks, { type }))
+  }
+  recorder.onerror = () => {
+    if (!stopped) {
+      try {
+        recorder.stop()
+      } catch {
+        for (const t of stream.getTracks()) t.stop()
+        stopResolve?.(new Blob([], { type: mimeType || 'audio/webm' }))
+      }
+    }
+  }
+
+  try {
+    recorder.start(250)
+  } catch {
+    for (const t of stream.getTracks()) t.stop()
+    return { ok: false, reason: 'unsupported' }
+  }
+
+  return {
+    ok: true,
+    session: {
+      stop: async () => {
+        if (stopped) return stopPromise
+        if (recorder.state === 'inactive') {
+          for (const t of stream.getTracks()) t.stop()
+          return new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' })
+        }
+        try {
+          if (recorder.state === 'recording') recorder.requestData?.()
+        } catch {
+          /* ignore */
+        }
+        try {
+          recorder.stop()
+        } catch {
+          for (const t of stream.getTracks()) t.stop()
+          return new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' })
+        }
+        return stopPromise
+      },
+      cancel: () => {
+        if (stopped) return
+        try {
+          recorder.ondataavailable = null
+          recorder.stop()
+        } catch {
+          for (const t of stream.getTracks()) t.stop()
+          stopResolve?.(new Blob([], { type: 'audio/webm' }))
+        }
+      },
+    },
+  }
+}
+
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer()
+  const bytes = new Uint8Array(buf)
+  const chunk = 0x8000
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
 }
 
 /**
