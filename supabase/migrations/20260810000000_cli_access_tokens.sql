@@ -51,7 +51,8 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+-- extensions required for digest() / gen_random_bytes (pgcrypto)
+set search_path = public, extensions
 as $$
 declare
   v_uid uuid := auth.uid();
@@ -81,9 +82,8 @@ begin
       if not public.has_scope_access(v_scope, 'viewer') then
         raise exception 'No access to project %', v_scope;
       end if;
-      if p_can_write and not public.has_scope_access(v_scope, 'editor')
-         and not public.is_scope_owner(v_scope) then
-        -- viewers may create read-only tokens only
+      -- owner counts as editor via has_scope_access
+      if p_can_write and not public.has_scope_access(v_scope, 'editor') then
         raise exception 'Editor access required for write tokens on project %', v_scope;
       end if;
       v_scopes := array_append(v_scopes, v_scope);
@@ -93,7 +93,7 @@ begin
   v_prefix := substr(encode(gen_random_bytes(6), 'hex'), 1, 8);
   v_secret := encode(gen_random_bytes(24), 'hex');
   v_token := 'pmcli_' || v_prefix || '_' || v_secret;
-  v_hash := encode(digest(v_token, 'sha256'), 'hex');
+  v_hash := encode(digest(convert_to(v_token, 'UTF8'), 'sha256'), 'hex');
 
   insert into public.cli_access_tokens (
     user_id, name, token_prefix, token_hash, scope_ids, can_write

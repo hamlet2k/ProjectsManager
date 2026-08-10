@@ -31,6 +31,16 @@ export async function listCliAccessTokens(): Promise<CliAccessTokenRow[]> {
   return (data ?? []) as CliAccessTokenRow[]
 }
 
+function rpcErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object') {
+    const e = error as { message?: string; details?: string; hint?: string }
+    const parts = [e.message, e.details, e.hint].filter(Boolean)
+    if (parts.length) return parts.join(' — ')
+  }
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 export async function createCliAccessToken(input: {
   name: string
   scopeIds: string[] | null
@@ -41,7 +51,7 @@ export async function createCliAccessToken(input: {
     p_scope_ids: input.scopeIds,
     p_can_write: input.canWrite,
   })
-  if (error) throw error
+  if (error) throw new Error(rpcErrorMessage(error, 'Create failed'))
   const row = Array.isArray(data) ? data[0] : data
   if (!row?.token) throw new Error('Token create returned empty')
   return row as CreatedCliToken
@@ -49,7 +59,7 @@ export async function createCliAccessToken(input: {
 
 export async function revokeCliAccessToken(id: string): Promise<boolean> {
   const { data, error } = await getSupabase().rpc('revoke_cli_access_token', { p_id: id })
-  if (error) throw error
+  if (error) throw new Error(rpcErrorMessage(error, 'Revoke failed'))
   return Boolean(data)
 }
 
