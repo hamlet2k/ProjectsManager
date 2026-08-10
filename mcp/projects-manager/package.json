@@ -1,0 +1,19 @@
+{
+  "name": "@projects-manager/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Grok CLI MCP server — manage Projects Manager tasks on allowed boards",
+  "bin": {
+    "projects-manager-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}

@@ -22,6 +22,7 @@ import {
   setBinding,
   type ShortcutId,
 } from '@/lib/keyboardPrefs'
+import { CliAccessSection } from '@/features/cli/CliAccessSection'
 
 function KeyboardShortcutsSection() {
   const toast = useToast()
@@ -156,7 +157,7 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Profile, keyboard shortcuts, theme, and GitHub access.
+          Profile, keyboard shortcuts, Grok CLI access, theme, and GitHub.
         </p>
       </div>
 
@@ -254,6 +255,8 @@ export function SettingsPage() {
       </section>
 
       <KeyboardShortcutsSection />
+
+      <CliAccessSection />
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <h2 className="font-semibold">Theme</h2>

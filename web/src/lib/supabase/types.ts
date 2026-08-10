@@ -290,6 +290,34 @@ export type Database = {
         }>
         Relationships: []
       }
+      cli_access_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          token_prefix: string
+          token_hash: string
+          scope_ids: string[] | null
+          can_write: boolean
+          last_used_at: string | null
+          revoked_at: string | null
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          name: string
+          token_prefix: string
+          token_hash: string
+          scope_ids?: string[] | null
+          can_write?: boolean
+        }
+        Update: Partial<{
+          name: string
+          last_used_at: string | null
+          revoked_at: string | null
+        }>
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: {
@@ -300,6 +328,26 @@ export type Database = {
       create_scope: {
         Args: { p_name: string; p_description?: string | null }
         Returns: Scope
+      }
+      create_cli_access_token: {
+        Args: {
+          p_name: string
+          p_scope_ids?: string[] | null
+          p_can_write?: boolean
+        }
+        Returns: {
+          id: string
+          token: string
+          token_prefix: string
+          name: string
+          scope_ids: string[] | null
+          can_write: boolean
+          created_at: string
+        }[]
+      }
+      revoke_cli_access_token: {
+        Args: { p_id: string }
+        Returns: boolean
       }
       search_profiles: {
         Args: { p_query: string }

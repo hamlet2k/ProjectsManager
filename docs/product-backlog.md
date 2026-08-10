@@ -76,7 +76,7 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 - [ ] Richer chat history / multi-turn memory  
 - [ ] Delete / reorder / GitHub link tools (with confirms)  
 - [ ] Create task from image  
-- [ ] Optional MCP surface over the same tools  
+- [x] **Grok CLI / MCP task access** — Settings PATs (project allow-list), Edge `cli-api`, `mcp/projects-manager`  
 - [ ] **Admin page: manage LLM configuration** (provider, model, base URL, keys via secure flow, test call, defaults) — currently secrets are set only via Supabase CLI/dashboard  
 
 ### P4 — Platform / release
