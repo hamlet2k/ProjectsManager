@@ -27,6 +27,80 @@ export function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | 
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
 }
 
+/**
+ * Safari often wants a full BCP-47 tag (en-US), not bare "en".
+ * Matches Sprites' speechLangForLocale approach.
+ */
+export function speechRecognitionLang(): string {
+  if (typeof navigator === 'undefined') return 'en-US'
+  const raw = (navigator.language || 'en-US').trim()
+  if (/^[a-z]{2}-[A-Za-z]{2,4}$/i.test(raw)) return raw
+  const base = raw.slice(0, 2).toLowerCase()
+  if (base === 'es') return 'es-ES'
+  if (base === 'en') return 'en-US'
+  if (base === 'pt') return 'pt-BR'
+  if (base === 'fr') return 'fr-FR'
+  if (base === 'de') return 'de-DE'
+  if (base.length === 2) return `${base}-${base.toUpperCase()}`
+  return 'en-US'
+}
+
+/**
+ * Read transcripts from a SpeechRecognition result list.
+ * Supports array access and .item() (WebKit).
+ */
+export function transcriptFromSpeechEvent(ev: SpeechRecognitionEventLike): {
+  finals: string[]
+  interim: string
+  all: string
+} {
+  const results = ev.results
+  const len = results?.length ?? 0
+  const finals: string[] = []
+  let interim = ''
+  let all = ''
+
+  for (let i = 0; i < len; i++) {
+    const row = results[i] as
+      | { isFinal: boolean; 0?: { transcript?: string }; item?: (n: number) => { transcript?: string } }
+      | undefined
+    if (!row) continue
+    const alt =
+      row[0] ??
+      (typeof row.item === 'function' ? row.item(0) : undefined)
+    const piece = String(alt?.transcript ?? '').replace(/\s+/g, ' ').trim()
+    if (!piece) continue
+    all = all ? `${all} ${piece}` : piece
+    if (row.isFinal) finals.push(piece)
+    else interim = interim ? `${interim} ${piece}` : piece
+  }
+
+  return {
+    finals,
+    interim: interim.trim(),
+    all: all.trim(),
+  }
+}
+
+/** Unregister leftover PWA service workers so iPad is not stuck on old Whisper builds. */
+export async function purgeStaleServiceWorkers(): Promise<void> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(regs.map((r) => r.unregister()))
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Android Chrome STT often marks progressive partials as final. */
 export function isAndroidBrowser(): boolean {
   if (typeof navigator === 'undefined') return false

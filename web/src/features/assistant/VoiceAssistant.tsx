@@ -16,7 +16,9 @@ import {
   micAccessMessage,
   mergeSpeechFinals,
   prefersNonContinuousSpeech,
+  speechRecognitionLang,
   speechUnsupportedMessage,
+  transcriptFromSpeechEvent,
   type SpeechRecognitionLike,
 } from './speech'
 
@@ -144,31 +146,18 @@ export function VoiceAssistant({
     rec.continuous = !nonContinuousStt
     rec.interimResults = true
     rec.maxAlternatives = nonContinuousStt ? 1 : 3
-    rec.lang = navigator.language || 'en-US'
+    rec.lang = speechRecognitionLang()
     rec.onresult = (ev) => {
+      const { finals, interim, all } = transcriptFromSpeechEvent(ev)
       if (nonContinuousStt) {
-        const finals: string[] = []
-        let interim = ''
-        for (let i = 0; i < ev.results.length; i++) {
-          const piece = ev.results[i]![0]!.transcript ?? ''
-          if (ev.results[i]!.isFinal) finals.push(piece)
-          else interim += piece
-        }
         const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
-        const sessionInterim = interim.replace(/\s+/g, ' ').trim()
-        const display = [preListenRef.current, sessionFinal, sessionInterim]
+        const display = [preListenRef.current, sessionFinal, interim]
           .filter(Boolean)
           .join(' ')
         setTranscript(collapseSpeechStutter(display))
         return
       }
-      let text = ''
-      for (let i = 0; i < ev.results.length; i++) {
-        text += `${ev.results[i]![0]?.transcript ?? ''} `
-      }
-      const display = [preListenRef.current, text.replace(/\s+/g, ' ').trim()]
-        .filter(Boolean)
-        .join(' ')
+      const display = [preListenRef.current, all].filter(Boolean).join(' ')
       setTranscript(collapseSpeechStutter(display))
     }
     rec.onerror = (ev) => {

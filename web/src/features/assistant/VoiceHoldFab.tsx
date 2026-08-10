@@ -15,7 +15,9 @@ import {
   mergeSpeechFinals,
   prefersNonContinuousSpeech,
   releaseCountdownMs,
+  speechRecognitionLang,
   speechUnsupportedMessage,
+  transcriptFromSpeechEvent,
   type SpeechRecognitionLike,
 } from './speech'
 import { eventMatchesBinding, formatBinding } from '@/lib/keyboardPrefs'
@@ -57,6 +59,8 @@ type Phase =
   | 'idle'
   | 'holding'
   | 'locked'
+  /** Waiting for Web Speech onend after release (iPad delivers text late) */
+  | 'finalizing'
   | 'countdown'
   | 'editing'
   | 'busy'
@@ -142,11 +146,16 @@ export function VoiceHoldFab({
   const pointerIdRef = useRef<number | null>(null)
   const startXRef = useRef(0)
   const lockedRef = useRef(false)
+  /** True while finger/key is down — Sprites holdingRef pattern */
+  const holdingRef = useRef(false)
+  /** After release: wait for onend before reading transcript (iPad late finals) */
+  const pendingFinalizeRef = useRef(false)
+  const finalizeTimerRef = useRef<number | null>(null)
   const countdownTimerRef = useRef<number | null>(null)
   const countdownEndRef = useRef(0)
   const runIdRef = useRef(0)
   const histIdRef = useRef(0)
-  /** Android + iOS: short sessions (continuous=false) so Web Speech returns text */
+  /** Android only: continuous=false. iOS/iPad/desktop: continuous=true like Sprites. */
   const nonContinuousStt =
     typeof navigator !== 'undefined' && prefersNonContinuousSpeech()
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -209,6 +218,13 @@ export function VoiceHoldFab({
     setCountdownMs(0)
   }, [])
 
+  const clearFinalizeTimer = useCallback(() => {
+    if (finalizeTimerRef.current != null) {
+      window.clearTimeout(finalizeTimerRef.current)
+      finalizeTimerRef.current = null
+    }
+  }, [])
+
   const stopListening = useCallback((opts?: { hard?: boolean }) => {
     const rec = recRef.current
     recRef.current = null
@@ -228,6 +244,9 @@ export function VoiceHoldFab({
 
   const resetSession = useCallback(() => {
     clearCountdown()
+    clearFinalizeTimer()
+    holdingRef.current = false
+    pendingFinalizeRef.current = false
     stopListening({ hard: true })
     lockedRef.current = false
     pointerIdRef.current = null
@@ -239,14 +258,18 @@ export function VoiceHoldFab({
     setLockHint(false)
     preListenRef.current = ''
     runIdRef.current += 1
-  }, [clearCountdown, stopListening])
+  }, [clearCountdown, clearFinalizeTimer, stopListening])
 
   useEffect(() => {
     return () => {
       clearCountdown()
+      clearFinalizeTimer()
       stopListening({ hard: true })
     }
-  }, [clearCountdown, stopListening])
+  }, [clearCountdown, clearFinalizeTimer, stopListening])
+
+  /** Set after beginCountdown is defined — onend finalizes through this. */
+  const beginCountdownRef = useRef<(forcedText?: string) => void>(() => {})
 
   const startListening = useCallback(
     (opts?: { append?: boolean; keepFeedback?: boolean }): boolean => {
@@ -267,7 +290,14 @@ export function VoiceHoldFab({
       }
 
       setSttOk(true)
-      stopListening()
+      // Abort prior engine only (Sprites pattern)
+      try {
+        recRef.current?.abort()
+      } catch {
+        /* ignore */
+      }
+      recRef.current = null
+
       if (!opts?.append) {
         preListenRef.current = ''
         setTranscript('')
@@ -278,24 +308,17 @@ export function VoiceHoldFab({
       setError(null)
 
       const rec = new Ctor()
-      // Android: continuous=false + restart. iOS/iPad/desktop: continuous=true (Sprites-style).
+      // Android: continuous=false + restart. iOS/iPad/desktop: continuous=true (Sprites).
       rec.continuous = !nonContinuousStt
       rec.interimResults = true
       rec.maxAlternatives = nonContinuousStt ? 1 : 3
-      rec.lang = navigator.language || 'en-US'
+      rec.lang = speechRecognitionLang()
 
       rec.onresult = (ev) => {
+        const { finals, interim, all } = transcriptFromSpeechEvent(ev)
         if (nonContinuousStt) {
-          // Android progressive "finals" → merge carefully
-          const finals: string[] = []
-          let interim = ''
-          for (let i = 0; i < ev.results.length; i++) {
-            const piece = ev.results[i]![0]!.transcript ?? ''
-            if (ev.results[i]!.isFinal) finals.push(piece)
-            else interim += piece
-          }
           const sessionFinal = collapseSpeechStutter(mergeSpeechFinals(finals))
-          const sessionInterim = interim.replace(/\s+/g, ' ').trim()
+          const sessionInterim = interim
           const display = collapseSpeechStutter(
             [preListenRef.current, sessionFinal, sessionInterim].filter(Boolean).join(' '),
           )
@@ -303,13 +326,9 @@ export function VoiceHoldFab({
           setTranscript(display)
           return
         }
-        // iOS / desktop (Sprites pattern): concatenate all result alternatives
-        let text = ''
-        for (let i = 0; i < ev.results.length; i++) {
-          text += `${ev.results[i]![0]?.transcript ?? ''} `
-        }
+        // iOS / desktop: full concat like Sprites
         const display = collapseSpeechStutter(
-          [preListenRef.current, text.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' '),
+          [preListenRef.current, all].filter(Boolean).join(' '),
         )
         transcriptRef.current = display
         setTranscript(display)
@@ -322,6 +341,7 @@ export function VoiceHoldFab({
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
           setError(micAccessMessage('denied'))
           setSttOk(false)
+          holdingRef.current = false
           return
         }
         if (ev.error === 'network') {
@@ -333,14 +353,11 @@ export function VoiceHoldFab({
 
       rec.onend = () => {
         recRef.current = null
-        const p = phaseRef.current
-        if (p === 'holding' || p === 'locked') {
-          // Restart only when still holding. Prefer sync restart on iOS (gesture chain);
-          // Android keeps a short delay to avoid engine thrash.
+
+        // Still holding → restart engine (Sprites / Android)
+        if (holdingRef.current) {
           const restart = () => {
-            if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
-              startListening({ append: true, keepFeedback: true })
-            }
+            if (holdingRef.current) startListening({ append: true, keepFeedback: true })
           }
           if (nonContinuousStt) window.setTimeout(restart, 120)
           else {
@@ -352,6 +369,15 @@ export function VoiceHoldFab({
           }
           return
         }
+
+        // Released: onend runs AFTER late finals (critical for iPad) — then countdown
+        if (pendingFinalizeRef.current) {
+          pendingFinalizeRef.current = false
+          clearFinalizeTimer()
+          beginCountdownRef.current(transcriptRef.current)
+          return
+        }
+
         setTranscript((t) => collapseSpeechStutter(t))
       }
 
@@ -364,7 +390,7 @@ export function VoiceHoldFab({
         return false
       }
     },
-    [nonContinuousStt, stopListening],
+    [clearFinalizeTimer, nonContinuousStt],
   )
 
   const pushHistory = useCallback((role: HistoryEntry['role'], text: string) => {
@@ -461,6 +487,7 @@ export function VoiceHoldFab({
           setPhase('followup')
           phaseRef.current = 'followup'
           setTranscript('')
+          setError('No speech heard — hold the mic longer and speak clearly.')
           return
         }
         resetSession()
@@ -471,7 +498,6 @@ export function VoiceHoldFab({
       const total = releaseCountdownMs(text)
       countdownEndRef.current = performance.now() + total
       setCountdownMs(total)
-      // Sync ref before stop() onend can schedule a restart
       phaseRef.current = 'countdown'
       setPhase('countdown')
       clearCountdown()
@@ -486,42 +512,59 @@ export function VoiceHoldFab({
     },
     [clearCountdown, history.length, resetSession, result?.ambiguous?.length, runAssistant],
   )
+  beginCountdownRef.current = beginCountdown
 
-  /** Release / unlock: stop Web Speech and start send countdown from live transcript. */
+  /**
+   * Release / unlock — Sprites pattern:
+   * stop() then wait for onend before reading transcript.
+   * iPad often only delivers text after stop, so reading immediately loses it.
+   */
   const finishAfterListen = useCallback(() => {
     lockedRef.current = false
-    // Leave holding/locked before stop() so onend will not auto-restart
-    if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
-      phaseRef.current = 'countdown'
-    }
-    stopListening()
-    const text = collapseSpeechStutter(transcriptRef.current.trim())
-    if (!text) {
-      if (history.length > 0 || result?.ambiguous?.length) {
-        setPhase('followup')
-        phaseRef.current = 'followup'
-        setTranscript('')
-        return
-      }
-      resetSession()
+    holdingRef.current = false
+    clearFinalizeTimer()
+
+    // Already no active recognition — finalize what we have
+    if (!recRef.current) {
+      pendingFinalizeRef.current = false
+      beginCountdown(transcriptRef.current)
       return
     }
-    beginCountdown(text)
-  }, [
-    beginCountdown,
-    history.length,
-    resetSession,
-    result?.ambiguous?.length,
-    stopListening,
-  ])
+
+    pendingFinalizeRef.current = true
+    phaseRef.current = 'finalizing'
+    setPhase('finalizing')
+    setError(null)
+
+    try {
+      recRef.current.stop()
+    } catch {
+      try {
+        recRef.current.abort()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Safety if onend never fires
+    finalizeTimerRef.current = window.setTimeout(() => {
+      if (!pendingFinalizeRef.current) return
+      pendingFinalizeRef.current = false
+      recRef.current = null
+      beginCountdown(transcriptRef.current)
+    }, 900)
+  }, [beginCountdown, clearFinalizeTimer])
 
   const enterEditMode = useCallback(() => {
     clearCountdown()
+    clearFinalizeTimer()
+    holdingRef.current = false
+    pendingFinalizeRef.current = false
     stopListening({ hard: true })
     lockedRef.current = false
     setPhase('editing')
     setTranscript((t) => collapseSpeechStutter(t))
-  }, [clearCountdown, stopListening])
+  }, [clearCountdown, clearFinalizeTimer, stopListening])
 
   const resolveAmbiguous = async (
     task: Task,
@@ -602,7 +645,7 @@ export function VoiceHoldFab({
 
   const beginHold = useCallback(
     (fromKey = false) => {
-      if (!canEdit || phaseRef.current === 'busy') return
+      if (!canEdit || phaseRef.current === 'busy' || phaseRef.current === 'finalizing') return
       if (phaseRef.current === 'locked') {
         stopLocked()
         return
@@ -615,6 +658,9 @@ export function VoiceHoldFab({
         return
       }
       lockedRef.current = false
+      holdingRef.current = true
+      pendingFinalizeRef.current = false
+      clearFinalizeTimer()
       setLockHint(false)
       const keepFeedback = phaseRef.current === 'followup' || history.length > 0
       setPhase('holding')
@@ -624,6 +670,7 @@ export function VoiceHoldFab({
       if (!keepFeedback) setResult(null)
       const ok = startListening({ append: false, keepFeedback })
       if (!ok) {
+        holdingRef.current = false
         // Permission denied / unsupported — leave panel open with error
         if (phaseRef.current === 'holding' || phaseRef.current === 'locked') {
           setPhase(keepFeedback ? 'followup' : 'editing')
@@ -632,7 +679,7 @@ export function VoiceHoldFab({
       }
       if (fromKey) setLockHint(false)
     },
-    [canEdit, clearCountdown, history.length, startListening, stopLocked],
+    [canEdit, clearCountdown, clearFinalizeTimer, history.length, startListening, stopLocked],
   )
 
   // Keyboard push-to-talk (Settings → Keyboard)
@@ -661,7 +708,7 @@ export function VoiceHoldFab({
   }, [hidden, canEdit, beginHold, finishAfterListen])
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!canEdit || phase === 'busy') return
+    if (!canEdit || phase === 'busy' || phase === 'finalizing') return
     if (phase === 'locked') {
       e.preventDefault()
       stopLocked()
@@ -753,6 +800,7 @@ export function VoiceHoldFab({
               <span className="text-sm font-semibold">
                 {phase === 'holding' && 'Listening…'}
                 {phase === 'locked' && 'Locked · keep talking'}
+                {phase === 'finalizing' && 'Getting speech…'}
                 {phase === 'countdown' && `Sending in ${countdownSec}s`}
                 {phase === 'editing' && 'Edit command'}
                 {phase === 'busy' && 'Working…'}
@@ -856,7 +904,10 @@ export function VoiceHoldFab({
               </p>
             ) : null}
 
-            {phase === 'countdown' || phase === 'holding' || phase === 'locked' ? (
+            {phase === 'countdown' ||
+            phase === 'holding' ||
+            phase === 'locked' ||
+            phase === 'finalizing' ? (
               <button
                 type="button"
                 className={cn(
@@ -865,7 +916,12 @@ export function VoiceHoldFab({
                   phase === 'countdown' && 'ring-2 ring-[var(--color-primary)]/30',
                 )}
                 onClick={() => {
-                  if (phase === 'countdown' || phase === 'holding' || phase === 'locked') {
+                  if (
+                    phase === 'countdown' ||
+                    phase === 'holding' ||
+                    phase === 'locked' ||
+                    phase === 'finalizing'
+                  ) {
                     enterEditMode()
                   }
                 }}
@@ -874,7 +930,11 @@ export function VoiceHoldFab({
                   <span className="whitespace-pre-wrap break-words">{transcript}</span>
                 ) : (
                   <span className="text-[var(--color-muted)]">
-                    {listening ? 'Speak now…' : 'No speech captured'}
+                    {phase === 'finalizing'
+                      ? 'Finishing speech…'
+                      : listening
+                        ? 'Speak now…'
+                        : 'No speech captured'}
                   </span>
                 )}
               </button>
