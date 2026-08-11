@@ -166,7 +166,7 @@ export function CliAccessSection() {
             >
               Developer mode in ChatGPT
             </a>{' '}
-            and turn it <strong>ON</strong> (Plus/Pro).{' '}
+            and turn it <strong>ON</strong> if the option is available on your account.{' '}
             <a
               className="text-xs underline"
               href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt"
@@ -175,6 +175,10 @@ export function CliAccessSection() {
             >
               OpenAI help
             </a>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">
+              Availability depends on your ChatGPT plan and account settings — check whether you see
+              Developer mode and “create plugin / custom connector” there.
+            </p>
           </li>
           <li>
             Open{' '}
@@ -341,7 +345,7 @@ export function CliAccessSection() {
           </span>
         </button>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          After you click Allow, a key appears here (e.g. “Grok connector …”). Revoke to disconnect
+          After you click Allow, a key appears here (e.g. “ChatGPT connector …” or “Grok connector …”). Revoke to disconnect
           that app.
         </p>
         {showTokenList ? (

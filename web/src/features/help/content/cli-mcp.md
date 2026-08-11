@@ -41,8 +41,8 @@ The **MCP server URL** is on **Settings → Connect ChatGPT or Grok** (click to 
 
 ## ChatGPT plugin (OAuth)
 
-1. [Turn on Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) (Plus/Pro).  
-2. [Create a new custom plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins).  
+1. [Turn on Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) if your account shows it.  
+2. [Create a new custom plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins) (or equivalent “custom connector / app”).  
 3. Fill:
    - **Name:** Projects Manager  
    - **Description:** Manage my project boards  
@@ -57,6 +57,8 @@ The **MCP server URL** is on **Settings → Connect ChatGPT or Grok** (click to 
 7. In chat: *“List my Projects Manager projects.”*
 
 No token to copy or paste.
+
+**Note:** Whether Developer mode and custom plugins appear depends on **your ChatGPT account** (plan, region, workspace settings). OpenAI’s options change over time — if you don’t see them, check [OpenAI’s help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) or try the links above on the account you use for chat.
 
 ---
 
@@ -97,7 +99,8 @@ Manual keys still exist under **Advanced** (Grok CLI, rare fallbacks).
 
 ## Connected keys
 
-After Allow, Settings shows keys such as “Grok connector …”.  
+After Allow, Settings shows keys named by app (e.g. “ChatGPT connector …”, “Grok connector …”, or “MCP connector …”).  
+
 **Revoke** = disconnect that chat app until you connect again.
 
 ---
@@ -114,7 +117,7 @@ After Allow, Settings shows keys such as “Grok connector …”.
 
 | Problem | Try |
 |---------|-----|
-| No Developer mode | Plus/Pro? Use the [Developer mode link](https://chatgpt.com/plugins#settings/Security?section=developer-mode). |
+| No Developer mode / no create plugin | Check whether those options appear on **your** account; use the [Developer mode link](https://chatgpt.com/plugins#settings/Security?section=developer-mode) and [OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt). Availability varies. |
 | Advanced OAuth empty | Enter Client ID `projects-manager-mcp`; other URLs often auto-fill. |
 | Allow page 404 | Wait for production deploy; URL must be your live site `/oauth/mcp/authorize`. |
 | No tools in chat | New conversation; confirm the plugin/connector is still enabled. |

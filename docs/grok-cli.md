@@ -13,9 +13,10 @@ Manage boards from:
 ### ChatGPT (summary)
 
 1. Settings → **Create token for ChatGPT** → copy `pmcli_…`  
-2. [chatgpt.com](https://chatgpt.com) → Settings → enable **Developer mode** ([OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt))  
-3. New plugin: Server URL = `https://PROJECT.supabase.co/functions/v1/mcp`, Auth = **Bearer** token  
-4. Paste token when asked  
+2. [chatgpt.com](https://chatgpt.com) → Settings → enable **Developer mode** if shown ([OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt); availability varies by account)  
+3. Prefer **OAuth** on a custom plugin (see in-app Help). Fallback: Server URL = `https://PROJECT.supabase.co/functions/v1/mcp`, Auth = **Bearer** token  
+4. For Bearer only: paste token when asked  
+
 
 ### Grok web (summary)
 
