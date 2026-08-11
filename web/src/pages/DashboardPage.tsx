@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -39,6 +39,7 @@ import { Icons } from '@/components/icons'
 type ScopeCard = Scope & { role: 'owner' | 'viewer' | 'editor'; share_status?: string }
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   const { profile, user } = useAuth()
   const { data: scopes = [], isLoading, error } = useScopes()
   const createScope = useCreateScope()
@@ -159,6 +160,7 @@ export function DashboardPage() {
                     setModalOpen(true)
                   }}
                   onShare={() => setShareScopeId(scope.id)}
+                  onGithub={() => navigate(`/projects/${scope.id}?github=1`)}
                   onDelete={async () => {
                     const ok = await confirm({
                       title: 'Delete project?',
@@ -252,6 +254,7 @@ function SortableScopeCard({
   shareSummary,
   onEdit,
   onShare,
+  onGithub,
   onDelete,
   onCopy,
 }: {
@@ -261,11 +264,13 @@ function SortableScopeCard({
   shareSummary: { count: number; names: string[] } | null
   onEdit: () => void
   onShare: () => void
+  onGithub: () => void
   onDelete: () => void
   onCopy: () => void
 }) {
   const isOwner = scope.role === 'owner'
   const isShared = scope.role !== 'owner'
+  const canManageGithub = isOwner || scope.role === 'editor'
   const hasShares = Boolean(shareSummary && shareSummary.count > 0)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: scope.id,
@@ -276,9 +281,11 @@ function SortableScopeCard({
     transition,
   }
 
-  const ghTitle = githubRepoLabel
-    ? `GitHub linked: ${githubRepoLabel}`
-    : 'Linked to a GitHub repository'
+  const ghTitle = githubIntegrated
+    ? githubRepoLabel
+      ? `GitHub: ${githubRepoLabel} — click to configure`
+      : 'GitHub linked — click to configure'
+    : 'Link GitHub repository for this project'
   const shareTitle = isShared
     ? `Shared with you as ${scope.role}`
     : hasShares
@@ -303,16 +310,25 @@ function SortableScopeCard({
           </button>
         </div>
         <div className="flex gap-1">
-          {/* Status via pressed icon buttons only — no separate “Shared” / “GitHub” text pills */}
-          {githubIntegrated ? (
-            <Link
-              to={`/projects/${scope.id}`}
-              className={cn('icon-btn btn-pressed no-underline')}
+          {/* Pressed = active status; click opens the same settings as on the project page */}
+          {canManageGithub ? (
+            <button
+              type="button"
+              className={cn('icon-btn', githubIntegrated && 'btn-pressed')}
               title={ghTitle}
               aria-label={ghTitle}
+              onClick={onGithub}
             >
               <Icons.Github />
-            </Link>
+            </button>
+          ) : githubIntegrated ? (
+            <span
+              className="icon-btn btn-pressed pointer-events-none"
+              title={githubRepoLabel ? `GitHub: ${githubRepoLabel}` : 'GitHub linked'}
+              aria-label={githubRepoLabel ? `GitHub: ${githubRepoLabel}` : 'GitHub linked'}
+            >
+              <Icons.Github />
+            </span>
           ) : null}
           {isShared ? (
             <span

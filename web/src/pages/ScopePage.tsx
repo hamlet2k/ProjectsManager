@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { useScope, useScopeShares, useUpdateScope } from '@/features/scopes/hooks'
 import {
@@ -63,6 +63,7 @@ import { HelpHint, HelpSlugs } from '@/features/help'
 
 export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, profile } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
@@ -167,6 +168,27 @@ export function ScopePage() {
       }),
     [profile, scope?.owner_id, user?.id, scopeGhConfigsQuery.data, access.canEdit, access.isOwner],
   )
+
+  /** Deep-link from project list GitHub icon: /projects/:id?github=1 */
+  useEffect(() => {
+    if (searchParams.get('github') !== '1') return
+    if (scopeLoading || !scope) return
+    // Open config when user can change it, or when they can at least see the modal (read-only).
+    if (ghCaps.canConfigure || ghCaps.canSee || access.isOwner) {
+      setGithubOpen(true)
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('github')
+    setSearchParams(next, { replace: true })
+  }, [
+    searchParams,
+    setSearchParams,
+    scopeLoading,
+    scope,
+    ghCaps.canConfigure,
+    ghCaps.canSee,
+    access.isOwner,
+  ])
 
   const binding = ghCaps.binding
   /** Current user's own row (for editing defaults when they configure). */
