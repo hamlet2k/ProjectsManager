@@ -1,8 +1,13 @@
-# Grok CLI task access (MCP)
+# MCP & CLI connectors (Grok CLI + remote chat)
 
-Manage **Projects Manager** boards from **Grok CLI / Grok Build** using the Model Context Protocol (MCP). You choose which projects a token may touch.
+Manage **Projects Manager** boards from:
 
-**End users do not need this monorepo** if the MCP package is on npm (`projects-manager-mcp`).
+1. **Grok CLI / Grok Build** — local **stdio** MCP (`npx projects-manager-mcp`)  
+2. **Grok web chat & other remote clients** — public **HTTPS** MCP at Edge Function `mcp`  
+
+You choose which projects a token may touch. **End users do not need this monorepo** for (1) if the package is on npm.
+
+> **ChatGPT:** many custom connectors require OAuth 2.1. Phase 1 uses **Bearer `pmcli_…` tokens**. OAuth for ChatGPT is planned separately.
 
 ## What you get
 
@@ -69,15 +74,58 @@ Restart the Grok session after adding the server.
 
 Until the first `npm publish`, the package will 404 on npm — maintainers: see **Publishing updates** below. Local dev can still use `node path/to/mcp/projects-manager/src/index.js`.
 
-## 3. Architecture
+## 3. Remote MCP (Grok web / HTTPS connectors)
+
+After creating a token:
+
+**MCP URL**
+
+```text
+https://YOUR_PROJECT.supabase.co/functions/v1/mcp
+```
+
+**Auth headers**
+
+```http
+Authorization: Bearer pmcli_…
+apikey: YOUR_SUPABASE_ANON_KEY
+```
+
+(Supabase Edge often expects `apikey`; some clients only send `Authorization` — the function accepts both when the gateway allows.)
+
+### Grok.com
+
+1. Open [grok.com/connectors](https://grok.com/connectors) (or Connectors in the Grok app).  
+2. **New Connector** → **Custom**.  
+3. Paste the MCP URL.  
+4. Complete auth if prompted (Bearer token / custom headers as the UI allows).  
+5. Start a chat and ask to list your Projects Manager boards.
+
+### xAI API (Remote MCP tools)
+
+Pass `server_url` = the MCP URL and include the Authorization header per [xAI remote MCP docs](https://docs.x.ai/docs).
+
+### Health check
+
+```bash
+curl -s "https://YOUR_PROJECT.supabase.co/functions/v1/mcp"
+```
+
+Should return JSON with `"ok": true` and tool names (no token required for GET health).
+
+## 4. Architecture
 
 ```text
 Grok CLI / Grok Build
   → npx projects-manager-mcp  (stdio MCP)
     → POST /functions/v1/cli-api
       Authorization: Bearer pmcli_…
-      → validate token, project allow-list, write flag
-      → tasks / tags / scopes
+
+Grok web / remote MCP clients
+  → HTTPS  /functions/v1/mcp  (Streamable HTTP / JSON-RPC)
+      Authorization: Bearer pmcli_…
+    → POST /functions/v1/cli-api  (same business logic)
+      → tasks / tags / scopes (+ optional GitHub close on complete)
 ```
 
 No LLM key is required for these tools — only the PAT.

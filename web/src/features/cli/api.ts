@@ -71,3 +71,9 @@ export function getSupabaseProjectUrl(): string {
 export function getSupabaseAnonKey(): string {
   return (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || ''
 }
+
+/** Remote MCP Streamable HTTP endpoint (Grok web connectors, etc.). */
+export function getRemoteMcpUrl(): string {
+  const base = getSupabaseProjectUrl()
+  return base ? `${base}/functions/v1/mcp` : ''
+}

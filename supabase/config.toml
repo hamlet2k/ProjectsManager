@@ -110,3 +110,11 @@ verify_jwt = true
 
 [functions.assistant]
 verify_jwt = true
+
+# CLI tokens (pmcli_…) are not Supabase JWTs — auth is enforced inside the function.
+[functions.cli-api]
+verify_jwt = false
+
+# Remote MCP (Grok web connectors / Streamable HTTP) — same CLI token auth.
+[functions.mcp]
+verify_jwt = false

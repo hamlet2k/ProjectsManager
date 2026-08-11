@@ -8,6 +8,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { useScopes } from '@/features/scopes/hooks'
 import {
   createCliAccessToken,
+  getRemoteMcpUrl,
   getSupabaseAnonKey,
   getSupabaseProjectUrl,
   listCliAccessTokens,
@@ -37,15 +38,14 @@ export function CliAccessSection() {
 
   const projectUrl = getSupabaseProjectUrl()
   const anonKey = getSupabaseAnonKey()
+  const remoteMcpUrl = getRemoteMcpUrl()
 
   const setupSnippet = useMemo(() => {
     if (!revealedToken || !projectUrl) return ''
     const url = projectUrl
     const tok = revealedToken
     const key = anonKey || '<your-anon-key>'
-    return `# No repo clone needed — uses npm package projects-manager-mcp
-# (requires Node.js 18+ and Grok CLI)
-
+    return `# Grok CLI / local MCP (stdio) — Node 18+ and Grok CLI
 grok mcp add projects-manager \\
   -e "PROJECTS_MANAGER_URL=${url}" \\
   -e "PROJECTS_MANAGER_TOKEN=${tok}" \\
@@ -54,6 +54,23 @@ grok mcp add projects-manager \\
 
 # Then restart Grok. Check: grok mcp list`
   }, [revealedToken, projectUrl, anonKey])
+
+  const remoteConnectorSnippet = useMemo(() => {
+    if (!remoteMcpUrl) return ''
+    const tok = revealedToken || 'pmcli_…'
+    const key = anonKey || '<your-anon-key>'
+    return `Remote MCP URL (HTTPS — Grok web / other chat connectors):
+${remoteMcpUrl}
+
+Auth headers:
+  Authorization: Bearer ${tok}
+  apikey: ${key}
+
+Grok.com: Connectors → New → Custom → paste the URL and complete auth if prompted.
+xAI API: tools remote MCP server_url = URL above (+ Authorization header when supported).
+
+Note: ChatGPT custom connectors may require OAuth 2.1 (not yet; use Grok CLI stdio or remote Bearer clients).`
+  }, [remoteMcpUrl, revealedToken, anonKey])
 
   const toggleScope = (id: string) => {
     setSelected((prev) => {
@@ -67,17 +84,42 @@ grok mcp add projects-manager \\
   return (
     <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div>
-        <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Grok CLI and MCP help">
-          Grok CLI access
+        <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="CLI and MCP connectors help">
+          CLI &amp; chat connectors
         </HelpTitle>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          Create a personal token so Grok CLI (via MCP) can list and manage tasks only on the
-          projects you allow. Tokens are shown once — store them like passwords. End users install
-          the MCP with{' '}
-          <code className="text-[11px]">npx -y projects-manager-mcp@latest</code> (no app repo
-          needed once the package is on npm).
+          Create a personal token so Grok CLI, Grok web connectors, or other MCP clients can manage
+          tasks only on the projects you allow. Tokens are shown once — store them like passwords.
         </p>
       </div>
+
+      {remoteMcpUrl ? (
+        <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-3">
+          <p className="text-sm font-semibold">Remote MCP (Grok web &amp; HTTPS clients)</p>
+          <p className="text-xs text-[var(--color-muted)]">
+            Paste this URL into Grok Connectors (Custom) or any remote MCP client that supports
+            Streamable HTTP. Authenticate with your <code className="text-[11px]">pmcli_…</code>{' '}
+            token (create one below).
+          </p>
+          <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5 text-xs">
+            {remoteMcpUrl}
+          </code>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(remoteMcpUrl)
+                toast.push('Remote MCP URL copied', 'success')
+              } catch {
+                toast.push('Copy failed', 'error')
+              }
+            }}
+          >
+            Copy remote MCP URL
+          </Button>
+        </div>
+      ) : null}
 
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-3">
         <Field label="Token name">
@@ -182,7 +224,7 @@ grok mcp add projects-manager \\
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(setupSnippet)
-                    toast.push('Setup snippet copied', 'success')
+                    toast.push('Grok CLI setup copied', 'success')
                   } catch {
                     toast.push('Copy failed', 'error')
                   }
@@ -191,10 +233,31 @@ grok mcp add projects-manager \\
                 Copy Grok CLI setup
               </Button>
             ) : null}
+            {remoteConnectorSnippet ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(remoteConnectorSnippet)
+                    toast.push('Remote connector setup copied', 'success')
+                  } catch {
+                    toast.push('Copy failed', 'error')
+                  }
+                }}
+              >
+                Copy remote connector setup
+              </Button>
+            ) : null}
           </div>
           {setupSnippet ? (
             <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-surface)] p-2 text-[10px] leading-relaxed text-[var(--color-muted)]">
               {setupSnippet}
+            </pre>
+          ) : null}
+          {remoteConnectorSnippet ? (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-[var(--color-surface)] p-2 text-[10px] leading-relaxed text-[var(--color-muted)]">
+              {remoteConnectorSnippet}
             </pre>
           ) : null}
         </div>
@@ -231,7 +294,7 @@ grok mcp add projects-manager \\
                   onClick={async () => {
                     const ok = await confirm({
                       title: 'Revoke CLI token?',
-                      message: `“${t.name}” will stop working in Grok CLI immediately.`,
+                      message: `“${t.name}” will stop working for Grok CLI and remote MCP connectors immediately.`,
                       confirmLabel: 'Revoke',
                       danger: true,
                     })
@@ -254,8 +317,8 @@ grok mcp add projects-manager \\
       </div>
 
       <p className="text-xs text-[var(--color-muted)]">
-        Docs: <code className="text-[11px]">docs/grok-cli.md</code> in the repo. Tools: list
-        projects/tasks/tags, create/update/complete/delete tasks.
+        Tools: list projects/tasks/tags, create/update/complete/delete. Completing a linked task may
+        close its GitHub issue (same rules as the web UI). Help: Grok CLI &amp; MCP article.
       </p>
     </section>
   )

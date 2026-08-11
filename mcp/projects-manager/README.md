@@ -1,12 +1,23 @@
 # projects-manager-mcp
 
-MCP server so **Grok CLI / Grok Build** can manage **Projects Manager** tasks on boards you authorize.
+MCP server so **Grok CLI / Grok Build** can manage **Projects Manager** tasks on boards you authorize (**stdio** via `npx`).
 
 Users do **not** need the full app monorepo — only this package (via npm) plus a token from the web app.
 
+### Remote MCP (Grok web / HTTPS)
+
+For **Grok.com connectors** and other remote MCP clients, use the hosted Edge URL instead of this package:
+
+```text
+https://YOUR_PROJECT.supabase.co/functions/v1/mcp
+Authorization: Bearer pmcli_…
+```
+
+See the app **Settings → CLI & chat connectors** and repo `docs/grok-cli.md`.
+
 ## Install for Grok CLI (end users)
 
-1. In the Projects Manager web app: **Settings → Grok CLI access** → create a token (pick projects).
+1. In the Projects Manager web app: **Settings → CLI & chat connectors** → create a token (pick projects).
 2. Copy the one-time `pmcli_…` secret.
 3. Register the MCP server (uses latest published package):
 
