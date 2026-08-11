@@ -82,11 +82,19 @@ export function transcriptFromSpeechEvent(ev: SpeechRecognitionEventLike): {
   }
 }
 
-/** Unregister leftover PWA service workers so iPad is not stuck on old Whisper builds. */
+/**
+ * Unregister leftover PWA service workers so devices are not stuck on old shells.
+ * If any worker was controlling the page, force one hard reload after purge
+ * (simple F5 often reloads from SW cache otherwise).
+ */
 export async function purgeStaleServiceWorkers(): Promise<void> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+
+  let hadController = Boolean(navigator.serviceWorker.controller)
+  let unregistered = 0
   try {
     const regs = await navigator.serviceWorker.getRegistrations()
+    unregistered = regs.length
     await Promise.all(regs.map((r) => r.unregister()))
   } catch {
     /* ignore */
@@ -98,6 +106,18 @@ export async function purgeStaleServiceWorkers(): Promise<void> {
     }
   } catch {
     /* ignore */
+  }
+
+  // Only auto-reload once per tab session after we actually removed a controlling SW
+  if ((hadController || unregistered > 0) && typeof sessionStorage !== 'undefined') {
+    const flag = 'pm-sw-purged-reload'
+    if (!sessionStorage.getItem(flag)) {
+      sessionStorage.setItem(flag, '1')
+      // Bypass HTTP cache
+      const url = new URL(window.location.href)
+      url.searchParams.set('_sw_clear', String(Date.now()))
+      window.location.replace(url.toString())
+    }
   }
 }
 

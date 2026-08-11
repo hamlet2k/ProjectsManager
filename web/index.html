@@ -8,6 +8,27 @@
     <meta name="theme-color" content="#212529" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f8f9fa" media="(prefers-color-scheme: light)" />
     <title>Projects Manager</title>
+    <!--
+      Unregister leftover PWA workers before the app loads.
+      (Old vite-plugin-pwa deploys left SWs that cache shells so simple refresh never updates.)
+    -->
+    <script>
+      ;(function () {
+        if (!('serviceWorker' in navigator)) return
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) {
+            r.unregister()
+          })
+        })
+        if (typeof caches !== 'undefined') {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) {
+              caches.delete(k)
+            })
+          })
+        }
+      })()
+    </script>
     <!-- Bootstrap Icons (same family as classic Flask UI) -->
     <link
       rel="stylesheet"
