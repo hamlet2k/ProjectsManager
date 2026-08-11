@@ -26,6 +26,8 @@ import { exportScopeTasksText, reorderScopes } from '@/features/scopes/api'
 import { fetchGitHubFlagsForScopes, fetchShareSummariesForScopes } from '@/features/github/api'
 import { ScopeFormModal } from '@/features/scopes/components/ScopeFormModal'
 import { ShareModal } from '@/features/scopes/components/ShareModal'
+import { fetchTags } from '@/features/tasks/api'
+import { isGithubSystemTag } from '@/features/github/systemTag'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { PageLoader } from '@/components/ui/Spinner'
@@ -75,6 +77,14 @@ export function DashboardPage() {
     staleTime: 30_000,
   })
   const shareSummaryByScope = shareSummaryQuery.data ?? new Map()
+
+  /** Same tag list as in-project edit — AI prompt generate uses these. */
+  const editTagsQuery = useQuery({
+    queryKey: ['tags', editing?.id],
+    enabled: Boolean(modalOpen && editing?.id),
+    queryFn: () => fetchTags(editing!.id),
+    staleTime: 30_000,
+  })
 
   const reorderMut = useMutation({
     mutationFn: (ids: string[]) => reorderScopes(ids),
@@ -196,6 +206,24 @@ export function DashboardPage() {
       <ScopeFormModal
         open={modalOpen}
         initial={editing}
+        existingTagNames={(editTagsQuery.data ?? [])
+          .filter((t) => !isGithubSystemTag(t.name))
+          .map((t) => t.name)}
+        github={
+          editing
+            ? {
+                visible: true,
+                integrated: githubIntegratedIds.has(editing.id),
+                repoLabel: repoLabelByScope.get(editing.id) ?? null,
+                canConfigure: editing.role === 'owner' || editing.role === 'editor',
+                preferenceOn: Boolean(profile?.github_integration_enabled),
+                onConfigure: () => {
+                  setModalOpen(false)
+                  navigate(`/projects/${editing.id}?github=1`)
+                },
+              }
+            : null
+        }
         onClose={() => setModalOpen(false)}
         onSubmit={async (values) => {
           try {

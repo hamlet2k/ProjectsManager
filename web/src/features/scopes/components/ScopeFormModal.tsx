@@ -54,7 +54,6 @@ export function ScopeFormModal({
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [githubOpen, setGithubOpen] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -64,10 +63,8 @@ export function ScopeFormModal({
       setAdvancedExportEnabled(initial?.advanced_export_enabled !== false)
       setAssistantPrompt(initial?.assistant_prompt ?? '')
       setError(null)
-      // Expand GitHub section when already linked so status is visible; collapse when unused
-      setGithubOpen(Boolean(github?.integrated))
     }
-  }, [open, initial, github?.integrated])
+  }, [open, initial])
 
   /**
    * Uses the project description as the source brief:
@@ -253,79 +250,55 @@ export function ScopeFormModal({
         </div>
 
         {github?.visible && initial?.id ? (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
-              onClick={() => setGithubOpen((v) => !v)}
-              aria-expanded={githubOpen}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Icons.Github size={14} className="shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                  GitHub
-                </span>
-                {github.integrated && github.repoLabel ? (
-                  <span className="truncate text-xs font-normal normal-case tracking-normal text-[var(--color-text)]">
-                    · {github.repoLabel}
-                  </span>
-                ) : (
-                  <span className="text-xs font-normal normal-case tracking-normal text-[var(--color-muted)]">
-                    · optional
-                  </span>
-                )}
-              </span>
-              <Icons.ChevronDown
-                size={14}
-                className={githubOpen ? 'rotate-180 transition-transform' : 'transition-transform'}
+          <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
+            <div className="flex flex-wrap items-center gap-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                GitHub
+              </p>
+              <HelpHint
+                slug={HelpSlugs.githubProject}
+                label="How to link this project to GitHub"
+                className="!h-5 !w-5"
               />
-            </button>
-            {githubOpen ? (
-              <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
-                <div className="flex items-start gap-1">
-                  <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">
-                    Link one repository for create/sync of issues on this board. Not required for
-                    normal task tracking.
-                  </p>
-                  <HelpHint
-                    slug={HelpSlugs.githubProject}
-                    label="How to link this project to GitHub"
-                    className="!h-5 !w-5 shrink-0"
-                  />
-                </div>
-                {github.integrated ? (
-                  <p className="text-sm text-[var(--color-text)]">
-                    Linked to{' '}
-                    <strong className="font-medium">{github.repoLabel ?? 'a repository'}</strong>.
-                  </p>
-                ) : github.preferenceOn ? (
-                  <p className="text-sm text-[var(--color-muted)]">
-                    No repository linked for this project yet.
-                  </p>
-                ) : (
-                  <p className="text-sm text-[var(--color-muted)]">
-                    Enable GitHub integration and save a token under Settings, then return here to
-                    link a repository.
-                  </p>
-                )}
-                {github.canConfigure ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={generating || saving}
-                    onClick={() => github.onConfigure()}
-                  >
-                    <Icons.Github size={14} />
-                    {github.integrated ? 'Configure GitHub…' : 'Link GitHub repository…'}
-                  </Button>
-                ) : (
-                  <p className="text-xs text-[var(--color-muted)]">
-                    You can view this project’s GitHub link but need editor access to change it.
-                  </p>
-                )}
-              </div>
-            ) : null}
+            </div>
+            <p className="text-sm text-[var(--color-text)]">
+              {github.integrated ? (
+                <>
+                  Status: <strong className="font-medium">linked</strong>
+                  {github.repoLabel ? (
+                    <>
+                      {' '}
+                      to <span className="font-mono text-xs">{github.repoLabel}</span>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  Status: <span className="text-[var(--color-muted)]">not linked</span>
+                  {!github.preferenceOn ? (
+                    <span className="mt-1 block text-xs text-[var(--color-muted)]">
+                      Enable GitHub + PAT under Settings first, then link a repo here.
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </p>
+            {github.canConfigure ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={generating || saving}
+                onClick={() => github.onConfigure()}
+              >
+                <Icons.Github size={14} />
+                {github.integrated ? 'GitHub settings…' : 'Link GitHub repository…'}
+              </Button>
+            ) : (
+              <p className="text-xs text-[var(--color-muted)]">
+                You need editor access to change this project’s GitHub link.
+              </p>
+            )}
           </div>
         ) : null}
       </div>
