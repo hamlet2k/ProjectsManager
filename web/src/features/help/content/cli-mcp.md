@@ -1,83 +1,62 @@
 ---
 title: Connect ChatGPT or Grok
-description: Simple steps for ChatGPT plugins and Grok connectors (token or OAuth)
+description: OAuth setup for ChatGPT plugins and Grok connectors — no token pasting for normal use
 order: 60
 ---
 
 # Connect ChatGPT or Grok
 
-ChatGPT calls these **plugins**. Grok calls them **connectors**. Both talk to the same Projects Manager MCP server.
+You do **not** need to create or copy a secret for the normal setup.
 
-| App | What they call it | Easiest auth |
-|-----|-------------------|--------------|
-| **ChatGPT** | Plugin | **Bearer token** (paste `pmcli_…`) |
-| **Grok (web)** | Connector | **OAuth** (browser “Allow”) |
-| **Grok CLI** | MCP server | Token in env vars (advanced) |
+1. In Projects Manager, open the steps for ChatGPT or Grok.  
+2. In that chat app, add our **server URL**.  
+3. Choose **OAuth**.  
+4. Sign in and click **Allow**.  
 
-**OAuth for ChatGPT too?** Yes. ChatGPT also supports **OAuth**. Using OAuth there makes the flow feel like Grok (sign in → Allow). Token is still simpler for ChatGPT if you prefer one paste.
+A key is created **for you** when you Allow. You can revoke it later under **Connected keys**.
 
-In Settings → **Connect ChatGPT or Grok** you get big buttons and copy helpers. This page is the full written guide.
+| App | They call it | Setup |
+|-----|----------------|--------|
+| **ChatGPT** | **Plugin** | Developer mode → new plugin → OAuth |
+| **Grok (web)** | **Connector** | Connectors → Custom → OAuth |
+| **Grok CLI** | MCP on your PC | Advanced only (manual key) |
 
 ---
 
-## Direct links (bookmark these)
+## Links you will use
 
-| Step | Link |
+| What | Link |
 |------|------|
-| ChatGPT — enable Developer mode | [chatgpt.com/plugins → Security → Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) |
-| ChatGPT — new custom plugin | [Create connector / plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins) |
+| ChatGPT — Developer mode | [Enable Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) |
+| ChatGPT — new plugin | [Create custom plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins) |
 | Grok — connectors | [grok.com/connectors](https://grok.com/connectors) |
 | OpenAI help | [Developer mode and MCP apps](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) |
-| Grok connectors docs | [docs.x.ai — connectors](https://docs.x.ai/grok/connectors) |
+| Grok docs | [Custom MCP connectors](https://docs.x.ai/grok/connectors) |
+
+The **MCP server URL** is on **Settings → Connect ChatGPT or Grok** (click to copy). It looks like:
+
+`https://….supabase.co/functions/v1/mcp`
 
 ---
 
-## ChatGPT plugin (token — recommended)
+## ChatGPT plugin (OAuth)
 
-### 1. Create a key in Projects Manager
+1. [Turn on Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) (Plus/Pro).  
+2. [Create a new custom plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins).  
+3. Fill:
+   - **Name:** Projects Manager  
+   - **Description:** Manage my project boards  
+   - **Connection:** Server URL  
+   - **Server URL:** from Settings (click to copy)  
+   - **Authentication:** **OAuth**  
+4. Open **Advanced OAuth settings**. URLs are often **already filled**. If it asks for **Client ID**, use:  
+   `projects-manager-mcp`  
+   Leave Client Secret empty.  
+5. Accept the risk warning → Create / connect.  
+6. Browser opens Projects Manager → sign in if needed → **Allow**.  
+7. In chat: *“List my Projects Manager projects.”*
 
-1. Open **Settings** (gear).  
-2. **Connect ChatGPT or Grok**.  
-3. Press **Start: Create key for ChatGPT**.  
-4. **Copy token** from the yellow box (`pmcli_…`). You will not see it again.
-
-### 2. Enable Developer mode
-
-1. Open the [Developer mode](https://chatgpt.com/plugins#settings/Security?section=developer-mode) link (or Settings → Security / Advanced → Developer mode).  
-2. Turn **Developer mode** **ON**.  
-3. Needs **Plus or Pro** (custom plugins are not on free tier).
-
-### 3. Create the plugin
-
-1. Open [Create custom plugin](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins).  
-2. Fill:
-
-| Field | Value |
-|--------|--------|
-| **Name** | Projects Manager |
-| **Description** | Manage my project boards |
-| **Connection** | **Server URL** (not Tunnel) |
-| **Server URL** | From Settings (click to copy) — ends with `/functions/v1/mcp` |
-| **Authentication** | Access token / API key → **Bearer** |
-
-3. Accept the risk warning → **Create**.  
-4. When asked for the token, paste `pmcli_…`.
-
-### 4. Try it
-
-> List my Projects Manager projects.
-
----
-
-## ChatGPT plugin (OAuth — similar to Grok)
-
-Use this if you want the same “Allow” experience as Grok.
-
-1. Developer mode ON (link above).  
-2. New plugin → same **Server URL**.  
-3. **Authentication:** **OAuth** (not token).  
-4. If Advanced OAuth is empty, use the same OAuth fields as Grok (Client ID `projects-manager-mcp`, empty secret, authorize / token URLs from Settings → copy).  
-5. Create → browser opens Projects Manager → sign in → **Allow**.
+No token to copy or paste.
 
 ---
 
@@ -85,58 +64,57 @@ Use this if you want the same “Allow” experience as Grok.
 
 1. Open [grok.com/connectors](https://grok.com/connectors).  
 2. **New Connector** → **Custom**.  
-3. Paste **MCP server URL** from Settings.  
-4. When OAuth is required:
+3. Paste the MCP server URL from Settings.  
+4. If Grok asks for OAuth fields:
 
 | Field | Value |
 |--------|--------|
 | Client ID | `projects-manager-mcp` |
 | Client Secret | *(empty)* |
-| Authorization Endpoint | your site `/oauth/mcp/authorize` |
-| Token Endpoint | `…/functions/v1/mcp-oauth/token` |
+| Authorization Endpoint | your site `/oauth/mcp/authorize` (copy from Settings) |
+| Token Endpoint | `…/functions/v1/mcp-oauth/token` (copy from Settings) |
 | Scopes | `mcp` |
 | Token Auth Method | none (PKCE only) |
 
-Use **Copy all OAuth fields** in Settings so you do not type them by hand.
-
 5. **Save & Connect** → **Allow** on Projects Manager.  
-6. Ask Grok to list your projects.
+6. In Grok: *“List my Projects Manager projects.”*
 
-Optional: **Also create a backup Grok key** in Settings if you want a manual token later.
+Again: no manual token.
 
 ---
 
-## Are ChatGPT and Grok “the same”?
+## Why not “create a key first”?
 
-| | ChatGPT | Grok web |
-|--|---------|----------|
-| Name in their UI | **Plugin** | **Connector** |
-| Same MCP URL? | Yes | Yes |
-| Same keys system? | Yes (`pmcli_…`) | Yes (OAuth issues a `pmcli_…` for you) |
-| Easiest for most people | Paste **Bearer token** | **OAuth** form + Allow |
-| Can use OAuth? | Yes (optional) | Yes (usual) |
+| Old idea | Better idea |
+|----------|-------------|
+| Create token → copy → paste into chat app | Chat app uses **OAuth** → you click **Allow** → we create the key for you |
 
-Making ChatGPT use **OAuth** does make the two processes more similar (both end on our Allow page). Token remains available because ChatGPT’s form supports token *and* OAuth.
+Creating a key up front was only useful for **Bearer token** auth. ChatGPT and Grok both work with **OAuth**, so the simpler path is: instructions + Allow.
+
+Manual keys still exist under **Advanced** (Grok CLI, rare fallbacks).
+
+---
+
+## Connected keys
+
+After Allow, Settings shows keys such as “Grok connector …”.  
+**Revoke** = disconnect that chat app until you connect again.
 
 ---
 
 ## Safety
 
-- Prefer **one key per app** (ChatGPT plugin vs Grok connector) so you can revoke one.  
-- Revoke under Settings → **Your keys**.  
-- Never post a token in a public chat or screenshot.  
-- Never use a Supabase **service role** key in a chat app.
+- Prefer one connection per app so you can revoke ChatGPT without Grok.  
+- Never share tokens from Advanced.  
+- Never put a Supabase **service role** key into a chat app.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Try this |
-|---------|----------|
-| No Developer mode | Plus/Pro? Use the [direct Developer mode link](https://chatgpt.com/plugins#settings/Security?section=developer-mode). |
-| Plugin form looks different | OpenAI renames screens; look for Server URL + Authentication. |
-| Token rejected | New key; full `pmcli_…`; no spaces. |
-| OAuth loop | Client ID exactly `projects-manager-mcp`; authorize URL is your **production site** `/oauth/mcp/authorize`. |
-| No tools in chat | New conversation after connecting; confirm Developer mode still on. |
-
-More detail for power users: repo file `docs/grok-cli.md`.
+| Problem | Try |
+|---------|-----|
+| No Developer mode | Plus/Pro? Use the [Developer mode link](https://chatgpt.com/plugins#settings/Security?section=developer-mode). |
+| Advanced OAuth empty | Enter Client ID `projects-manager-mcp`; other URLs often auto-fill. |
+| Allow page 404 | Wait for production deploy; URL must be your live site `/oauth/mcp/authorize`. |
+| No tools in chat | New conversation; confirm the plugin/connector is still enabled. |
