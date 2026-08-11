@@ -89,6 +89,8 @@ export function ScopePage() {
   const [editProjectOpen, setEditProjectOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [githubOpen, setGithubOpen] = useState(false)
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const toolsMenuRef = useRef<HTMLDivElement>(null)
   const [ghDraft, setGhDraft] = useState<{
     linked: boolean
     repoFull: string
@@ -532,6 +534,24 @@ export function ScopePage() {
 
   // Shortcuts for add/search live in TaskBoard; keep page free of conflicts.
 
+  useEffect(() => {
+    if (!toolsMenuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target as Node)) {
+        setToolsMenuOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setToolsMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [toolsMenuOpen])
+
   if (scopeLoading || tasksQuery.isLoading) return <PageLoader />
 
   if (scopeError || !scope) {
@@ -570,19 +590,7 @@ export function ScopePage() {
             <p className="mt-1 text-sm text-[var(--color-muted)]">{scope.description}</p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            title="Import or export tasks (formats, AI backlog, copy/download)"
-            onClick={() => {
-              setTransferTaskIds(null)
-              setTransferMode('export')
-              setTransferOpen(true)
-            }}
-          >
-            <Icons.Clipboard size={14} /> Import / Export
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
           {access.canManageShares ? (
             <Button
               variant="secondary"
@@ -598,29 +606,78 @@ export function ScopePage() {
               onClick={() => setShareOpen(true)}
             >
               <Icons.Share size={14} /> Share
+              {shares.filter((s) => s.status === 'accepted').length > 0 ? (
+                <span className="ml-1 tabular-nums opacity-90">
+                  {shares.filter((s) => s.status === 'accepted').length}
+                </span>
+              ) : null}
             </Button>
           ) : null}
-          {ghCaps.canSee ? (
+
+          {/* Import/Export + GitHub live under Tools — not always-visible primary chrome */}
+          <div className="relative" ref={toolsMenuRef}>
             <Button
+              type="button"
               variant="secondary"
               size="sm"
               className={ghCaps.scopeIntegrated ? 'btn-pressed' : undefined}
-              title={
-                displayRepo
-                  ? `Default for new tasks: ${displayRepo}`
-                  : 'Configure GitHub for this project'
-              }
-              onClick={() => setGithubOpen(true)}
+              title="Import/export and optional GitHub link"
+              aria-expanded={toolsMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setToolsMenuOpen((o) => !o)}
             >
-              <Icons.Github size={14} /> GitHub
+              <Icons.Menu size={14} /> Tools
+              {ghCaps.scopeIntegrated ? (
+                <Icons.Github size={12} className="ml-1 opacity-90" />
+              ) : null}
             </Button>
-          ) : null}
-          {ghCaps.canSee ? (
-            <HelpHint
-              slug={HelpSlugs.githubProject}
-              label="How to link this project to GitHub"
-            />
-          ) : null}
+            {toolsMenuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 z-30 mt-1 min-w-[12.5rem] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)]"
+                  onClick={() => {
+                    setToolsMenuOpen(false)
+                    setTransferTaskIds(null)
+                    setTransferMode('export')
+                    setTransferOpen(true)
+                  }}
+                >
+                  <Icons.Clipboard size={14} /> Import / Export
+                </button>
+                {ghCaps.canSee ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-surface-2)]"
+                    onClick={() => {
+                      setToolsMenuOpen(false)
+                      setGithubOpen(true)
+                    }}
+                  >
+                    <Icons.Github size={14} />
+                    {ghCaps.scopeIntegrated
+                      ? displayRepo
+                        ? `GitHub · ${displayRepo}`
+                        : 'GitHub linked'
+                      : 'Link GitHub…'}
+                  </button>
+                ) : null}
+                {ghCaps.canSee ? (
+                  <div className="border-t border-[var(--color-border)] px-3 py-2">
+                    <HelpHint
+                      slug={HelpSlugs.githubProject}
+                      label="How to link this project to GitHub"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 

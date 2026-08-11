@@ -277,12 +277,12 @@ function SortableScopeCard({
   }
 
   const ghTitle = githubRepoLabel
-    ? `GitHub: ${githubRepoLabel}`
+    ? `GitHub linked: ${githubRepoLabel}`
     : 'Linked to a GitHub repository'
   const shareTitle = isShared
     ? `Shared with you as ${scope.role}`
     : hasShares
-      ? `Shared with ${shareSummary!.names.join(', ')}${shareSummary!.count > shareSummary!.names.length ? '…' : ''}`
+      ? `Shared with ${shareSummary!.names.join(', ')}${shareSummary!.count > shareSummary!.names.length ? '…' : ''} — click to manage`
       : 'Share project'
 
   return (
@@ -301,22 +301,28 @@ function SortableScopeCard({
           >
             <Icons.Grip />
           </button>
-          {githubIntegrated ? (
-            <span className="pill-badge" title={ghTitle}>
-              <Icons.Github size={12} /> GitHub
-            </span>
-          ) : null}
-          {isShared ? (
-            <span className="pill-badge" title={shareTitle}>
-              Shared
-            </span>
-          ) : hasShares ? (
-            <span className="pill-badge" title={shareTitle}>
-              Shared
-            </span>
-          ) : null}
         </div>
         <div className="flex gap-1">
+          {/* Status via pressed icon buttons only — no separate “Shared” / “GitHub” text pills */}
+          {githubIntegrated ? (
+            <Link
+              to={`/projects/${scope.id}`}
+              className={cn('icon-btn btn-pressed no-underline')}
+              title={ghTitle}
+              aria-label={ghTitle}
+            >
+              <Icons.Github />
+            </Link>
+          ) : null}
+          {isShared ? (
+            <span
+              className="icon-btn btn-pressed pointer-events-none"
+              title={shareTitle}
+              aria-label={shareTitle}
+            >
+              <Icons.People />
+            </span>
+          ) : null}
           <button type="button" className="icon-btn" title="Copy tasks" onClick={onCopy}>
             <Icons.Clipboard />
           </button>
@@ -325,6 +331,7 @@ function SortableScopeCard({
               type="button"
               className={cn('icon-btn', hasShares && 'btn-pressed')}
               title={shareTitle}
+              aria-label={shareTitle}
               onClick={onShare}
             >
               <Icons.Share />

@@ -176,7 +176,8 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Profile, keyboard, ChatGPT/Grok web connectors (CLI is local-only), theme, and GitHub.
+          Profile, password, theme, keyboard, ChatGPT/Grok web connectors (CLI is local-only), and
+          GitHub.
         </p>
       </div>
 
@@ -407,10 +408,6 @@ export function SettingsPage() {
         </Button>
       </section>
 
-      <KeyboardShortcutsSection />
-
-      <CliAccessSection />
-
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <h2 className="font-semibold">Theme</h2>
         <div className="flex flex-wrap gap-2">
@@ -430,6 +427,10 @@ export function SettingsPage() {
           choice as a default for new browsers.
         </p>
       </section>
+
+      <KeyboardShortcutsSection />
+
+      <CliAccessSection />
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
         <HelpTitle slug={HelpSlugs.githubToken} hintLabel="GitHub token and permissions help">
@@ -517,7 +518,7 @@ export function SettingsPage() {
             Fine-grained tokens need access to the repos you will link from a project.
           </li>
           <li>
-            After saving, open a project → <strong>GitHub</strong> to pick one repository.
+            After saving, open a project → <strong>Tools → Link GitHub</strong> to pick one repository.
           </li>
         </ul>
         <div className="flex flex-wrap gap-2">
