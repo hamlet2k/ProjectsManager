@@ -2,38 +2,25 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Flask Localhost",
-      "type": "python",
+      "name": "Web (Vite dev)",
+      "type": "node",
       "request": "launch",
-      "module": "flask",
-      "env": {
-        "FLASK_APP": "app.py",
-        "FLASK_ENV": "development"
-      },
-      "args": [
-        "run",
-        "--host", "127.0.0.1",
-        "--port", "5000",
-        "--reload"
-      ],
-      "jinja": true
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/web",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "Local:\\s+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
     },
     {
-      "name": "Flask LAN",
-      "type": "python",
+      "name": "Web (Chrome debug)",
+      "type": "chrome",
       "request": "launch",
-      "module": "flask",
-      "env": {
-        "FLASK_APP": "app.py",
-        "FLASK_ENV": "development"
-      },
-      "args": [
-        "run",
-        "--host", "0.0.0.0",
-        "--port", "5000",
-        "--reload"
-      ],
-      "jinja": true
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/web/src"
     }
   ]
 }

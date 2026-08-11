@@ -1,6 +1,6 @@
 # Product backlog (Supabase + React stack)
 
-_Last updated 2026-07-31._ On **`main`** after PR #130.
+_Last updated 2026-08-11._ SPA cutover (voice, CLI/MCP, Help) on **`main`**.
 
 Source: integration design, classic GitHub issues, and ongoing product decisions.  
 Repo: https://github.com/hamlet2k/ProjectsManager  
@@ -9,12 +9,12 @@ Repo: https://github.com/hamlet2k/ProjectsManager
 
 ## Integration contract (agreed)
 
-- **One project → one default GitHub repository** (historical multi-repo links may still exist as read-only).  
+- **One project -> one default GitHub repository** (historical multi-repo links may still exist as read-only).  
 - **Canonical binding on the project** (collaborators can set when unlocked; owner override).  
 - **Owner override:** confirm + notify members (no collaborator veto by default).  
 - **User opt-in** for GitHub mutations (preference + credentials).  
 - **Visibility:** hide GitHub chrome when preference is OFF **except** on projects already integrated.  
-- **Two-way status:** pull/sync issue closed → task complete; complete → close optional (`close_issue_on_complete`). Webhooks later.  
+- **Two-way status:** pull/sync issue closed -> task complete; complete -> close optional (`close_issue_on_complete`). Webhooks later.  
 - **Issue links are project-global** (one linked issue per task under the binding model).  
 - **List badges:** Shared + GitHub.  
 
@@ -22,9 +22,9 @@ Repo: https://github.com/hamlet2k/ProjectsManager
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| **I1–I3** | Visibility, badges, single binding, preference OFF read-only | **Done** |
+| **I1-I3** | Visibility, badges, single binding, preference OFF read-only | **Done** |
 | **I4** | Owner override + notifications | **Done** |
-| **I5** | Complete↔close, project board on create, labels | **Done** |
+| **I5** | Complete/close, project board on create, labels | **Done** |
 | **I6** | Link/import issue; webhooks; OAuth login | Link/import + OAuth **done**; webhooks **open** |
 | **I7** | Generic multi-provider integrations | Deferred |
 
@@ -32,20 +32,20 @@ Repo: https://github.com/hamlet2k/ProjectsManager
 
 ## Already solid (do not re-open unless regression)
 
-Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome, share/invites, notifications, theme, confirms, Import/Export, dependencies UI, GitHub create/link/import/sync, option-C delete, group complete/delete, create-issue-on-add, feature flags, OAuth, password recovery, email templates, Feedback Bot path, Ko-fi link, mobile nav.
+Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome, share/invites, notifications, theme, confirms, Import/Export, dependencies UI, GitHub create/link/import/sync, option-C delete, group complete/delete, create-issue-on-add, feature flags, OAuth, password recovery, email templates, Feedback Bot path, Ko-fi link, mobile nav, voice assistant, CLI/MCP, in-app Help.
 
 ---
 
 ## Near-term backlog
 
-### P0 — Foundation
+### P0 - Foundation
 
-- [x] I1–I4 GitHub visibility, binding, override, notifications  
-- [x] Complete → close optional; pull sync  
+- [x] I1-I4 GitHub visibility, binding, override, notifications  
+- [x] Complete -> close optional; pull sync  
 - [x] Migrations including feature flags (`dependencies_enabled`, `advanced_export_enabled`)  
 - [x] Branded auth email templates applied to hosted project  
 
-### P1 — UX
+### P1 - UX
 
 - [x] Scroll/flash to task (create, deps, tag move, import)  
 - [x] Esc / shortcuts / mobile filter collapse  
@@ -55,7 +55,7 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 - [x] Markdown help; last tags remembered on create  
 - [x] Ko-fi support control  
 
-### P2 — GitHub depth
+### P2 - GitHub depth
 
 - [x] Link / import issue; Project board add; blocked-by pills  
 - [x] App dependencies + bidirectional GH dep reconcile  
@@ -65,30 +65,40 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 - [ ] **Webhooks** for two-way without manual refresh  
 - [x] SSO GitHub/Google (Auth OAuth)  
 
-### P3 — Chatbot / voice / AI
+### P3 - Chatbot / voice / AI
 
-- [x] **MVP voice assistant** on project page: mic (browser STT) + typed fallback → Edge Function plan → create / complete / uncomplete (+ tags, due)  
+- [x] **MVP voice assistant** on project page: mic (browser STT) + typed fallback -> Edge Function plan -> create / complete / uncomplete (+ tags, due)  
 - [x] Ambiguous complete: pick from candidate chips  
 - [x] Push-to-talk FAB + hold/lock; add_tags / update_task on existing tasks  
 - [x] Smart create (title/description/tags) + set_view (search/sort/completed/tag filter)  
-- [x] Per-project AI context prompt (user brief → generated prompt → save)  
+- [x] Per-project AI context prompt (user brief -> generated prompt -> save)  
 - [x] AI enhance title/description/tags on task create/edit  
 - [ ] Richer chat history / multi-turn memory  
 - [ ] Delete / reorder / GitHub link tools (with confirms)  
 - [ ] Create task from image  
-- [x] **Grok CLI / MCP task access** — Settings PATs (project allow-list), Edge `cli-api`, `mcp/projects-manager`  
-- [ ] **Admin page: manage LLM configuration** (provider, model, base URL, keys via secure flow, test call, defaults) — currently secrets are set only via Supabase CLI/dashboard  
+- [x] **Grok CLI / MCP task access** - Settings PATs (project allow-list), Edge `cli-api`, `mcp/projects-manager`  
+- [x] **CLI/MCP complete -> close linked GitHub issue** (same gates as web UI)  
+- [ ] **Admin page: manage LLM configuration** (provider, model, base URL, keys via secure flow, test call, defaults) - currently secrets are set only via Supabase CLI/dashboard  
 
-### P4 — Platform / release
+### P4 - Platform / release
 
 - [ ] Automated tests (unit + e2e)  
 - [x] Ko-fi / support affordance in UI  
-- [ ] **PWA installable + offline app shell** (deferred — install shell complicated mic STT without clear benefit)  
+- [ ] **PWA installable + offline app shell** (deferred - install shell complicated mic STT without clear benefit)  
 - [ ] Offline task data / background sync (long-term)  
-- [ ] Help site + contextual help links  
+- [x] In-app Help Center + contextual **?** links  
 - [x] Advanced import/export + project simple-copy flag  
-- [x] UI “projects” (DB still `scopes`)  
+- [x] UI "projects" (DB still `scopes`)  
 - [x] Shared project live-ish updates (Realtime + focus/poll fallback)  
+
+### Explicitly deferred
+
+| Item | Why |
+|------|-----|
+| Flask session/forms stack | Replaced by Supabase Auth + SPA |
+| Subtasks | Product decision |
+| Multi-repo-per-project as first-class | One default repo; legacy links read-only |
+| Shared-repo detach UX | Dropped for one-binding model |
 
 ### Partially done
 
@@ -101,9 +111,9 @@ Projects, tasks, tags, filters, rank + tag-group drag, due groups, sticky chrome
 
 ---
 
-## How we’ll use this
+## How we'll use this
 
-1. **Next focus:** admin LLM config page, webhooks (P2), or help (P4).  
+1. **Next focus:** webhooks (P2), admin LLM config, automated tests (P4).  
 2. GitHub behavior: **`docs/github-integration-matrix.md`**.  
 3. Voice setup: **`docs/voice-assistant.md`**.  
 4. This file is the **authoritative** backlog for the SPA stack.  

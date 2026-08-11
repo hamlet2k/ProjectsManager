@@ -8,23 +8,26 @@ Family-friendly project and task manager. Track lists, tags, due dates, shares, 
 | Backend / DB / Auth / Realtime | Supabase (`supabase/`) |
 | Hosting | Vercel |
 | GitHub API | Supabase Edge Functions (`github-proxy`, `github-credentials`) |
+| Optional automation | Edge `cli-api` + npm `projects-manager-mcp` |
 
 **Production:** https://projects-manager-navy.vercel.app  
-**Repo default branch:** `main` (Supabase rebuild merged via [#130](https://github.com/hamlet2k/ProjectsManager/pull/130))
+**Repo default branch:** `main` (Supabase SPA; feature work cut over from `rebuild/supabase-vite`)
 
 ---
 
 ## Layout
 
 ```text
-web/                 ← SPA (deploy this to Vercel)
-supabase/            ← SQL migrations, Edge Functions, auth email templates
-scripts/             ← data migration helpers, legacy cleanup
-docs/                ← product + setup docs (see docs/README.md)
-legacy-flask/        ← archived classic app (optional; remove after cutover)
+web/                 SPA (deploy this to Vercel; Root Directory = web)
+supabase/            SQL migrations, Edge Functions, auth email templates
+mcp/                 projects-manager-mcp (optional Grok CLI / MCP)
+scripts/             optional data migration helpers
+docs/                product + setup docs (see docs/README.md)
 ```
 
 UI copy says **projects**; the database still uses `scopes` for historical reasons.
+
+The classic Flask app is **not** in the remote repository (`legacy-flask/` is gitignored if present locally).
 
 ---
 
@@ -52,6 +55,11 @@ UI copy says **projects**; the database still uses `scopes` for historical reaso
 
 See [docs/github-integration-matrix.md](docs/github-integration-matrix.md).
 
+### Voice, Help, CLI
+- Hold-to-talk voice assistant (browser STT) + AI enhance / project prompts  
+- In-app Help Center + contextual **?** on complex settings  
+- Grok CLI / MCP: project-scoped PATs; complete can close linked GitHub issues  
+
 ---
 
 ## Quick start
@@ -63,7 +71,7 @@ See [docs/github-integration-matrix.md](docs/github-integration-matrix.md).
 3. **Auth → URL configuration**  
    - Site URL: production or `http://localhost:5173`  
    - Redirects: see [docs/auth-oauth-smtp.md](docs/auth-oauth-smtp.md)  
-4. Deploy Edge Functions and secrets as needed (GitHub PAT encryption, Feedback Bot).  
+4. Deploy Edge Functions and secrets as needed (GitHub PAT encryption, Feedback Bot, `ASSISTANT_*`, CLI).  
 5. Optional: custom SMTP + branded emails (`supabase/templates/`).
 
 ### 2. Web app
@@ -78,12 +86,14 @@ npm run dev
 
 ### 3. Deploy (Vercel)
 
+Project **`projects-manager`** → production URL navy. Root Directory **`web`**. Prefer Git production branch **`main`**.
+
 ```powershell
 cd web
 npx vercel --prod
 ```
 
-Set the same `VITE_SUPABASE_*` vars in the Vercel project. Root of the Vercel project should be `web/` (or deploy from `web/`).
+Set the same `VITE_SUPABASE_*` vars in the Vercel project.
 
 ### 4. OAuth / SMTP / email templates
 
@@ -99,6 +109,8 @@ See [docs/auth-oauth-smtp.md](docs/auth-oauth-smtp.md) and [supabase/templates/R
 | [docs/product-backlog.md](docs/product-backlog.md) | Authoritative product backlog |
 | [docs/github-integration-matrix.md](docs/github-integration-matrix.md) | User vs project GitHub behavior |
 | [docs/auth-oauth-smtp.md](docs/auth-oauth-smtp.md) | OAuth, SMTP, email templates |
+| [docs/voice-assistant.md](docs/voice-assistant.md) | Voice assistant setup |
+| [docs/grok-cli.md](docs/grok-cli.md) | Grok CLI / MCP tokens |
 | [docs/parity-backlog.md](docs/parity-backlog.md) | Classic UI parity (mostly complete) |
 | [docs/rebuild-supabase.md](docs/rebuild-supabase.md) | Rebuild notes / permissions sketch |
 
@@ -107,16 +119,5 @@ See [docs/auth-oauth-smtp.md](docs/auth-oauth-smtp.md) and [supabase/templates/R
 ## Security
 
 - RLS enforces owner / editor / viewer.  
-- GitHub PATs are not exposed to the browser; Edge Functions hold secrets.  
+- GitHub PATs and CLI tokens stay off-client after save; Edge Functions hold secrets.  
 - Never commit `.env`, service role keys, or credential dumps.  
-
----
-
-## Legacy Flask
-
-`legacy-flask/` is the old stack. Use only for historical export if needed, then:
-
-```powershell
-.\scripts\remove-legacy.ps1
-# type: DELETE LEGACY
-```

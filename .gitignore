@@ -1,27 +1,42 @@
+# --- Dependencies & build ---
+node_modules/
+web/node_modules/
+web/dist/
+.venv/
 venv/
-.venv
-*__pycache__/
-instance/
-admin/
-tools/
-patch/
-outputs/
-*.db
+
+# --- Env & secrets (never commit) ---
 .env
 .env.*
-*.sqlite3
 *.pem
-node_modules/
-.supabase/
-.vercel
-
-# Local migration dumps (may contain passwords / personal data)
-scripts/migrate-from-flask/export/
-scripts/migrate-from-flask/export-pg/
 temp-passwords.json
 id-map.json
 
-
-# Supabase CLI local state
+# --- Tooling / local state ---
+.vercel
+web/.vercel
+.supabase/
 supabase/.temp/
-.env*
+*.log
+.DS_Store
+Thumbs.db
+*__pycache__/
+.pytest_cache/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+
+# --- AI assistant local installs (regenerate as needed) ---
+.agents/
+.kilo/
+.kilocode/
+skills-lock.json
+
+# --- Archived classic Flask app + any local machine dumps ---
+# Entire tree is kept only on disk for reference; not pushed to GitHub.
+legacy-flask/
+
+# Local migration dumps (may contain personal data)
+scripts/migrate-from-flask/export/
+scripts/migrate-from-flask/export-pg/
