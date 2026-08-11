@@ -345,12 +345,14 @@ Deno.serve(async (req) => {
     if (action === 'list_projects') {
       const { data: owned } = await admin
         .from('scopes')
-        .select('id, name, description, rank, owner_id')
+        .select('id, name, description, assistant_prompt, rank, owner_id')
         .eq('owner_id', token.user_id)
         .order('rank')
       const { data: shares } = await admin
         .from('scope_shares')
-        .select('scope_id, role, scopes(id, name, description, rank, owner_id)')
+        .select(
+          'scope_id, role, scopes(id, name, description, assistant_prompt, rank, owner_id)',
+        )
         .eq('user_id', token.user_id)
         .eq('status', 'accepted')
 
@@ -358,6 +360,8 @@ Deno.serve(async (req) => {
         id: string
         name: string
         description: string | null
+        /** Project AI / agent instructions (how to work this board) */
+        assistant_prompt: string | null
         rank: number
         owner_id: string
         access: 'owner' | 'editor' | 'viewer'

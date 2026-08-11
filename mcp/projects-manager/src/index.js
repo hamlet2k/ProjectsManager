@@ -73,16 +73,133 @@ async function api(action, params = {}) {
   return data
 }
 
+const projectSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Project (scope) UUID' },
+    name: { type: 'string' },
+    description: {
+      type: ['string', 'null'],
+      description: 'Human project description (purpose, context)',
+    },
+    assistant_prompt: {
+      type: ['string', 'null'],
+      description:
+        'Project AI instructions set in the app (terminology, workflow, how agents should handle this board)',
+    },
+    rank: { type: 'number' },
+    owner_id: { type: 'string' },
+    access: { type: 'string', enum: ['owner', 'editor', 'viewer'] },
+  },
+  required: ['id', 'name', 'access'],
+  additionalProperties: true,
+}
+
+const taskSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    scope_id: { type: 'string' },
+    name: { type: 'string' },
+    description: { type: ['string', 'null'] },
+    completed: { type: 'boolean' },
+    completed_date: { type: ['string', 'null'] },
+    end_date: { type: ['string', 'null'], description: 'Due date YYYY-MM-DD' },
+    rank: { type: 'number' },
+    created_at: { type: 'string' },
+    updated_at: { type: 'string' },
+    tags: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Tag names on the task (list_tasks only)',
+    },
+  },
+  required: ['id', 'scope_id', 'name'],
+  additionalProperties: true,
+}
+
+const tagSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    scope_id: { type: 'string' },
+  },
+  required: ['id', 'name', 'scope_id'],
+  additionalProperties: true,
+}
+
+const githubCloseSchema = {
+  type: 'object',
+  description: 'Present when completing a task closed a linked GitHub issue',
+  properties: {
+    closed: { type: 'boolean' },
+    skipped: { type: 'boolean' },
+    reason: { type: 'string' },
+    issue_url: { type: 'string' },
+    issue_number: { type: 'number' },
+  },
+  additionalProperties: true,
+}
+
+const taskMutationOutput = {
+  type: 'object',
+  properties: {
+    task: taskSchema,
+    github: githubCloseSchema,
+  },
+  required: ['task'],
+  additionalProperties: true,
+}
+
+const readOnlyOpen = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+}
+
+const writeOpen = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+}
+
 const tools = [
   {
     name: 'list_projects',
+    title: 'List projects',
     description:
-      'List Projects Manager boards/projects this CLI token can access (id, name, access role).',
+      'List boards this token can access. Each project includes id, name, description, and assistant_prompt (project AI instructions). Call this first and follow description + assistant_prompt when creating or organizing tasks on that board.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        projects: { type: 'array', items: projectSchema },
+        token: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            can_write: { type: 'boolean' },
+            scope_ids: {
+              type: ['array', 'null'],
+              items: { type: 'string' },
+            },
+          },
+          additionalProperties: true,
+        },
+      },
+      required: ['projects'],
+      additionalProperties: true,
+    },
+    annotations: { title: 'List projects', ...readOnlyOpen },
   },
   {
     name: 'list_tasks',
-    description: 'List tasks on a project board. Optionally hide completed tasks.',
+    title: 'List tasks',
+    description:
+      'List tasks on a project board. Prefer list_projects first so you can apply that project’s description and assistant_prompt when interpreting the list.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -96,9 +213,17 @@ const tools = [
       required: ['scope_id'],
       additionalProperties: false,
     },
+    outputSchema: {
+      type: 'object',
+      properties: { tasks: { type: 'array', items: taskSchema } },
+      required: ['tasks'],
+      additionalProperties: true,
+    },
+    annotations: { title: 'List tasks', ...readOnlyOpen },
   },
   {
     name: 'list_tags',
+    title: 'List tags',
     description: 'List tags available on a project board.',
     inputSchema: {
       type: 'object',
@@ -108,10 +233,19 @@ const tools = [
       required: ['scope_id'],
       additionalProperties: false,
     },
+    outputSchema: {
+      type: 'object',
+      properties: { tags: { type: 'array', items: tagSchema } },
+      required: ['tags'],
+      additionalProperties: true,
+    },
+    annotations: { title: 'List tags', ...readOnlyOpen },
   },
   {
     name: 'create_task',
-    description: 'Create a task on a project board. Optional description, due date, tags.',
+    title: 'Create task',
+    description:
+      'Create a task on a project board. Optional description, due date, tags. Follow that project’s description and assistant_prompt from list_projects (naming, tags, workflow).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,9 +262,17 @@ const tools = [
       required: ['scope_id', 'name'],
       additionalProperties: false,
     },
+    outputSchema: {
+      type: 'object',
+      properties: { task: taskSchema },
+      required: ['task'],
+      additionalProperties: true,
+    },
+    annotations: { title: 'Create task', ...writeOpen },
   },
   {
     name: 'update_task',
+    title: 'Update task',
     description: 'Update task fields and/or replace tags by name.',
     inputSchema: {
       type: 'object',
@@ -145,9 +287,12 @@ const tools = [
       required: ['task_id'],
       additionalProperties: false,
     },
+    outputSchema: taskMutationOutput,
+    annotations: { title: 'Update task', ...writeOpen },
   },
   {
     name: 'complete_task',
+    title: 'Complete task',
     description:
       'Mark a task completed. If the task has a linked GitHub issue and the project has close-on-complete enabled (and the CLI token owner has GitHub integration + PAT), also closes the issue (same rules as the web UI).',
     inputSchema: {
@@ -156,9 +301,18 @@ const tools = [
       required: ['task_id'],
       additionalProperties: false,
     },
+    outputSchema: taskMutationOutput,
+    annotations: {
+      title: 'Complete task',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: 'uncomplete_task',
+    title: 'Reopen task',
     description: 'Reopen a completed task.',
     inputSchema: {
       type: 'object',
@@ -166,9 +320,23 @@ const tools = [
       required: ['task_id'],
       additionalProperties: false,
     },
+    outputSchema: {
+      type: 'object',
+      properties: { task: taskSchema },
+      required: ['task'],
+      additionalProperties: true,
+    },
+    annotations: {
+      title: 'Reopen task',
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: 'delete_task',
+    title: 'Delete task',
     description: 'Permanently delete a task (use carefully).',
     inputSchema: {
       type: 'object',
@@ -176,11 +344,27 @@ const tools = [
       required: ['task_id'],
       additionalProperties: false,
     },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        deleted_id: { type: 'string' },
+      },
+      required: ['ok', 'deleted_id'],
+      additionalProperties: true,
+    },
+    annotations: {
+      title: 'Delete task',
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
 ]
 
 const server = new Server(
-  { name: 'projects-manager', version: '1.0.0' },
+  { name: 'projects-manager', version: '1.3.0' },
   { capabilities: { tools: {} } },
 )
 
@@ -238,6 +422,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      structuredContent: result,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

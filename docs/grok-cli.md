@@ -31,7 +31,7 @@ You choose which projects a token may touch. **End users do not need this monore
 
 | MCP tool | Purpose |
 |----------|---------|
-| `list_projects` | Boards this token can see |
+| `list_projects` | Boards this token can see (`description`, `assistant_prompt` AI instructions) |
 | `list_tasks` | Tasks on a board (+ tags) |
 | `list_tags` | Project tags |
 | `create_task` | Create task (optional description, due, tags) |
