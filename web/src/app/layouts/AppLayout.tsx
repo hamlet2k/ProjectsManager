@@ -153,9 +153,20 @@ function AppLayoutInner() {
   return (
     <div className="notebook-shell">
       <header className="notebook-nav mx-4 flex items-center justify-between gap-2 px-3 py-2 sm:mx-auto sm:px-4">
+        {/*
+          Mobile bar: PM (home) · bell · menu only.
+          Extra actions live in the hamburger (Refresh GitHub, Help, Settings, …).
+          Desktop keeps the full icon toolbar.
+        */}
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+          {/* Desktop only: home next to brand when inside a project */}
           {scopeId ? (
-            <Link to="/" className={iconBtn} title="All projects">
+            <Link
+              to="/"
+              className={cn(iconBtn, 'hidden sm:inline-flex')}
+              title="All projects"
+              aria-label="All projects"
+            >
               <Icons.Home />
             </Link>
           ) : null}
@@ -163,6 +174,7 @@ function AppLayoutInner() {
             to="/"
             className="flex min-w-0 items-center gap-2 rounded-full px-2 py-1 font-semibold tracking-tight"
             title="Projects home"
+            aria-label="Projects home"
           >
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-sm text-[var(--color-primary-fg)]">
               PM
@@ -171,13 +183,13 @@ function AppLayoutInner() {
           </Link>
         </div>
 
-        <div className="flex items-center gap-0.5 sm:gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           {/* Desktop / tablet: full icon toolbar */}
           {projectLinked ? (
             <button
               type="button"
               className={cn(iconBtn, 'hidden sm:inline-flex')}
-              title="Refresh GitHub issue links for this project"
+              title="Reload this project and soft-pull linked GitHub issues"
               disabled={refreshing}
               onClick={() => void handleGithubRefresh()}
             >
@@ -390,7 +402,7 @@ function AppLayoutInner() {
                     onClick={closeMenu}
                   >
                     <Icons.Home size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
-                    Projects
+                    All projects
                   </Link>
                   <Link
                     role="menuitem"
@@ -440,7 +452,7 @@ function AppLayoutInner() {
                     role="separator"
                   />
 
-                  {projectLinked ? (
+                  {scopeId ? (
                     <button
                       type="button"
                       role="menuitem"
@@ -458,7 +470,16 @@ function AppLayoutInner() {
                           refreshing && 'animate-spin',
                         )}
                       />
-                      {refreshing ? 'Refreshing…' : 'Refresh GitHub'}
+                      <span className="min-w-0 text-left">
+                        <span className="block">
+                          {refreshing ? 'Refreshing…' : 'Reload project'}
+                        </span>
+                        <span className="block text-xs font-normal text-[var(--color-muted)]">
+                          {projectLinked
+                            ? 'Refresh tasks and soft-pull GitHub issues'
+                            : 'Refresh tasks from the server'}
+                        </span>
+                      </span>
                     </button>
                   ) : null}
 
