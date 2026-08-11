@@ -95,10 +95,12 @@ Note: ChatGPT custom connectors may require OAuth 2.1 (not yet; use Grok CLI std
 
       {remoteMcpUrl ? (
         <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-3">
-          <p className="text-sm font-semibold">Remote MCP — Grok Custom Connector</p>
+          <p className="text-sm font-semibold">Remote MCP — Grok &amp; ChatGPT</p>
           <p className="text-xs text-[var(--color-muted)]">
-            In Grok: Connectors → New → Custom → paste the <strong>MCP server URL</strong>, then fill
-            the OAuth fields below (PKCE, no client secret). You will sign in and click Allow.
+            <strong>Grok:</strong> Connectors → New → Custom → paste MCP URL, then OAuth fields
+            below (PKCE). <strong>ChatGPT:</strong> Developer Mode → New Plugin → Server URL =
+            MCP URL, Authentication = OAuth, accept risk, Create — ChatGPT should{' '}
+            <em>discover</em> OAuth from the server (Advanced OAuth settings).
           </p>
           <div className="space-y-1.5 text-xs">
             <p className="font-medium text-[var(--color-muted)]">MCP server URL</p>

@@ -365,22 +365,94 @@ async function handleRpc(
   return rpcError(id, -32601, `Method not found: ${method}`, 200, sessionId)
 }
 
+function httpsOrigin(req: Request): string {
+  const u = new URL(req.url)
+  return u.origin.replace(/^http:\/\//i, 'https://')
+}
+
+function resourceUrl(req: Request): string {
+  return `${httpsOrigin(req)}/functions/v1/mcp`
+}
+
+function authServerUrl(req: Request): string {
+  return `${httpsOrigin(req)}/functions/v1/mcp-oauth`
+}
+
+function siteUrl(): string {
+  return (
+    Deno.env.get('PUBLIC_SITE_URL') ||
+    Deno.env.get('SITE_URL') ||
+    'https://projects-manager-navy.vercel.app'
+  ).replace(/\/$/, '')
+}
+
+/** RFC 9728 Protected Resource Metadata — ChatGPT discovers OAuth from this. */
+function protectedResourceMetadata(req: Request) {
+  const resource = resourceUrl(req)
+  const as = authServerUrl(req)
+  return {
+    resource,
+    authorization_servers: [as],
+    scopes_supported: ['mcp', 'mcp:read', 'mcp:write'],
+    bearer_methods_supported: ['header'],
+    resource_documentation: `${siteUrl()}/settings`,
+  }
+}
+
+function unauthorized(req: Request, message: string, status = 401) {
+  const metaUrl = `${resourceUrl(req)}/.well-known/oauth-protected-resource`
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+      // RFC 9728 / MCP: clients follow resource_metadata to OAuth AS
+      'WWW-Authenticate': `Bearer realm="projects-manager-mcp", resource_metadata="${metaUrl}"`,
+    },
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Health (no auth) — useful for connector URL checks
+    const url = new URL(req.url)
+    const path = url.pathname
+
+    // OAuth Protected Resource Metadata (RFC 9728) — required for ChatGPT / MCP clients
+    if (
+      req.method === 'GET' &&
+      (path.includes('/.well-known/oauth-protected-resource') ||
+        url.searchParams.get('metadata') === 'oauth-protected-resource')
+    ) {
+      return json(protectedResourceMetadata(req))
+    }
+
+    // Health + human-readable connector hint (no auth)
     if (req.method === 'GET') {
-      const url = new URL(req.url)
-      if (url.pathname.endsWith('/mcp') || url.pathname.endsWith('/mcp/') || url.searchParams.has('health')) {
+      if (
+        path.endsWith('/mcp') ||
+        path.endsWith('/mcp/') ||
+        path.endsWith('/sse') ||
+        url.searchParams.has('health')
+      ) {
+        const meta = protectedResourceMetadata(req)
         return json({
           ok: true,
           name: SERVER_NAME,
           version: SERVER_VERSION,
           protocol: PROTOCOL_VERSION,
-          auth: 'Authorization: Bearer pmcli_… (create token in Settings → CLI & chat connectors)',
+          transport: 'streamable-http',
+          oauth: {
+            client_id: 'projects-manager-mcp',
+            authorization_endpoint: `${siteUrl()}/oauth/mcp/authorize`,
+            token_endpoint: `${authServerUrl(req)}/token`,
+            protected_resource_metadata: `${resourceUrl(req)}/.well-known/oauth-protected-resource`,
+            authorization_servers: meta.authorization_servers,
+          },
+          auth: 'OAuth 2.1 PKCE (Grok/ChatGPT) or Authorization: Bearer pmcli_…',
           tools: TOOLS.map((t) => t.name),
         })
       }
@@ -392,30 +464,13 @@ Deno.serve(async (req) => {
     }
 
     if (req.method !== 'POST') {
-      return json({ error: 'Use POST for MCP JSON-RPC (or GET for health)' }, 405)
+      return json({ error: 'Use POST for MCP JSON-RPC (or GET for health / OAuth metadata)' }, 405)
     }
 
     const auth = req.headers.get('Authorization')
     const validated = await validateCliToken(auth)
     if (!validated.ok) {
-      // Point connectors at OAuth (Grok Custom Connector form)
-      const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '')
-      const site =
-        Deno.env.get('PUBLIC_SITE_URL') ||
-        Deno.env.get('SITE_URL') ||
-        'https://projects-manager-navy.vercel.app'
-      const asMeta = `${supabaseUrl}/functions/v1/mcp-oauth`
-      return new Response(JSON.stringify({ error: validated.error }), {
-        status: validated.status,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-          'WWW-Authenticate': `Bearer realm="projects-manager-mcp", resource_metadata="${asMeta}"`,
-          'X-OAuth-Authorization-Endpoint': `${site.replace(/\/$/, '')}/oauth/mcp/authorize`,
-          'X-OAuth-Token-Endpoint': `${asMeta}/token`,
-          'X-OAuth-Client-Id': 'projects-manager-mcp',
-        },
-      })
+      return unauthorized(req, validated.error, validated.status)
     }
 
     const sessionId =
