@@ -52,7 +52,8 @@ export function DashboardPage() {
   const qc = useQueryClient()
 
   const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<Scope | null>(null)
+  /** Includes access role from the list (owners/editors can open GitHub settings). */
+  const [editing, setEditing] = useState<ScopeCard | null>(null)
   const [shareScopeId, setShareScopeId] = useState<string | null>(null)
 
   const ownedIds = useMemo(
