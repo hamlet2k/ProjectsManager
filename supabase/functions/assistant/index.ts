@@ -87,7 +87,7 @@ Allowed actions only:
      "sort_by"?: "rank"|"name"|"due"|"created"|"tags",
      "show_completed"?: boolean,      // true=show done tasks, false=hide
      "tag_names"?: string[],          // filter list to these tags; [] clears tag filter
-     "clear_filters"?: boolean        // reset search/tags/sort to defaults
+     "clear_filters"?: boolean        // clear search/tags/repo filter only (not sort or Done)
    }
 
 === CREATE TASK (smart intake) — REQUIRED when type is create_task ===
@@ -109,9 +109,10 @@ Use set_view when the user wants to look at the list differently, not change tas
 - "sort by tags" / "group by tags" / "sort by due date" → sort_by
 - "show completed" / "hide completed" / "show done tasks" → show_completed
 - "only home tasks" / "filter by shopping" / "show #bug" → tag_names
-- "clear filters" / "show everything" / "reset filters" → clear_filters true
+- "clear filters" / "reset filters" → clear_filters true (search + tag/repo filters only; Sort and Done stay as-is)
+- "show everything" → clear_filters true; add show_completed true and/or sort_by rank only if the user asked to reset those too
 - "clear search" → search: ""
-You may combine fields in one set_view. You may emit set_view plus task actions when both are intended.
+You may combine fields in one set_view (e.g. clear_filters + sort_by). You may emit set_view plus task actions when both are intended.
 
 === GENERAL RULES ===
 - Prefer task_id when a single clear match exists in the list.

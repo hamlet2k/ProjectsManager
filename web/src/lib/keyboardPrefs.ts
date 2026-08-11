@@ -50,7 +50,7 @@ export const SHORTCUT_CATALOG: ShortcutDef[] = [
   },
   {
     id: 'clearAllFilters',
-    description: 'Clear search, tags, and reset filters',
+    description: 'Clear search and tag/repo filters (not Sort or Done)',
     defaultKeys: ['Backspace'],
     defaultMod: true,
   },

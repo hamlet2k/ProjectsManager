@@ -67,7 +67,7 @@ export const TASK_SHORTCUTS = {
   clearAllFilters: {
     id: 'clearAllFilters' as const,
     combo: () => formatBinding('clearAllFilters'),
-    description: 'Clear search, tags, and reset filters',
+    description: 'Clear search and tag/repo filters (not Sort or Done)',
   },
   collapseEsc: {
     id: 'collapseEsc' as const,

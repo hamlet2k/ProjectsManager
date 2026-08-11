@@ -70,7 +70,10 @@ export type TaskBoardViewPatch = {
   show_completed?: boolean
   /** Replace tag filter with these names (matched case-insensitively). [] clears tag filter. */
   tag_names?: string[]
-  /** Reset search, tags, sort→rank, hide completed */
+  /**
+   * Clear filter chips only: search, tags, GitHub repo filter.
+   * Does **not** change Sort or Done — set those with sort_by / show_completed if needed.
+   */
   clear_filters?: boolean
 }
 
@@ -395,15 +398,12 @@ export function TaskBoard({
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  /** Clear Filters bubble only — keep Sort and Done (separate pills) as the user left them. */
   const clearAllFilters = useCallback(() => {
     setSearch('')
     setActiveTagIds([])
-    setSortBy('rank')
-    setShowCompleted(false)
     setGithubRepoFilter(null)
     setProjectPref(scopeId, 'task-search', '')
-    setProjectPref(scopeId, 'task-sort', 'rank')
-    setProjectPref(scopeId, 'show-completed', 'false')
     setProjectJson(scopeId, 'active-tags', [])
   }, [scopeId])
 
@@ -417,8 +417,8 @@ export function TaskBoard({
           clearAllFilters()
           if (isMobile) closeFilters()
           else openFilters()
-          lines.push('Cleared filters (rank sort, no search/tags, completed hidden)')
-          return lines
+          lines.push('Cleared filters (search, tags, repo filter; Sort and Done unchanged)')
+          // Allow same voice turn to also set sort/completed/search after clear
         }
         if (patch.search !== undefined) {
           const q = (patch.search ?? '').trim()
@@ -1332,7 +1332,7 @@ export function TaskBoard({
                       aria-keyshortcuts="Control+Backspace Meta+Backspace"
                       onClick={() => clearAllFilters()}
                     >
-                      Clear all
+                      Clear filters
                     </button>
                   )}
                   <button
@@ -1360,8 +1360,8 @@ export function TaskBoard({
                 </p>
               ) : (
                 <p className="text-xs text-[var(--color-muted)]">
-                  Completed tasks: sticky <strong>Done</strong> toggle · Sort: sticky{' '}
-                  <strong>Sort</strong> (also used by voice / AI).
+                  Tag and repo filters only here. Sticky <strong>Sort</strong> and <strong>Done</strong>{' '}
+                  stay as set (Clear filters does not reset them).
                 </p>
               )}
 
