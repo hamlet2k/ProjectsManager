@@ -41,7 +41,7 @@ grok mcp add projects-manager `
 
 4. Restart Grok CLI / start a new session. Run `grok mcp list` to confirm.
 
-`npx -y projects-manager-mcp@latest` always pulls the **latest** version when the server starts (or after cache expires). To pin: `projects-manager-mcp@1.0.0`.
+`npx -y projects-manager-mcp@latest` always pulls the **latest** version when the server starts (or after cache expires). To pin: `projects-manager-mcp@1.1.0`.
 
 ## Environment variables
 
@@ -55,7 +55,8 @@ Optional local file for development: `.env` next to this package (not used by ty
 
 ## Tools
 
-- `list_projects`, `list_tasks`, `list_tags`
+- `list_projects` — boards with `description` and `assistant_prompt` (project AI instructions); call first and follow those when working a board
+- `list_tasks`, `list_tags`
 - `create_task`, `update_task`, `complete_task`, `uncomplete_task`, `delete_task`
 - **`complete_task` / completing via `update_task`:** may also **close the linked GitHub issue** when the project has close-on-complete enabled, the CLI token owner has GitHub integration + PAT, and the task is linked — same gates as the web UI. Response may include a `github` field (`closed`, `skipped`, or `error`). Uncomplete does **not** reopen issues.
 
