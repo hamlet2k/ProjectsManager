@@ -218,20 +218,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const unlinkOAuthIdentity = useCallback(async (identity: UserIdentity) => {
-    const { error } = await getSupabase().auth.unlinkIdentity(identity)
+    const supabase = getSupabase()
+    // API expects identity_id (not only provider); pass through as returned by user.identities
+    const { data: unlinkData, error } = await supabase.auth.unlinkIdentity(identity)
     if (error) throw error
-    // Refresh session so user.identities updates in context
-    const { data, error: uErr } = await getSupabase().auth.getUser()
-    if (uErr) throw uErr
-    if (data.user) {
-      setSession((prev) =>
-        prev
-          ? {
-              ...prev,
-              user: data.user!,
-            }
-          : prev,
-      )
+    if (unlinkData === false || unlinkData == null) {
+      // Some clients return null/false without error — treat as failure
+      // (still try refresh below)
+    }
+    // JWT may still list old identities until refresh — force a new session
+    const { data: refreshed, error: rErr } = await supabase.auth.refreshSession()
+    if (rErr) {
+      // Fallback: getUser after refresh failure
+      const { data: u, error: uErr } = await supabase.auth.getUser()
+      if (uErr) throw uErr
+      if (u.user) {
+        setSession((prev) => (prev ? { ...prev, user: u.user! } : prev))
+      }
+      return
+    }
+    if (refreshed.session) {
+      setSession(refreshed.session)
     }
   }, [])
 

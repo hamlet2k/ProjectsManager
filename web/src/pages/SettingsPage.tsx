@@ -23,6 +23,7 @@ import {
   type ShortcutId,
 } from '@/lib/keyboardPrefs'
 import { CliAccessSection } from '@/features/cli/CliAccessSection'
+import { getSupabase } from '@/lib/supabase/client'
 
 function KeyboardShortcutsSection() {
   const toast = useToast()
@@ -263,7 +264,19 @@ export function SettingsPage() {
                         setOauthBusy(p.id)
                         try {
                           await unlinkOAuthIdentity(identity)
-                          toast.push(`${p.label} unlinked`, 'success')
+                          // Confirm after session refresh (JWT can lag)
+                          const { data: u } = await getSupabase().auth.getUser()
+                          const still = (u.user?.identities ?? []).some(
+                            (i) => i.provider === p.id,
+                          )
+                          if (still) {
+                            toast.push(
+                              `${p.label} is still linked on the server. Try sign out → sign in, then unlink again. Supabase blocks removing the last identity.`,
+                              'error',
+                            )
+                          } else {
+                            toast.push(`${p.label} unlinked — sign out to verify you cannot use it`, 'success')
+                          }
                         } catch (e) {
                           const raw = e instanceof Error ? e.message : String(e)
                           const msg = /last|single|identity|cannot/i.test(raw)

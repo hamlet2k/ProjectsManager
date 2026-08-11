@@ -1250,9 +1250,22 @@ export function TaskBoard({
           ) : (
             <span />
           )}
-          <div className="flex gap-2 sm:gap-3">
-            {/* Sort — always visible (voice set_view uses same sortBy state) */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* Sort + completed — always visible (voice set_view uses same state) */}
             <SortMenu value={sortBy} onChange={setSortBy} />
+            <button
+              type="button"
+              className={cn(
+                'sticky-pill sticky-pill-bubble sticky-pill-toggle',
+                showCompleted && 'is-on',
+              )}
+              title={showCompleted ? 'Hide completed tasks' : 'Show completed tasks'}
+              aria-pressed={showCompleted}
+              onClick={() => setShowCompleted((v) => !v)}
+            >
+              <span className="sticky-pill-switch" aria-hidden />
+              <span className="sticky-sort-label">Done</span>
+            </button>
             {showingPills ? (
               <>
                 <button
@@ -1277,10 +1290,7 @@ export function TaskBoard({
                   >
                     <Icons.Filter size="1.2em" />
                     <span>Filters</span>
-                    {activeTagIds.length > 0 ||
-                    search ||
-                    showCompleted ||
-                    githubRepoFilter ? (
+                    {activeTagIds.length > 0 || search || githubRepoFilter ? (
                       <span className="sticky-pill-dot" />
                     ) : null}
                   </button>
@@ -1296,10 +1306,7 @@ export function TaskBoard({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold">Filters</span>
                 <div className="flex items-center gap-1">
-                  {(search ||
-                    activeTagIds.length > 0 ||
-                    showCompleted ||
-                    githubRepoFilter) && (
+                  {(search || activeTagIds.length > 0 || githubRepoFilter) && (
                     <button
                       type="button"
                       className="rounded-md px-2 py-1 text-xs font-medium text-[var(--color-muted)] underline decoration-wavy hover:text-[var(--color-text)]"
@@ -1321,33 +1328,24 @@ export function TaskBoard({
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-8 accent-[var(--color-primary)]"
-                    checked={showCompleted}
-                    onChange={(e) => {
-                      setShowCompleted(e.target.checked)
-                      collapseFiltersIfMobile()
-                    }}
-                  />
-                  Show completed
-                </label>
-                {search.trim() ? (
-                  <p className="text-xs text-[var(--color-muted)]">
-                    Active search: “{search.trim()}” — use sticky{' '}
-                    <strong>Search</strong> to edit (voice/AI can still set search).
-                    <button
-                      type="button"
-                      className="ml-1 underline decoration-wavy"
-                      onClick={() => setSearch('')}
-                    >
-                      Clear search
-                    </button>
-                  </p>
-                ) : null}
-              </div>
+              {search.trim() ? (
+                <p className="text-xs text-[var(--color-muted)]">
+                  Active search: “{search.trim()}” — use sticky <strong>Search</strong> to edit
+                  (voice/AI can still set search).
+                  <button
+                    type="button"
+                    className="ml-1 underline decoration-wavy"
+                    onClick={() => setSearch('')}
+                  >
+                    Clear search
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--color-muted)]">
+                  Completed tasks: sticky <strong>Done</strong> toggle · Sort: sticky{' '}
+                  <strong>Sort</strong> (also used by voice / AI).
+                </p>
+              )}
 
               <div className="space-y-3">
                 <div>
