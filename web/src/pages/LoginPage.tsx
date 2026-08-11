@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
@@ -9,6 +9,9 @@ import { AuthDivider, OAuthButtons, friendlyAuthError } from '@/features/auth/OA
 
 export function LoginPage() {
   const { signInWithPassword, signInWithMagicLink, user, loading, configured } = useAuth()
+  const location = useLocation()
+  const from =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'password' | 'magic'>('password')
@@ -17,7 +20,7 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false)
 
   if (loading) return <PageLoader />
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={from} replace />
 
   if (!configured || !isSupabaseConfigured) {
     return (

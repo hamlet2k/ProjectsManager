@@ -398,7 +398,24 @@ Deno.serve(async (req) => {
     const auth = req.headers.get('Authorization')
     const validated = await validateCliToken(auth)
     if (!validated.ok) {
-      return json({ error: validated.error }, validated.status)
+      // Point connectors at OAuth (Grok Custom Connector form)
+      const supabaseUrl = (Deno.env.get('SUPABASE_URL') || '').replace(/\/$/, '')
+      const site =
+        Deno.env.get('PUBLIC_SITE_URL') ||
+        Deno.env.get('SITE_URL') ||
+        'https://projects-manager-navy.vercel.app'
+      const asMeta = `${supabaseUrl}/functions/v1/mcp-oauth`
+      return new Response(JSON.stringify({ error: validated.error }), {
+        status: validated.status,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': `Bearer realm="projects-manager-mcp", resource_metadata="${asMeta}"`,
+          'X-OAuth-Authorization-Endpoint': `${site.replace(/\/$/, '')}/oauth/mcp/authorize`,
+          'X-OAuth-Token-Endpoint': `${asMeta}/token`,
+          'X-OAuth-Client-Id': 'projects-manager-mcp',
+        },
+      })
     }
 
     const sessionId =

@@ -94,29 +94,73 @@ Note: ChatGPT custom connectors may require OAuth 2.1 (not yet; use Grok CLI std
       </div>
 
       {remoteMcpUrl ? (
-        <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-3">
-          <p className="text-sm font-semibold">Remote MCP (Grok web &amp; HTTPS clients)</p>
+        <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-3">
+          <p className="text-sm font-semibold">Remote MCP — Grok Custom Connector</p>
           <p className="text-xs text-[var(--color-muted)]">
-            Paste this URL into Grok Connectors (Custom) or any remote MCP client that supports
-            Streamable HTTP. Authenticate with your <code className="text-[11px]">pmcli_…</code>{' '}
-            token (create one below).
+            In Grok: Connectors → New → Custom → paste the <strong>MCP server URL</strong>, then fill
+            the OAuth fields below (PKCE, no client secret). You will sign in and click Allow.
           </p>
-          <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5 text-xs">
-            {remoteMcpUrl}
-          </code>
+          <div className="space-y-1.5 text-xs">
+            <p className="font-medium text-[var(--color-muted)]">MCP server URL</p>
+            <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5">
+              {remoteMcpUrl}
+            </code>
+            <p className="font-medium text-[var(--color-muted)]">Client ID</p>
+            <code className="block rounded-md bg-[var(--color-surface)] px-2 py-1.5">
+              projects-manager-mcp
+            </code>
+            <p className="font-medium text-[var(--color-muted)]">Client Secret</p>
+            <code className="block rounded-md bg-[var(--color-surface)] px-2 py-1.5 text-[var(--color-muted)]">
+              (leave empty — PKCE only)
+            </code>
+            <p className="font-medium text-[var(--color-muted)]">Authorization Endpoint</p>
+            <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5">
+              {typeof window !== 'undefined'
+                ? `${window.location.origin}/oauth/mcp/authorize`
+                : 'https://projects-manager-navy.vercel.app/oauth/mcp/authorize'}
+            </code>
+            <p className="font-medium text-[var(--color-muted)]">Token Endpoint</p>
+            <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5">
+              {projectUrl
+                ? `${projectUrl}/functions/v1/mcp-oauth/token`
+                : 'https://YOUR_PROJECT.supabase.co/functions/v1/mcp-oauth/token'}
+            </code>
+            <p className="font-medium text-[var(--color-muted)]">Scopes</p>
+            <code className="block rounded-md bg-[var(--color-surface)] px-2 py-1.5">mcp</code>
+            <p className="font-medium text-[var(--color-muted)]">Token Auth Method</p>
+            <code className="block rounded-md bg-[var(--color-surface)] px-2 py-1.5">
+              none (PKCE only)
+            </code>
+          </div>
           <Button
             size="sm"
             variant="secondary"
             onClick={async () => {
+              const origin =
+                typeof window !== 'undefined'
+                  ? window.location.origin
+                  : 'https://projects-manager-navy.vercel.app'
+              const tokenEp = projectUrl
+                ? `${projectUrl}/functions/v1/mcp-oauth/token`
+                : ''
+              const text = [
+                `MCP server URL: ${remoteMcpUrl}`,
+                `Client ID: projects-manager-mcp`,
+                `Client Secret: (empty)`,
+                `Authorization Endpoint: ${origin}/oauth/mcp/authorize`,
+                `Token Endpoint: ${tokenEp}`,
+                `Scopes: mcp`,
+                `Token Auth Method: none (PKCE only)`,
+              ].join('\n')
               try {
-                await navigator.clipboard.writeText(remoteMcpUrl)
-                toast.push('Remote MCP URL copied', 'success')
+                await navigator.clipboard.writeText(text)
+                toast.push('Grok connector fields copied', 'success')
               } catch {
                 toast.push('Copy failed', 'error')
               }
             }}
           >
-            Copy remote MCP URL
+            Copy Grok connector fields
           </Button>
         </div>
       ) : null}

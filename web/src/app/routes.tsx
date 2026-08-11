@@ -13,6 +13,7 @@ import { ScopePage } from '@/pages/ScopePage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage'
+import { McpOAuthAuthorizePage } from '@/pages/McpOAuthAuthorizePage'
 
 function LegacyScopeRedirect() {
   const { scopeId } = useParams<{ scopeId: string }>()
@@ -52,6 +53,9 @@ export function AppRoutes() {
       </Route>
 
       <Route path="/invite/:token" element={<InviteAcceptPage />} />
+
+      {/* OAuth authorize for remote MCP (Grok connector) — login handled inside page */}
+      <Route path="/oauth/mcp/authorize" element={<McpOAuthAuthorizePage />} />
 
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
