@@ -13,6 +13,7 @@ import {
   listCliAccessTokens,
   revokeCliAccessToken,
 } from './api'
+import { HelpSlugs, HelpTitle } from '@/features/help'
 
 export function CliAccessSection() {
   const { user } = useAuth()
@@ -66,7 +67,9 @@ grok mcp add projects-manager \\
   return (
     <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div>
-        <h2 className="font-semibold">Grok CLI access</h2>
+        <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Grok CLI and MCP help">
+          Grok CLI access
+        </HelpTitle>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           Create a personal token so Grok CLI (via MCP) can list and manage tasks only on the
           projects you allow. Tokens are shown once — store them like passwords. End users install

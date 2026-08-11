@@ -22,6 +22,7 @@ import {
 } from './speech'
 import { eventMatchesBinding, formatBinding } from '@/lib/keyboardPrefs'
 import { isTypingTarget } from '@/lib/keyboardShortcuts'
+import { HelpHint, HelpSlugs } from '@/features/help'
 
 export type VoiceHoldFabProps = {
   scopeId: string
@@ -797,7 +798,7 @@ export function VoiceHoldFab({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold">
+              <span className="inline-flex items-center gap-1 text-sm font-semibold">
                 {phase === 'holding' && 'Listening…'}
                 {phase === 'locked' && 'Locked · keep talking'}
                 {phase === 'finalizing' && 'Getting speech…'}
@@ -805,6 +806,16 @@ export function VoiceHoldFab({
                 {phase === 'editing' && 'Edit command'}
                 {phase === 'busy' && 'Working…'}
                 {phase === 'followup' && 'Follow-up'}
+                {phase === 'holding' ||
+                phase === 'countdown' ||
+                phase === 'editing' ||
+                phase === 'followup' ? (
+                  <HelpHint
+                    slug={HelpSlugs.voice}
+                    label="Voice assistant help and troubleshooting"
+                    className="!h-6 !w-6"
+                  />
+                ) : null}
               </span>
               {phase !== 'busy' ? (
                 <button

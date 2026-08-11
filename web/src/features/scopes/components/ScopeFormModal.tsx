@@ -5,6 +5,7 @@ import { Field, Input, Textarea } from '@/components/ui/Input'
 import type { Scope } from '@/lib/supabase/types'
 import { generateProjectPrompt } from '@/features/assistant/api'
 import { Icons } from '@/components/icons'
+import { HelpHint, HelpSlugs } from '@/features/help'
 
 export type ScopeFormValues = {
   name: string
@@ -174,8 +175,15 @@ export function ScopeFormModal({
               checked={advancedExportEnabled}
               onChange={(e) => setAdvancedExportEnabled(e.target.checked)}
             />
-            <span>
-              Advanced export on copy
+            <span className="min-w-0">
+              <span className="inline-flex items-center gap-1">
+                Advanced export on copy
+                <HelpHint
+                  slug={HelpSlugs.importExport}
+                  label="Import and export help"
+                  className="!h-5 !w-5"
+                />
+              </span>
               <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
                 When on, copy opens Import / Export. When off, copy pastes a simple checklist.
               </span>
@@ -184,9 +192,16 @@ export function ScopeFormModal({
         </div>
 
         <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-            AI / voice prompt
-          </p>
+          <div className="flex items-center gap-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              AI / voice prompt
+            </p>
+            <HelpHint
+              slug={HelpSlugs.voice}
+              label="Voice assistant and AI prompt help"
+              className="!h-5 !w-5"
+            />
+          </div>
           <p className="text-xs text-[var(--color-muted)]">
             Generate a tuned assistant prompt from the project description, refine it, then Save.
             Voice and “enhance task” use this prompt.

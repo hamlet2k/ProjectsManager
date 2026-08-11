@@ -23,6 +23,7 @@ import {
   type ParsedImportTask,
 } from '@/features/tasks/transfer/formats'
 import { generateProjectPrompt } from '@/features/assistant/api'
+import { HelpHint, HelpSlugs } from '@/features/help'
 
 type Mode = 'export' | 'import'
 
@@ -287,6 +288,13 @@ export function TaskTransferModal({
       }
     >
       <div className="space-y-4">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs text-[var(--color-muted)]">
+            Copy tasks out or paste them back. Formats and checklist options depend on project
+            settings.
+          </p>
+          <HelpHint slug={HelpSlugs.importExport} label="Import and export help" size="md" />
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"

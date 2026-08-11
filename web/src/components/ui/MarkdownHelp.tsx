@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Icons } from '@/components/icons'
 import { cn } from '@/lib/utils'
+import { HelpSlugs, useHelpOptional } from '@/features/help'
 
 const SNIPPETS: { syntax: string; meaning: string }[] = [
   { syntax: '**bold**', meaning: 'Bold' },
@@ -18,6 +19,7 @@ const SNIPPETS: { syntax: string; meaning: string }[] = [
 /** Compact Markdown cheatsheet toggle for description fields. */
 export function MarkdownHelp({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
+  const { openHelp } = useHelpOptional()
 
   return (
     <div className={cn('relative inline-flex', className)}>
@@ -63,6 +65,16 @@ export function MarkdownHelp({ className }: { className?: string }) {
           <p className="mt-2 text-[10px] text-[var(--color-muted)]">
             Descriptions render as Markdown when you expand a task.
           </p>
+          <button
+            type="button"
+            className="mt-2 text-[11px] font-medium text-[var(--color-primary)] underline decoration-wavy"
+            onClick={() => {
+              setOpen(false)
+              openHelp(HelpSlugs.markdown)
+            }}
+          >
+            Open full Markdown guide
+          </button>
         </div>
       ) : null}
     </div>

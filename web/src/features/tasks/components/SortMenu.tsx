@@ -120,24 +120,27 @@ export function SortMenu({
         ref={btnRef}
         type="button"
         className={cn(
-          'sticky-pill sticky-pill-bubble sticky-pill-sort',
+          'sticky-pill sticky-pill-bubble sticky-pill-sort sticky-pill-icon-mobile',
           open && 'is-open',
           className,
         )}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Sort by ${current.label}`}
-        title="Sort order"
+        title={`Sort by ${current.label}`}
         onClick={() => setOpen((v) => !v)}
       >
         <Icons.List size="1.1em" className="shrink-0 opacity-80" />
-        <span className="sticky-sort-label">
+        <span className="sticky-sort-label sticky-pill-text">
           <span className="max-sm:sr-only">Sort · </span>
           {current.label}
         </span>
         <Icons.ChevronDown
           size="0.85em"
-          className={cn('shrink-0 opacity-70 transition-transform', open && 'rotate-180')}
+          className={cn(
+            'shrink-0 opacity-70 transition-transform max-sm:hidden',
+            open && 'rotate-180',
+          )}
         />
         {value !== 'rank' ? <span className="sticky-pill-dot" /> : null}
       </button>

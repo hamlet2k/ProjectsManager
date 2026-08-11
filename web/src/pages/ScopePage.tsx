@@ -59,6 +59,7 @@ import { VoiceHoldFab } from '@/features/assistant/VoiceHoldFab'
 import type { TaskBoardViewApi } from '@/features/tasks/components/TaskBoard'
 import { isGithubSystemTag } from '@/features/github/systemTag'
 import { enhanceTaskDraft } from '@/features/assistant/api'
+import { HelpHint, HelpSlugs } from '@/features/help'
 
 export function ScopePage() {
   const { scopeId } = useParams<{ scopeId: string }>()
@@ -614,6 +615,12 @@ export function ScopePage() {
               <Icons.Github size={14} /> GitHub
             </Button>
           ) : null}
+          {ghCaps.canSee ? (
+            <HelpHint
+              slug={HelpSlugs.githubProject}
+              label="How to link this project to GitHub"
+            />
+          ) : null}
         </div>
       </div>
 
@@ -744,10 +751,15 @@ export function ScopePage() {
         onDeleteTasks={
           access.canEdit
             ? async (tasksToDelete, opts) => {
-                await deleteTasksWithGithubOption(
-                  tasksToDelete,
-                  opts?.closeGithubIssues === true,
-                )
+                try {
+                  await deleteTasksWithGithubOption(
+                    tasksToDelete,
+                    opts?.closeGithubIssues === true,
+                  )
+                } catch (e) {
+                  toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
+                  throw e
+                }
               }
             : undefined
         }
@@ -1361,6 +1373,17 @@ export function ScopePage() {
         }
       >
         <div className="space-y-4">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs text-[var(--color-muted)]">
+              Bind one default repository for this project. Create/sync needs your personal GitHub
+              token in Settings.
+            </p>
+            <HelpHint
+              slug={HelpSlugs.githubProject}
+              label="GitHub project linking help"
+              size="md"
+            />
+          </div>
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-medium">

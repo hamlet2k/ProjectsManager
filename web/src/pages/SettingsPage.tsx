@@ -23,6 +23,7 @@ import {
   type ShortcutId,
 } from '@/lib/keyboardPrefs'
 import { CliAccessSection } from '@/features/cli/CliAccessSection'
+import { HelpSlugs, HelpTitle } from '@/features/help'
 import { getSupabase } from '@/lib/supabase/client'
 
 function KeyboardShortcutsSection() {
@@ -59,7 +60,9 @@ function KeyboardShortcutsSection() {
     <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="font-semibold">Keyboard shortcuts</h2>
+          <HelpTitle slug={HelpSlugs.keyboard} hintLabel="Keyboard shortcuts help">
+            Keyboard shortcuts
+          </HelpTitle>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
             Click a row, then press the new key combo. Esc cancels capture. Stored on this device.
           </p>
@@ -206,7 +209,14 @@ export function SettingsPage() {
         </Button>
 
         <div className="border-t border-[var(--color-border)] pt-4">
-          <h3 className="text-sm font-semibold">Linked sign-in</h3>
+          <HelpTitle
+            as="h3"
+            className="text-sm"
+            slug={HelpSlugs.account}
+            hintLabel="Account sign-in help"
+          >
+            Linked sign-in
+          </HelpTitle>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
             Google and GitHub for <strong>account login</strong> (not the GitHub tasks integration).
             Supabase will not let you remove your <em>last</em> sign-in method — that would lock you
@@ -422,7 +432,9 @@ export function SettingsPage() {
       </section>
 
       <section className="space-y-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-        <h2 className="font-semibold">GitHub integration</h2>
+        <HelpTitle slug={HelpSlugs.githubToken} hintLabel="GitHub token and permissions help">
+          GitHub integration
+        </HelpTitle>
         <p className="text-xs text-[var(--color-muted)]">
           Optional: link projects to a repository and create/sync issues. Separate from{' '}
           <strong>Sign in with GitHub</strong> (account login).
@@ -469,7 +481,7 @@ export function SettingsPage() {
         </label>
         <p className="text-xs text-[var(--color-muted)]">
           User-level switch: actions need this ON + a PAT. Project-level link is separate (Project →
-          GitHub). See docs/github-integration-matrix.md.
+          GitHub). Use the help icon for step-by-step token permissions.
         </p>
         <p className="text-xs text-[var(--color-muted)]">
           Status:{' '}

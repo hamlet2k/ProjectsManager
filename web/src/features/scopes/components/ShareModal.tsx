@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast'
 import type { ShareRole } from '@/lib/supabase/types'
 import { getSupabase } from '@/lib/supabase/client'
 import { useQuery } from '@tanstack/react-query'
+import { HelpHint, HelpSlugs } from '@/features/help'
 
 type Props = {
   open: boolean
@@ -66,6 +67,12 @@ export function ShareModal({ open, onClose, scopeId }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="Share project" size="lg">
       <div className="space-y-6">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs text-[var(--color-muted)]">
+            Invite people as editor or viewer. Each person uses their own GitHub and CLI tokens.
+          </p>
+          <HelpHint slug={HelpSlugs.sharing} label="Sharing projects help" size="md" />
+        </div>
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">Invite by username or email</h3>
           <div className="flex flex-col gap-2 sm:flex-row">

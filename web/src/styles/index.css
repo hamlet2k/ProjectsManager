@@ -1001,6 +1001,62 @@ a:hover .project-title {
   text-decoration-style: wavy;
 }
 
+.help-prose h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  line-height: 1.25;
+}
+
+.help-prose h2 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.help-prose h3 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 1rem 0 0.4rem;
+}
+
+.help-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 0.75rem 0;
+}
+
+.help-prose th,
+.help-prose td {
+  border: 1px solid var(--color-border);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.help-prose th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+
+.help-inline-link {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  cursor: pointer;
+}
+
+.help-inline-link:hover {
+  opacity: 0.9;
+}
+
 /* Sticky chrome floating pills — bubble FABs (distinct from row icon-btns) */
 .sticky-pill-bar {
   margin-top: 0;
@@ -1080,6 +1136,36 @@ a:hover .project-title {
 .sticky-sort-label {
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* Mobile sticky bubbles: icon-only (labels stay available to screen readers) */
+@media (max-width: 639px) {
+  .sticky-pill-icon-mobile {
+    gap: 0;
+    padding: 0.65rem;
+    min-width: 2.75rem;
+    justify-content: center;
+  }
+
+  .sticky-pill-icon-mobile .sticky-pill-text,
+  .sticky-pill-icon-mobile .sticky-sort-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Done toggle: switch only on small screens */
+  .sticky-pill-toggle.sticky-pill-icon-mobile {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+    gap: 0;
+  }
 }
 
 /* Portaled to body — fixed, never in flex flow (was stretching Search/Filters) */

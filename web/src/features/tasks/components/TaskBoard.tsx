@@ -1129,43 +1129,57 @@ export function TaskBoard({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2">
-              <Icons.Search size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
-              <input
-                ref={quickSearchInputRef}
-                className="field-input min-w-0 flex-1 !border-0 !shadow-none focus:!ring-0"
-                placeholder="Search tasks…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault()
-                    if (search) setSearch('')
-                    else setQuickSearchOpen(false)
-                  }
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    setQuickSearchOpen(false)
-                  }
-                }}
-                autoFocus
-              />
-              {search ? (
-                <button
-                  type="button"
-                  className="icon-btn !h-8 !w-8"
-                  title="Clear search"
-                  onClick={() => setSearch('')}
-                >
-                  <Icons.X size="0.85em" />
-                </button>
-              ) : null}
+              {/* One field: search + in-field clear; separate control closes the overlay */}
+              <div className="relative min-w-0 flex-1">
+                <Icons.Search
+                  size="1.05em"
+                  className="pointer-events-none absolute left-2.5 top-1/2 z-[1] -translate-y-1/2 text-[var(--color-muted)]"
+                />
+                <input
+                  ref={quickSearchInputRef}
+                  className={cn(
+                    'field-input w-full !py-2 !pl-9',
+                    search ? '!pr-9' : '!pr-3',
+                  )}
+                  placeholder="Search tasks…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      if (search) setSearch('')
+                      else setQuickSearchOpen(false)
+                    }
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      setQuickSearchOpen(false)
+                    }
+                  }}
+                  autoFocus
+                />
+                {search ? (
+                  <button
+                    type="button"
+                    className="icon-btn absolute right-1 top-1/2 z-[1] !h-8 !w-8 -translate-y-1/2"
+                    title="Clear search text"
+                    aria-label="Clear search text"
+                    onClick={() => {
+                      setSearch('')
+                      queueMicrotask(() => quickSearchInputRef.current?.focus())
+                    }}
+                  >
+                    <Icons.X size="0.85em" />
+                  </button>
+                ) : null}
+              </div>
               <button
                 type="button"
-                className="icon-btn !h-8 !w-8"
-                title="Close"
+                className="icon-btn !h-9 !w-9 shrink-0"
+                title="Close search"
+                aria-label="Close search"
                 onClick={() => setQuickSearchOpen(false)}
               >
-                <Icons.X size="0.85em" />
+                <Icons.X size="0.95em" />
               </button>
             </div>
             <p className="mt-2 text-xs text-[var(--color-muted)]">
@@ -1175,10 +1189,10 @@ export function TaskBoard({
                 <>
                   {' '}
                   · <kbd className="kbd">{TASK_SHORTCUTS.quickSearch.combo()}</kbd> open · Esc
-                  clear/close · Enter apply
+                  clears text then closes · Enter apply
                 </>
               ) : (
-                <> · Tap outside or ✕ to close</>
+                <> · In-field ✕ clears text · outer ✕ or tap outside closes</>
               )}
             </p>
           </div>
@@ -1232,8 +1246,9 @@ export function TaskBoard({
               {canEdit && !addOpen ? (
                 <button
                   type="button"
-                  className="sticky-pill sticky-pill-bubble"
+                  className="sticky-pill sticky-pill-bubble sticky-pill-icon-mobile"
                   title={`${TASK_SHORTCUTS.focusAdd.description} (${TASK_SHORTCUTS.focusAdd.combo()})`}
+                  aria-label="Add task"
                   aria-keyshortcuts="Control+ArrowUp Meta+ArrowUp"
                   onClick={() => {
                     openAdd()
@@ -1241,7 +1256,7 @@ export function TaskBoard({
                   }}
                 >
                   <Icons.Plus size="1.25em" />
-                  <span>Add</span>
+                  <span className="sticky-pill-text">Add</span>
                 </button>
               ) : (
                 <span />
@@ -1256,40 +1271,43 @@ export function TaskBoard({
             <button
               type="button"
               className={cn(
-                'sticky-pill sticky-pill-bubble sticky-pill-toggle',
+                'sticky-pill sticky-pill-bubble sticky-pill-toggle sticky-pill-icon-mobile',
                 showCompleted && 'is-on',
               )}
               title={showCompleted ? 'Hide completed tasks' : 'Show completed tasks'}
+              aria-label={showCompleted ? 'Hide completed tasks' : 'Show completed tasks'}
               aria-pressed={showCompleted}
               onClick={() => setShowCompleted((v) => !v)}
             >
               <span className="sticky-pill-switch" aria-hidden />
-              <span className="sticky-sort-label">Done</span>
+              <span className="sticky-sort-label sticky-pill-text">Done</span>
             </button>
             {showingPills ? (
               <>
                 <button
                   type="button"
-                  className="sticky-pill sticky-pill-bubble"
+                  className="sticky-pill sticky-pill-bubble sticky-pill-icon-mobile"
                   title={`Quick search (${TASK_SHORTCUTS.quickSearch.combo()})`}
+                  aria-label="Quick search"
                   onClick={() => {
                     setQuickSearchOpen(true)
                     queueMicrotask(() => quickSearchInputRef.current?.focus())
                   }}
                 >
                   <Icons.Search size="1.15em" />
-                  <span className="max-sm:sr-only">Search</span>
+                  <span className="sticky-pill-text">Search</span>
                   {search.trim() ? <span className="sticky-pill-dot" /> : null}
                 </button>
                 {!filtersOpen ? (
                   <button
                     type="button"
-                    className="sticky-pill sticky-pill-bubble"
+                    className="sticky-pill sticky-pill-bubble sticky-pill-icon-mobile"
                     title="Filters"
+                    aria-label="Filters"
                     onClick={() => openFilters()}
                   >
                     <Icons.Filter size="1.2em" />
-                    <span>Filters</span>
+                    <span className="sticky-pill-text">Filters</span>
                     {activeTagIds.length > 0 || search || githubRepoFilter ? (
                       <span className="sticky-pill-dot" />
                     ) : null}

@@ -115,15 +115,40 @@ export async function setTasksCompleted(ids: string[], completed: boolean) {
 }
 
 export async function deleteTask(id: string) {
-  const { error } = await getSupabase().from('tasks').delete().eq('id', id)
+  // RLS can "succeed" with 0 rows — select so we detect permission denials.
+  const { data, error } = await getSupabase()
+    .from('tasks')
+    .delete()
+    .eq('id', id)
+    .select('id')
   if (error) throw error
+  if (!data?.length) {
+    throw new Error(
+      "You don't have permission to delete this task (or it was already removed).",
+    )
+  }
 }
 
 /** Delete many tasks in one request (e.g. entire tag/due group). */
 export async function deleteTasks(ids: string[]) {
   if (!ids.length) return
-  const { error } = await getSupabase().from('tasks').delete().in('id', ids)
+  const { data, error } = await getSupabase()
+    .from('tasks')
+    .delete()
+    .in('id', ids)
+    .select('id')
   if (error) throw error
+  const removed = data?.length ?? 0
+  if (removed === 0) {
+    throw new Error(
+      "You don't have permission to delete these tasks (or they were already removed).",
+    )
+  }
+  if (removed < ids.length) {
+    throw new Error(
+      `Only ${removed} of ${ids.length} tasks could be deleted. You may lack permission on some items.`,
+    )
+  }
 }
 
 export async function createTag(scopeId: string, name: string) {

@@ -12,6 +12,7 @@ import {
 import { useToast } from '@/components/ui/Toast'
 import { Icons } from '@/components/icons'
 import { FeedbackModal } from '@/features/feedback/FeedbackModal'
+import { HelpCenter, HelpProvider, useHelp } from '@/features/help'
 import {
   fetchScopeGitHubConfigs,
   fetchTaskGitHubConfigsForTasks,
@@ -23,6 +24,14 @@ import { getSupabase } from '@/lib/supabase/client'
 const KOFI_URL = 'https://ko-fi.com/hamlet2k'
 
 export function AppLayout() {
+  return (
+    <HelpProvider>
+      <AppLayoutInner />
+    </HelpProvider>
+  )
+}
+
+function AppLayoutInner() {
   const { signOut, profile } = useAuth()
   const { theme, setTheme, resolved } = useTheme()
   const { data: notifications = [] } = useNotifications()
@@ -31,6 +40,7 @@ export function AppLayout() {
   const toast = useToast()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { openHelp } = useHelp()
   const [menuOpen, setMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
@@ -174,6 +184,16 @@ export function AppLayout() {
               <Icons.Refresh className={refreshing ? 'animate-spin' : undefined} />
             </button>
           ) : null}
+
+          <button
+            type="button"
+            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            title="Help"
+            aria-label="Open help center"
+            onClick={() => openHelp('')}
+          >
+            <Icons.Help />
+          </button>
 
           <button
             type="button"
@@ -402,6 +422,18 @@ export function AppLayout() {
                     <Icons.Settings size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
                     Settings
                   </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      openHelp('')
+                      closeMenu()
+                    }}
+                  >
+                    <Icons.Help size="1.1em" className="shrink-0 text-[var(--color-muted)]" />
+                    Help
+                  </button>
 
                   <div
                     className="my-1 border-t border-[var(--color-border)]"
@@ -497,6 +529,7 @@ export function AppLayout() {
       </main>
 
       <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <HelpCenter />
     </div>
   )
 }
