@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { Button } from '@/components/ui/Button'
 import { Field, Input } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
+import { useScopes } from '@/features/scopes/hooks'
 import {
   createCliAccessToken,
   getRemoteMcpUrl,
@@ -15,6 +16,24 @@ import {
 } from './api'
 import { HelpSlugs, HelpTitle, useHelp } from '@/features/help'
 import { Icons } from '@/components/icons'
+
+/** One-line command — safest to paste in any shell (PowerShell, bash, cmd). */
+function buildGrokCliSetupCommand(opts: {
+  projectUrl: string
+  token: string
+  anonKey: string
+}): string {
+  const url = opts.projectUrl || 'https://YOUR.supabase.co'
+  const tok = opts.token
+  const key = opts.anonKey || 'your-anon-key'
+  return [
+    'grok mcp add projects-manager',
+    `-e "PROJECTS_MANAGER_URL=${url}"`,
+    `-e "PROJECTS_MANAGER_TOKEN=${tok}"`,
+    `-e "PROJECTS_MANAGER_ANON_KEY=${key}"`,
+    '-- npx -y projects-manager-mcp@latest',
+  ].join(' ')
+}
 
 const CHATGPT_DEV_MODE =
   'https://chatgpt.com/plugins#settings/Security?section=developer-mode'
@@ -33,6 +52,7 @@ export function CliAccessSection() {
   const confirm = useConfirm()
   const qc = useQueryClient()
   const { openHelp } = useHelp()
+  const { data: scopes = [] } = useScopes()
 
   const tokensQuery = useQuery({
     queryKey: ['cli-tokens', user?.id],
@@ -44,7 +64,10 @@ export function CliAccessSection() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTokenList, setShowTokenList] = useState(false)
   const [manualBusy, setManualBusy] = useState(false)
-  const [manualName, setManualName] = useState('Manual access key')
+  const [manualName, setManualName] = useState('Grok CLI')
+  const [canWrite, setCanWrite] = useState(true)
+  const [allProjects, setAllProjects] = useState(true)
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
   const [revealedToken, setRevealedToken] = useState<string | null>(null)
 
   const projectUrl = getSupabaseProjectUrl()
@@ -58,6 +81,15 @@ export function CliAccessSection() {
     ? `${projectUrl}/functions/v1/mcp-oauth/token`
     : ''
 
+  const grokCliSetupCommand = useMemo(() => {
+    if (!revealedToken) return ''
+    return buildGrokCliSetupCommand({
+      projectUrl,
+      token: revealedToken,
+      anonKey,
+    })
+  }, [revealedToken, projectUrl, anonKey])
+
   const copy = async (label: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -67,19 +99,32 @@ export function CliAccessSection() {
     }
   }
 
+  const toggleScope = (id: string) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const createManualToken = async () => {
+    if (!allProjects && selectedScopes.size === 0) {
+      toast.push('Select at least one project, or choose all projects', 'error')
+      return
+    }
     setManualBusy(true)
     setRevealedToken(null)
     try {
       const created = await createCliAccessToken({
-        name: manualName.trim() || 'Manual access key',
-        scopeIds: null,
-        canWrite: true,
+        name: manualName.trim() || 'Grok CLI',
+        scopeIds: allProjects ? null : [...selectedScopes],
+        canWrite,
       })
       setRevealedToken(created.token)
       setShowTokenList(true)
       await qc.invalidateQueries({ queryKey: ['cli-tokens', user?.id] })
-      toast.push('Key created — copy it now', 'success')
+      toast.push('Key created — copy the setup command now', 'success')
     } catch (e) {
       toast.push(e instanceof Error ? e.message : 'Create failed', 'error')
     } finally {
@@ -362,7 +407,10 @@ export function CliAccessSection() {
                     <div className="min-w-0">
                       <p className="font-medium">{t.name}</p>
                       <p className="text-xs text-[var(--color-muted)]">
-                        pmcli_{t.token_prefix}_… · {t.can_write ? 'can edit' : 'read-only'}
+                        pmcli_{t.token_prefix}_… · {t.can_write ? 'can edit' : 'read-only'} ·{' '}
+                        {t.scope_ids?.length
+                          ? `${t.scope_ids.length} project(s)`
+                          : 'all accessible projects'}
                         {t.last_used_at
                           ? ` · last used ${new Date(t.last_used_at).toLocaleString()}`
                           : ''}
@@ -410,44 +458,124 @@ export function CliAccessSection() {
           </span>
         </button>
         {showAdvanced ? (
-          <div className="mt-3 space-y-3 text-xs text-[var(--color-muted)]">
-            <p>
-              Only if a tool asks you to paste a secret, or you use <strong>Grok CLI</strong> on a
-              computer. Normal ChatGPT/Grok web setup does <strong>not</strong> need this.
+          <div className="mt-3 space-y-3 text-sm text-[var(--color-muted)]">
+            <p className="text-xs">
+              For <strong>Grok CLI</strong> on your computer (or a tool that needs a pasted secret).
+              Normal ChatGPT / Grok <em>web</em> setup uses OAuth above — no manual key.
             </p>
+
             <Field label="Key name">
               <Input
                 value={manualName}
                 onChange={(e) => setManualName(e.target.value)}
+                placeholder="e.g. Laptop Grok CLI"
                 maxLength={80}
               />
             </Field>
-            <Button
-              size="sm"
-              disabled={manualBusy}
-              onClick={() => void createManualToken()}
-            >
-              {manualBusy ? 'Creating…' : 'Create manual key'}
-            </Button>
-            {revealedToken ? (
-              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                <p className="font-medium text-[var(--color-text)]">Copy now — not shown again</p>
-                <code className="block break-all text-[11px] text-[var(--color-text)]">
-                  {revealedToken}
-                </code>
-                <Button size="sm" onClick={() => void copy('Token', revealedToken)}>
-                  Copy token
-                </Button>
+
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={canWrite}
+                onChange={(e) => setCanWrite(e.target.checked)}
+              />
+              Allow create / update / complete / delete (uncheck for read-only)
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={allProjects}
+                onChange={(e) => {
+                  setAllProjects(e.target.checked)
+                  if (e.target.checked) setSelectedScopes(new Set())
+                }}
+              />
+              All projects I can access
+            </label>
+
+            {!allProjects ? (
+              <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg)]/40 p-2">
+                {scopes.length === 0 ? (
+                  <p className="text-xs text-[var(--color-muted)]">No projects yet.</p>
+                ) : (
+                  scopes.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-2 text-sm text-[var(--color-text)]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedScopes.has(s.id)}
+                        onChange={() => toggleScope(s.id)}
+                      />
+                      <span className="truncate">{s.name}</span>
+                    </label>
+                  ))
+                )}
               </div>
             ) : null}
-            <p className="font-medium text-[var(--color-text)]">Grok CLI example</p>
-            <pre className="overflow-x-auto rounded-md bg-[var(--color-surface-2)] p-2 font-mono text-[10px] text-[var(--color-text)]">
-              {`grok mcp add projects-manager \\
-  -e "PROJECTS_MANAGER_URL=${projectUrl || 'https://YOUR.supabase.co'}" \\
-  -e "PROJECTS_MANAGER_TOKEN=pmcli_…" \\
-  -e "PROJECTS_MANAGER_ANON_KEY=${anonKey || 'your-anon-key'}" \\
-  -- npx -y projects-manager-mcp@latest`}
-            </pre>
+
+            <Button
+              size="sm"
+              disabled={
+                manualBusy ||
+                !manualName.trim() ||
+                (!allProjects && selectedScopes.size === 0)
+              }
+              onClick={() => void createManualToken()}
+            >
+              {manualBusy ? 'Creating…' : 'Create Grok CLI key'}
+            </Button>
+
+            {revealedToken ? (
+              <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="text-sm font-medium text-[var(--color-text)]">
+                  Copy now — token is not shown again
+                </p>
+                <div>
+                  <p className="mb-1 text-[11px] font-medium text-[var(--color-muted)]">Token</p>
+                  <code className="block break-all rounded-md bg-[var(--color-surface)] px-2 py-1.5 font-mono text-[11px] text-[var(--color-text)]">
+                    {revealedToken}
+                  </code>
+                  <Button
+                    className="mt-2"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void copy('Token', revealedToken)}
+                  >
+                    <Icons.Copy size="0.9em" /> Copy token
+                  </Button>
+                </div>
+
+                {grokCliSetupCommand ? (
+                  <div>
+                    <p className="mb-1 text-[11px] font-medium text-[var(--color-muted)]">
+                      Grok CLI setup (includes your new token — one line, paste into terminal)
+                    </p>
+                    <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded-md bg-[var(--color-surface)] p-2 font-mono text-[10px] leading-relaxed text-[var(--color-text)]">
+                      {grokCliSetupCommand}
+                    </pre>
+                    <Button
+                      className="mt-2"
+                      size="sm"
+                      onClick={() => void copy('Grok CLI setup', grokCliSetupCommand)}
+                    >
+                      <Icons.Copy size="0.9em" /> Copy full setup command
+                    </Button>
+                    <p className="mt-2 text-[11px] text-[var(--color-muted)]">
+                      After pasting, restart Grok CLI (or start a new session). Check with{' '}
+                      <code className="text-[10px]">grok mcp list</code>.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-muted)]">
+                Create a key first — the setup command will include the real token and a{' '}
+                <strong>Copy full setup command</strong> button.
+              </p>
+            )}
           </div>
         ) : null}
       </div>
