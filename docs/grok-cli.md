@@ -1,31 +1,39 @@
-# Connect ChatGPT, Grok, or Grok CLI (MCP)
+# Connect ChatGPT, Grok (web), or Grok CLI (MCP)
 
-**End-user friendly guide (recommended):** in the app open **Help → Connect ChatGPT or Grok**, or **Settings → Connect ChatGPT or Grok**.
+**End-user guide:** in the app open **Help → Connect ChatGPT or Grok**, or **Settings → Connect ChatGPT or Grok**.
 
 This file is the maintainer / power-user reference.
 
-Manage boards from:
+## Keep web chat and CLI distinct
 
-1. **ChatGPT** (Developer Mode plugin) — **Bearer `pmcli_…` token**  
-2. **Grok web** — Custom connector + **OAuth PKCE** (or token if offered)  
-3. **Grok CLI** — local **stdio** MCP (`npx projects-manager-mcp`)  
+| Path | Audience | Auth | Notes |
+|------|----------|------|--------|
+| **ChatGPT web** | Day-to-day chat | **OAuth** (preferred); Bearer fallback | Browser plugin — remote HTTPS MCP |
+| **Grok web** | Day-to-day chat | **OAuth PKCE** | Browser connector — same remote MCP |
+| **Grok CLI** | **Local dev & backlog sync only** | Manual `pmcli_…` + `npx projects-manager-mcp` | stdio on your PC — does **not** configure web plugins/connectors |
+
+Most users never need the CLI section.
 
 ### ChatGPT (summary)
 
-1. Settings → **Create token for ChatGPT** → copy `pmcli_…`  
-2. [chatgpt.com](https://chatgpt.com) → Settings → enable **Developer mode** if shown ([OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt); availability varies by account)  
-3. Prefer **OAuth** on a custom plugin (see in-app Help). Fallback: Server URL = `https://PROJECT.supabase.co/functions/v1/mcp`, Auth = **Bearer** token  
-4. For Bearer only: paste token when asked  
-
+1. Prefer **OAuth** on a custom plugin (see in-app Help).  
+2. [chatgpt.com](https://chatgpt.com) → enable **Developer mode** if shown ([OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt); availability varies by account)  
+3. Server URL = `https://PROJECT.supabase.co/functions/v1/mcp`  
+4. Bearer fallback only if needed: create a manual key in Advanced (rare).
 
 ### Grok web (summary)
 
-1. Settings → **Create token for Grok** (optional backup)  
-2. [grok.com/connectors](https://grok.com/connectors) → New → Custom → MCP URL  
-3. OAuth: Client ID `projects-manager-mcp`, empty secret, authorize = site `/oauth/mcp/authorize`, token = `…/mcp-oauth/token`, scope `mcp`, PKCE only  
-4. Allow in browser  
+1. [grok.com/connectors](https://grok.com/connectors) → New → Custom → MCP URL  
+2. OAuth: Client ID `projects-manager-mcp`, empty secret, authorize = site `/oauth/mcp/authorize`, token = `…/mcp-oauth/token`, scope `mcp`, PKCE only  
+3. Allow in browser  
 
-You choose which projects a token may touch. **End users do not need this monorepo** for CLI if the npm package is published.
+### Grok CLI (summary — local only)
+
+1. Settings → **Advanced (Grok CLI — local only)** → pick projects → create key → **Copy full setup command**  
+2. Paste once in a terminal; restart Grok CLI  
+3. **Not** for chatgpt.com / grok.com — only local agent / backlog tooling  
+
+CLI tokens can be limited to selected projects. **End users do not need this monorepo** if the npm package is published (`projects-manager-mcp@latest`).
 
 ## What you get
 

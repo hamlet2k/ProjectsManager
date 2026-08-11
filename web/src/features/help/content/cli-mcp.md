@@ -1,14 +1,29 @@
 ---
 title: Connect ChatGPT or Grok
-description: OAuth setup for ChatGPT plugins and Grok connectors — no token pasting for normal use
+description: Web chat via OAuth plugins/connectors; Grok CLI only for local dev and backlog sync
 order: 60
 ---
 
 # Connect ChatGPT or Grok
 
-You do **not** need to create or copy a secret for the normal setup.
+## Web chat vs Grok CLI (keep them separate)
 
-1. In Projects Manager, open the steps for ChatGPT or Grok.  
+| Path | Where | What it’s for | How you connect |
+|------|--------|----------------|-----------------|
+| **ChatGPT (web)** | Browser plugin | Day-to-day chat over your boards | **OAuth** — Allow in browser (no paste secret) |
+| **Grok (web)** | Browser connector | Same, in Grok on the web | **OAuth** — Allow in browser |
+| **Grok CLI** | Terminal / local Grok CLI on your PC | **Local development and backlog sync only** — not a substitute for web chat | **Manual key** under Settings → Advanced |
+
+**Most people only need web ChatGPT or Grok.**  
+**Grok CLI** is optional: install MCP once on a machine for agentic coding / backlog work at the terminal. It does **not** power chatgpt.com or grok.com connectors.
+
+---
+
+## Normal setup (web chat)
+
+You do **not** need to create or copy a secret for web chat.
+
+1. In Projects Manager, open the steps for ChatGPT or Grok (web).  
 2. In that chat app, add our **server URL**.  
 3. Choose **OAuth**.  
 4. Sign in and click **Allow**.  
@@ -19,7 +34,6 @@ A key is created **for you** when you Allow. You can revoke it later under **Con
 |-----|----------------|--------|
 | **ChatGPT** | **Plugin** | Developer mode → new plugin → OAuth |
 | **Grok (web)** | **Connector** | Connectors → Custom → OAuth |
-| **Grok CLI** | MCP on your PC | Advanced only (manual key) |
 
 ---
 
@@ -81,35 +95,48 @@ No token to copy or paste.
 5. **Save & Connect** → **Allow** on Projects Manager.  
 6. In Grok: *“List my Projects Manager projects.”*
 
-Again: no manual token.
+Again: no manual token for web Grok.
 
 ---
 
-## Why not “create a key first”?
+## Why not “create a key first” for web chat?
 
 | Old idea | Better idea |
 |----------|-------------|
 | Create token → copy → paste into chat app | Chat app uses **OAuth** → you click **Allow** → we create the key for you |
 
-Creating a key up front was only useful for **Bearer token** auth. ChatGPT and Grok both work with **OAuth**, so the simpler path is: instructions + Allow.
+Web ChatGPT and Grok use **OAuth**. Creating a key by hand is for **Grok CLI** (local only), not for normal browser plugins/connectors.
 
-Manual keys still exist under **Advanced** (Grok CLI, rare fallbacks).
+---
+
+## Grok CLI (local only — Advanced)
+
+**Purpose:** local development and backlog sync with Grok CLI / agent tooling on your machine.  
+**Not for:** replacing ChatGPT plugins or Grok web connectors.
+
+1. Settings → **Connect ChatGPT or Grok** → expand **Advanced (Grok CLI — local only)**.  
+2. Choose key name, **which projects** the token may access, and read/write.  
+3. **Create Grok CLI key** → copy the **full setup command** (includes the token).  
+4. Paste once in a terminal → restart Grok CLI if it was already open.  
+5. Confirm with `grok mcp list`.
+
+The CLI install is for **that computer’s** Grok CLI sessions. It does **not** configure chatgpt.com or grok.com.
 
 ---
 
 ## Connected keys
 
-After Allow, Settings shows keys named by app (e.g. “ChatGPT connector …”, “Grok connector …”, or “MCP connector …”).  
+After Allow (web) or Create (CLI), Settings lists keys such as “ChatGPT connector …”, “Grok connector …”, or a name you chose for CLI.
 
-**Revoke** = disconnect that chat app until you connect again.
+**Revoke** = disconnect that connection until you connect again.
 
 ---
 
 ## Safety
 
-- Prefer one connection per app so you can revoke ChatGPT without Grok.  
-- Never share tokens from Advanced.  
-- Never put a Supabase **service role** key into a chat app.
+- Prefer separate keys: one web connection per app, optional separate key for CLI.  
+- Never share Advanced / CLI tokens.  
+- Never put a Supabase **service role** key into a chat app or CLI config.
 
 ---
 
@@ -120,4 +147,5 @@ After Allow, Settings shows keys named by app (e.g. “ChatGPT connector …”,
 | No Developer mode / no create plugin | Check whether those options appear on **your** account; use the [Developer mode link](https://chatgpt.com/plugins#settings/Security?section=developer-mode) and [OpenAI help](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt). Availability varies. |
 | Advanced OAuth empty | Enter Client ID `projects-manager-mcp`; other URLs often auto-fill. |
 | Allow page 404 | Wait for production deploy; URL must be your live site `/oauth/mcp/authorize`. |
-| No tools in chat | New conversation; confirm the plugin/connector is still enabled. |
+| No tools in **web** chat | New conversation; confirm the **plugin/connector** is still enabled (not the CLI install). |
+| CLI tools missing | `grok mcp list`; restart CLI; ensure you used Advanced key + setup command, not only web OAuth. |

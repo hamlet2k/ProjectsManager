@@ -42,9 +42,8 @@ const CHATGPT_NEW_PLUGIN =
 const GROK_CONNECTORS = 'https://grok.com/connectors'
 
 /**
- * OAuth-first connector guides (ChatGPT plugin / Grok connector).
- * Tokens are created automatically when the user clicks Allow — no manual key for normal setup.
- * Manual tokens only under Advanced (CLI / rare fallbacks).
+ * OAuth-first guides for web ChatGPT plugin / Grok connector.
+ * Grok CLI (local dev + backlog sync only) is under Advanced — separate from web chat.
  */
 export function CliAccessSection() {
   const { user } = useAuth()
@@ -136,13 +135,17 @@ export function CliAccessSection() {
     <section className="space-y-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Full guide: ChatGPT plugin & Grok connector">
+          <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Full guide: web chat vs Grok CLI">
             Connect ChatGPT or Grok
           </HelpTitle>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Open the steps for the app you use. You sign in and click <strong>Allow</strong> — no
-            need to create or paste a secret for normal setup. (ChatGPT calls these{' '}
-            <strong>plugins</strong>; Grok calls them <strong>connectors</strong>.)
+            <strong>Web chat</strong> (ChatGPT <strong>plugins</strong> / Grok <strong>connectors</strong>):
+            open the steps below, then sign in and click <strong>Allow</strong> — no secret to paste.
+            <span className="mt-1 block">
+              <strong>Grok CLI</strong> (terminal on your PC) is separate: only for{' '}
+              <strong>local development and backlog sync</strong> — see Advanced at the bottom, not
+              the web guides.
+            </span>
           </p>
         </div>
         <Button
@@ -184,9 +187,9 @@ export function CliAccessSection() {
           </Button>
         </div>
         <div className="rounded-xl border border-[var(--color-border)] p-4">
-          <p className="font-semibold">Grok connector</p>
+          <p className="font-semibold">Grok connector (web)</p>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            Connectors → Custom → Server URL → OAuth fields if asked → Allow in browser
+            Browser only — Connectors → Custom → OAuth → Allow. Not the same as Grok CLI on your PC.
           </p>
           <Button
             className="mt-3 w-full"
@@ -390,8 +393,8 @@ export function CliAccessSection() {
           </span>
         </button>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          After you click Allow, a key appears here (e.g. “ChatGPT connector …” or “Grok connector …”). Revoke to disconnect
-          that app.
+          Web OAuth keys (e.g. “ChatGPT connector …”) and optional Grok CLI keys appear here. Revoke
+          to disconnect that connection.
         </p>
         {showTokenList ? (
           <div className="mt-2">
@@ -452,16 +455,17 @@ export function CliAccessSection() {
           className="flex w-full items-center justify-between text-left text-sm font-semibold"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          Advanced (manual key / Grok CLI)
+          Advanced (Grok CLI — local only)
           <span className="text-xs font-normal text-[var(--color-muted)]">
-            {showAdvanced ? 'Hide' : 'Show'}
+            {showAdvanced ? 'Hide' : 'Show'} · dev &amp; backlog sync
           </span>
         </button>
         {showAdvanced ? (
           <div className="mt-3 space-y-3 text-sm text-[var(--color-muted)]">
             <p className="text-xs">
-              For <strong>Grok CLI</strong> on your computer (or a tool that needs a pasted secret).
-              Normal ChatGPT / Grok <em>web</em> setup uses OAuth above — no manual key.
+              <strong>Grok CLI only</strong> — install MCP on <em>this computer</em> for local
+              development and backlog sync. This does <strong>not</strong> set up ChatGPT plugins or
+              Grok web connectors (use the sections above with OAuth for those).
             </p>
 
             <Field label="Key name">
