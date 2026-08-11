@@ -46,6 +46,7 @@ Optional local file for development: `.env` next to this package (not used by ty
 
 - `list_projects`, `list_tasks`, `list_tags`
 - `create_task`, `update_task`, `complete_task`, `uncomplete_task`, `delete_task`
+- **`complete_task` / completing via `update_task`:** may also **close the linked GitHub issue** when the project has close-on-complete enabled, the CLI token owner has GitHub integration + PAT, and the task is linked — same gates as the web UI. Response may include a `github` field (`closed`, `skipped`, or `error`). Uncomplete does **not** reopen issues.
 
 ## Maintainers: publish updates
 

@@ -18,6 +18,18 @@ Manage **Projects Manager** boards from **Grok CLI / Grok Build** using the Mode
 
 Writes require a **read/write** token and **editor** (or owner) access on that board.
 
+### GitHub close on complete (CLI / MCP)
+
+When you **complete** a task that is linked to a GitHub issue, `cli-api` uses the **same rules as the web UI** to try closing that issue:
+
+1. CLI token owner has **GitHub integration** enabled and a saved PAT  
+2. Project has an **active** GitHub repo binding  
+3. Project **close issue on complete** is not disabled  
+4. Task has a linked open issue  
+
+The board task is always updated even if GitHub fails. Response may include `github: { closed: true, issue_number }` or `{ skipped: "…" }` / `{ error: "…" }`.  
+**Uncomplete** does not reopen GitHub issues (same as the web app).
+
 ## 1. Create a token (web app)
 
 1. Sign in → **Settings** → **Grok CLI access**.  

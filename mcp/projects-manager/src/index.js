@@ -148,7 +148,8 @@ const tools = [
   },
   {
     name: 'complete_task',
-    description: 'Mark a task completed.',
+    description:
+      'Mark a task completed. If the task has a linked GitHub issue and the project has close-on-complete enabled (and the CLI token owner has GitHub integration + PAT), also closes the issue (same rules as the web UI).',
     inputSchema: {
       type: 'object',
       properties: { task_id: { type: 'string' } },

@@ -101,6 +101,231 @@ async function requireScope(
   return null
 }
 
+// --- GitHub close-on-complete (parity with web ScopePage + github-proxy close_issue) ---
+
+type GithubCloseResult =
+  | { skipped: string }
+  | { closed: true; issue_number: number; issue_url?: string | null }
+  | { error: string }
+
+async function deriveGithubKey(secret: string): Promise<CryptoKey> {
+  const enc = new TextEncoder()
+  const material = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, [
+    'deriveKey',
+  ])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: enc.encode('projects-manager-github-v1'),
+      iterations: 100_000,
+      hash: 'SHA-256',
+    },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+async function decryptGithubToken(payload: string, secret: string): Promise<string> {
+  const key = await deriveGithubKey(secret)
+  const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))
+  const iv = raw.slice(0, 12)
+  const data = raw.slice(12)
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data)
+  return new TextDecoder().decode(plain)
+}
+
+type ScopeGithubRow = {
+  user_id: string
+  github_integration_enabled: boolean
+  github_repo_owner: string | null
+  github_repo_name: string | null
+  close_issue_on_complete?: boolean | null
+  updated_at?: string | null
+}
+
+/**
+ * After a task is marked complete (MCP/CLI), optionally close the linked GitHub issue
+ * using the CLI token owner's PAT and the same gates as the web UI.
+ * Failures are returned as { error }; the task update is never rolled back.
+ */
+async function maybeCloseLinkedGithubIssue(
+  admin: SupabaseClient,
+  userId: string,
+  taskId: string,
+  scopeId: string,
+): Promise<GithubCloseResult> {
+  // User must opt in to GitHub mutations (Settings → Enable GitHub integration)
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('github_integration_enabled')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!(profile as { github_integration_enabled?: boolean } | null)?.github_integration_enabled) {
+    return { skipped: 'GitHub integration preference is off for this user' }
+  }
+
+  const { data: scope } = await admin.from('scopes').select('owner_id').eq('id', scopeId).maybeSingle()
+  const { data: configs } = await admin
+    .from('scope_github_configs')
+    .select(
+      'user_id, github_integration_enabled, github_repo_owner, github_repo_name, close_issue_on_complete, updated_at',
+    )
+    .eq('scope_id', scopeId)
+
+  const list = (configs ?? []) as ScopeGithubRow[]
+  const active = list.filter(
+    (c) => c.github_integration_enabled && c.github_repo_owner && c.github_repo_name,
+  )
+  if (active.length === 0) {
+    return { skipped: 'No active GitHub repo binding on this project' }
+  }
+
+  let binding: ScopeGithubRow | null = null
+  const ownerId = (scope as { owner_id?: string } | null)?.owner_id
+  if (ownerId) {
+    binding = active.find((c) => c.user_id === ownerId) ?? null
+  }
+  if (!binding) {
+    binding =
+      [...active].sort((a, b) =>
+        String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')),
+      )[0] ?? null
+  }
+  if (!binding) return { skipped: 'No active GitHub repo binding on this project' }
+
+  // Match web: close_issue_on_complete !== false (null/undefined → close)
+  if (binding.close_issue_on_complete === false) {
+    return { skipped: 'close_issue_on_complete is disabled for this project' }
+  }
+
+  // Prefer token owner's task link, else any linked issue on the task
+  const { data: mine } = await admin
+    .from('task_github_configs')
+    .select('*')
+    .eq('task_id', taskId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  let link = mine as Record<string, unknown> | null
+  if (!link?.github_issue_number) {
+    const { data: anyLink } = await admin
+      .from('task_github_configs')
+      .select('*')
+      .eq('task_id', taskId)
+      .not('github_issue_number', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    link = (anyLink as Record<string, unknown> | null) ?? link
+  }
+
+  const issueNumber = link?.github_issue_number as number | null | undefined
+  const owner =
+    (link?.github_repo_owner as string | null | undefined) || binding.github_repo_owner
+  const repo =
+    (link?.github_repo_name as string | null | undefined) || binding.github_repo_name
+  if (!issueNumber || !owner || !repo) {
+    return { skipped: 'No linked GitHub issue for this task' }
+  }
+  if (link?.github_issue_state === 'closed') {
+    return { skipped: 'Linked issue is already closed' }
+  }
+
+  const secret = Deno.env.get('GITHUB_TOKEN_SECRET')
+  if (!secret || secret.length < 16) {
+    return { error: 'GITHUB_TOKEN_SECRET is not configured on Edge Functions' }
+  }
+
+  const { data: cred, error: credErr } = await admin
+    .from('github_credentials')
+    .select('token_encrypted')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (credErr) return { error: credErr.message }
+  if (!cred?.token_encrypted) {
+    return { skipped: 'No GitHub PAT saved for the CLI token owner (Settings → GitHub)' }
+  }
+
+  let ghToken: string
+  try {
+    ghToken = (await decryptGithubToken(cred.token_encrypted as string, secret)).trim()
+  } catch {
+    return {
+      error:
+        'Could not decrypt GitHub PAT. Re-save the token in Settings (GITHUB_TOKEN_SECRET may have changed).',
+    }
+  }
+  if (!ghToken) return { error: 'Stored GitHub token is empty' }
+
+  const rowUser = (link?.user_id as string | undefined) || userId
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${ghToken}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ state: 'closed' }),
+      },
+    )
+    if (!res.ok) {
+      const text = await res.text()
+      const msg = `GitHub ${res.status}: ${text.slice(0, 400)}`
+      await admin.from('sync_logs').insert({
+        task_id: taskId,
+        user_id: userId,
+        action: 'close_issue',
+        status: 'error',
+        message: msg,
+      })
+      return { error: msg }
+    }
+    const issue = (await res.json()) as {
+      state?: string
+      html_url?: string
+      number?: number
+    }
+
+    await admin.from('task_github_configs').upsert(
+      {
+        task_id: taskId,
+        user_id: rowUser,
+        github_issue_state: issue.state ?? 'closed',
+        github_issue_url: issue.html_url ?? null,
+      },
+      { onConflict: 'task_id,user_id' },
+    )
+    await admin.from('sync_logs').insert({
+      task_id: taskId,
+      user_id: userId,
+      action: 'close_issue',
+      status: 'success',
+      message: 'via cli-api complete',
+    })
+    return {
+      closed: true,
+      issue_number: issue.number ?? issueNumber,
+      issue_url: issue.html_url ?? null,
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'GitHub close failed'
+    await admin.from('sync_logs').insert({
+      task_id: taskId,
+      user_id: userId,
+      action: 'close_issue',
+      status: 'error',
+      message: msg,
+    })
+    return { error: msg }
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -350,14 +575,28 @@ Deno.serve(async (req) => {
           await admin.from('task_tags').insert(tagIds.map((tag_id) => ({ task_id: taskId, tag_id })))
         }
       }
-      return json({ task })
+
+      // Completing via update_task: same GitHub close-on-complete as complete_task
+      let github: GithubCloseResult | undefined
+      const becameComplete =
+        typeof body.completed === 'boolean' &&
+        body.completed === true &&
+        (existing as { completed?: boolean }).completed !== true
+      if (becameComplete) {
+        github = await maybeCloseLinkedGithubIssue(admin, ctx.token.user_id, taskId, scopeId)
+      }
+      return github ? json({ task, github }) : json({ task })
     }
 
     // --- complete / uncomplete ---
     if (action === 'complete_task' || action === 'uncomplete_task') {
       const taskId = String(body.task_id || '')
       if (!taskId) return json({ error: 'Missing task_id' }, 400)
-      const { data: existing } = await admin.from('tasks').select('id, scope_id, name').eq('id', taskId).maybeSingle()
+      const { data: existing } = await admin
+        .from('tasks')
+        .select('id, scope_id, name, completed')
+        .eq('id', taskId)
+        .maybeSingle()
       if (!existing) return json({ error: 'Task not found' }, 404)
       const scopeId = (existing as { scope_id: string }).scope_id
       const denied = await requireScope(ctx, scopeId, true)
@@ -373,7 +612,13 @@ Deno.serve(async (req) => {
         .select('*')
         .single()
       if (error) return json({ error: error.message }, 500)
-      return json({ task })
+
+      // UI only closes on complete (does not reopen on uncomplete) — match that.
+      let github: GithubCloseResult | undefined
+      if (completed && (existing as { completed?: boolean }).completed !== true) {
+        github = await maybeCloseLinkedGithubIssue(admin, ctx.token.user_id, taskId, scopeId)
+      }
+      return github ? json({ task, github }) : json({ task })
     }
 
     // --- delete_task ---
