@@ -75,8 +75,16 @@ function AppLayoutInner() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const iconBtn =
-    'inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'
+  /**
+   * Base icon chrome without `display` — so `hidden sm:inline-flex` is not
+   * overridden by a competing `inline-flex` in the same class string (Tailwind
+   * conflict; was still showing Home on mobile project pages).
+   */
+  const iconBtnBase =
+    'h-9 w-9 items-center justify-center rounded-full text-[var(--color-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]'
+  const iconBtn = cn(iconBtnBase, 'inline-flex')
+  /** Desktop-only toolbar control */
+  const iconBtnDesktop = cn(iconBtnBase, 'hidden sm:inline-flex')
 
   /** Shared style for every row in the mobile overflow menu (links + actions). */
   const menuItemClass =
@@ -159,11 +167,11 @@ function AppLayoutInner() {
           Desktop keeps the full icon toolbar.
         */}
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-          {/* Desktop only: home next to brand when inside a project */}
+          {/* Desktop only: home next to brand when inside a project (PM alone is home on mobile) */}
           {scopeId ? (
             <Link
               to="/"
-              className={cn(iconBtn, 'hidden sm:inline-flex')}
+              className={iconBtnDesktop}
               title="All projects"
               aria-label="All projects"
             >
@@ -188,7 +196,7 @@ function AppLayoutInner() {
           {projectLinked ? (
             <button
               type="button"
-              className={cn(iconBtn, 'hidden sm:inline-flex')}
+              className={iconBtnDesktop}
               title="Reload this project and soft-pull linked GitHub issues"
               disabled={refreshing}
               onClick={() => void handleGithubRefresh()}
@@ -199,7 +207,7 @@ function AppLayoutInner() {
 
           <button
             type="button"
-            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            className={iconBtnDesktop}
             title="Help"
             aria-label="Open help center"
             onClick={() => openHelp('')}
@@ -209,7 +217,7 @@ function AppLayoutInner() {
 
           <button
             type="button"
-            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            className={iconBtnDesktop}
             title="Feedback"
             onClick={() => setFeedbackOpen(true)}
           >
@@ -220,7 +228,7 @@ function AppLayoutInner() {
             href={KOFI_URL}
             target="_blank"
             rel="noreferrer"
-            className={cn(iconBtn, 'hidden sm:inline-flex text-[#FF5E5B] hover:text-[#FF5E5B]')}
+            className={cn(iconBtnDesktop, 'text-[#FF5E5B] hover:text-[#FF5E5B]')}
             title="Support on Ko-fi"
           >
             <Icons.Heart />
@@ -344,11 +352,7 @@ function AppLayoutInner() {
             ) : null}
           </div>
 
-          <NavLink
-            to="/settings"
-            className={cn(iconBtn, 'hidden sm:inline-flex')}
-            title="Settings"
-          >
+          <NavLink to="/settings" className={iconBtnDesktop} title="Settings">
             <Icons.Settings />
           </NavLink>
 
@@ -356,7 +360,7 @@ function AppLayoutInner() {
 
           <button
             type="button"
-            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            className={iconBtnDesktop}
             title={themeLabel}
             onClick={cycleTheme}
           >
@@ -365,7 +369,7 @@ function AppLayoutInner() {
 
           <button
             type="button"
-            className={cn(iconBtn, 'hidden sm:inline-flex')}
+            className={iconBtnDesktop}
             title="Sign out"
             onClick={() => signOut()}
           >
