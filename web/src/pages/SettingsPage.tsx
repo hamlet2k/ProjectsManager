@@ -518,7 +518,8 @@ export function SettingsPage() {
             Fine-grained tokens need access to the repos you will link from a project.
           </li>
           <li>
-            After saving, open a project → <strong>Tools → Link GitHub</strong> to pick one repository.
+            After saving, open a project → edit (pencil) → expand <strong>GitHub</strong> to link a
+            repository.
           </li>
         </ul>
         <div className="flex flex-wrap gap-2">

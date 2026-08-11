@@ -18,12 +18,23 @@ export type ScopeFormValues = {
   assistantPrompt: string
 }
 
+export type ScopeFormGithubProps = {
+  visible: boolean
+  integrated: boolean
+  repoLabel: string | null
+  canConfigure: boolean
+  preferenceOn: boolean
+  onConfigure: () => void
+}
+
 type Props = {
   open: boolean
   onClose: () => void
   initial?: Scope | null
   /** Existing tag names — helps the LLM generate a better project prompt. */
   existingTagNames?: string[]
+  /** Optional GitHub block (edit project only). Null/omit for create or no access. */
+  github?: ScopeFormGithubProps | null
   onSubmit: (values: ScopeFormValues) => Promise<void>
 }
 
@@ -32,6 +43,7 @@ export function ScopeFormModal({
   onClose,
   initial,
   existingTagNames = [],
+  github = null,
   onSubmit,
 }: Props) {
   const [name, setName] = useState('')
@@ -42,6 +54,7 @@ export function ScopeFormModal({
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [githubOpen, setGithubOpen] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -51,8 +64,10 @@ export function ScopeFormModal({
       setAdvancedExportEnabled(initial?.advanced_export_enabled !== false)
       setAssistantPrompt(initial?.assistant_prompt ?? '')
       setError(null)
+      // Expand GitHub section when already linked so status is visible; collapse when unused
+      setGithubOpen(Boolean(github?.integrated))
     }
-  }, [open, initial])
+  }, [open, initial, github?.integrated])
 
   /**
    * Uses the project description as the source brief:
@@ -236,6 +251,83 @@ export function ScopeFormModal({
             />
           </Field>
         </div>
+
+        {github?.visible && initial?.id ? (
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
+              onClick={() => setGithubOpen((v) => !v)}
+              aria-expanded={githubOpen}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icons.Github size={14} className="shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  GitHub
+                </span>
+                {github.integrated && github.repoLabel ? (
+                  <span className="truncate text-xs font-normal normal-case tracking-normal text-[var(--color-text)]">
+                    · {github.repoLabel}
+                  </span>
+                ) : (
+                  <span className="text-xs font-normal normal-case tracking-normal text-[var(--color-muted)]">
+                    · optional
+                  </span>
+                )}
+              </span>
+              <Icons.ChevronDown
+                size={14}
+                className={githubOpen ? 'rotate-180 transition-transform' : 'transition-transform'}
+              />
+            </button>
+            {githubOpen ? (
+              <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
+                <div className="flex items-start gap-1">
+                  <p className="min-w-0 flex-1 text-xs text-[var(--color-muted)]">
+                    Link one repository for create/sync of issues on this board. Not required for
+                    normal task tracking.
+                  </p>
+                  <HelpHint
+                    slug={HelpSlugs.githubProject}
+                    label="How to link this project to GitHub"
+                    className="!h-5 !w-5 shrink-0"
+                  />
+                </div>
+                {github.integrated ? (
+                  <p className="text-sm text-[var(--color-text)]">
+                    Linked to{' '}
+                    <strong className="font-medium">{github.repoLabel ?? 'a repository'}</strong>.
+                  </p>
+                ) : github.preferenceOn ? (
+                  <p className="text-sm text-[var(--color-muted)]">
+                    No repository linked for this project yet.
+                  </p>
+                ) : (
+                  <p className="text-sm text-[var(--color-muted)]">
+                    Enable GitHub integration and save a token under Settings, then return here to
+                    link a repository.
+                  </p>
+                )}
+                {github.canConfigure ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={generating || saving}
+                    onClick={() => github.onConfigure()}
+                  >
+                    <Icons.Github size={14} />
+                    {github.integrated ? 'Configure GitHub…' : 'Link GitHub repository…'}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-[var(--color-muted)]">
+                    You can view this project’s GitHub link but need editor access to change it.
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </Modal>
   )
