@@ -18,9 +18,15 @@ import { cn } from '@/lib/utils'
 
 type GuideKind = 'chatgpt' | 'grok' | null
 
+const CHATGPT_DEV_MODE =
+  'https://chatgpt.com/plugins#settings/Security?section=developer-mode'
+const CHATGPT_NEW_PLUGIN =
+  'https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins'
+const GROK_CONNECTORS = 'https://grok.com/connectors'
+
 /**
- * Guided setup for ChatGPT / Grok / CLI connectors.
- * Tokens are the same under the hood; separate “create” buttons keep steps simple.
+ * Guided setup for ChatGPT plugins / Grok connectors.
+ * Same token system underneath; separate buttons keep instructions easy to follow.
  */
 export function CliAccessSection() {
   const { user } = useAuth()
@@ -40,6 +46,8 @@ export function CliAccessSection() {
   const [revealedToken, setRevealedToken] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTokenList, setShowTokenList] = useState(false)
+  /** ChatGPT: token path vs OAuth path (both supported). */
+  const [chatgptAuth, setChatgptAuth] = useState<'token' | 'oauth'>('token')
 
   const projectUrl = getSupabaseProjectUrl()
   const anonKey = getSupabaseAnonKey()
@@ -52,12 +60,22 @@ export function CliAccessSection() {
     ? `${projectUrl}/functions/v1/mcp-oauth/token`
     : ''
 
+  const oauthFieldsText = [
+    `MCP / Server URL: ${remoteMcpUrl}`,
+    `Client ID: projects-manager-mcp`,
+    `Client Secret: (leave empty)`,
+    `Authorization Endpoint: ${authorizeUrl}`,
+    `Token Endpoint: ${tokenEndpoint}`,
+    `Scopes: mcp`,
+    `Token Auth Method: none (PKCE only)`,
+  ].join('\n')
+
   const createTokenFor = async (kind: 'chatgpt' | 'grok') => {
     setBusy(kind)
     setRevealedToken(null)
     try {
       const created = await createCliAccessToken({
-        name: kind === 'chatgpt' ? 'ChatGPT connector' : 'Grok connector',
+        name: kind === 'chatgpt' ? 'ChatGPT plugin' : 'Grok connector',
         scopeIds: null,
         canWrite: true,
       })
@@ -67,8 +85,8 @@ export function CliAccessSection() {
       await qc.invalidateQueries({ queryKey: ['cli-tokens', user?.id] })
       toast.push(
         kind === 'chatgpt'
-          ? 'ChatGPT token created — copy it in the steps below'
-          : 'Grok token created — follow the steps below',
+          ? 'ChatGPT key created — copy it below'
+          : 'Grok key created — follow the steps below',
         'success',
       )
     } catch (e) {
@@ -76,6 +94,11 @@ export function CliAccessSection() {
     } finally {
       setBusy(null)
     }
+  }
+
+  const startGrokOauthOnly = () => {
+    setGuide('grok')
+    setRevealedToken(null)
   }
 
   const copy = async (label: string, text: string) => {
@@ -91,12 +114,13 @@ export function CliAccessSection() {
     <section className="space-y-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Connect ChatGPT or Grok — full guide">
+          <HelpTitle slug={HelpSlugs.cliMcp} hintLabel="Full guide: ChatGPT plugin & Grok connector">
             Connect ChatGPT or Grok
           </HelpTitle>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Let ChatGPT or Grok list and manage your project boards. You create a secret key
-            (token) here, then paste it (or finish sign-in) in that chat app.
+            Link this app so ChatGPT (<strong>plugins</strong>) or Grok (<strong>connectors</strong>)
+            can manage your boards. Same system underneath — two simple buttons so you only follow
+            one checklist.
           </p>
         </div>
         <Button
@@ -109,38 +133,48 @@ export function CliAccessSection() {
         </Button>
       </div>
 
-      {/* —— Simple path cards —— */}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)]/50 p-4">
-          <p className="text-base font-semibold">ChatGPT</p>
+          <p className="text-base font-semibold">ChatGPT plugin</p>
           <p className="mt-1 flex-1 text-xs text-[var(--color-muted)]">
-            Uses a <strong>token</strong> (easiest). Needs ChatGPT Plus/Pro and Developer Mode.
+            Recommended: create a key, then paste it as a <strong>Bearer token</strong>. You can also
+            use the same <strong>OAuth</strong> flow as Grok (browser “Allow”) so both apps feel
+            alike.
           </p>
           <Button
             className="mt-3 w-full"
             disabled={busy != null}
             onClick={() => void createTokenFor('chatgpt')}
           >
-            {busy === 'chatgpt' ? 'Creating…' : '1. Create token for ChatGPT'}
+            {busy === 'chatgpt' ? 'Creating…' : 'Start: Create key for ChatGPT'}
           </Button>
         </div>
         <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)]/50 p-4">
-          <p className="text-base font-semibold">Grok (web)</p>
+          <p className="text-base font-semibold">Grok connector</p>
           <p className="mt-1 flex-1 text-xs text-[var(--color-muted)]">
-            Uses <strong>OAuth</strong> (sign-in in the browser). You still create a token here first
-            so you have one if needed — then follow OAuth in Grok.
+            Uses <strong>OAuth</strong> (you sign in and click Allow). No need to paste a long secret
+            into Grok if OAuth works.
           </p>
           <Button
             className="mt-3 w-full"
+            variant="primary"
+            disabled={busy != null}
+            onClick={() => startGrokOauthOnly()}
+          >
+            Start: Connect Grok (OAuth steps)
+          </Button>
+          <Button
+            className="mt-2 w-full"
+            size="sm"
+            variant="secondary"
             disabled={busy != null}
             onClick={() => void createTokenFor('grok')}
           >
-            {busy === 'grok' ? 'Creating…' : '1. Create token for Grok'}
+            {busy === 'grok' ? 'Creating…' : 'Also create a backup Grok key'}
           </Button>
         </div>
       </div>
 
-      {/* —— One-time secret —— */}
       {revealedToken ? (
         <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
           <p className="text-sm font-semibold text-[var(--color-text)]">
@@ -155,101 +189,181 @@ export function CliAccessSection() {
         </div>
       ) : null}
 
-      {/* —— ChatGPT steps —— */}
+      {/* —— ChatGPT —— */}
       {guide === 'chatgpt' && remoteMcpUrl ? (
-        <ol className="list-decimal space-y-3 rounded-xl border border-[var(--color-border)] p-4 pl-8 text-sm">
-          <li>
-            <span className="font-medium">Copy the token above</span> (yellow box). Keep that tab
-            open.
-          </li>
-          <li>
-            Open{' '}
-            <a
-              className="font-medium text-[var(--color-primary)] underline"
-              href="https://chatgpt.com"
-              target="_blank"
-              rel="noreferrer"
+        <div className="space-y-4 rounded-xl border border-[var(--color-border)] p-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-semibold',
+                chatgptAuth === 'token'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
+                  : 'bg-[var(--color-surface-2)] text-[var(--color-muted)]',
+              )}
+              onClick={() => setChatgptAuth('token')}
             >
-              chatgpt.com
-            </a>{' '}
-            and sign in. You need a <strong>Plus or Pro</strong> plan for custom plugins.
-          </li>
-          <li>
-            Click your profile → <strong>Settings</strong> → look for{' '}
-            <strong>Apps</strong> / <strong>Connectors</strong> → <strong>Advanced</strong> (or
-            similar) → turn on <strong>Developer mode</strong>.
-            <p className="mt-1 text-xs text-[var(--color-muted)]">
-              OpenAI moves this toggle sometimes. Search Settings for “Developer” if you don’t see
-              it. Helpful links:{' '}
-              <a
-                className="underline"
-                href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt"
-                target="_blank"
-                rel="noreferrer"
-              >
-                OpenAI: Developer mode &amp; MCP
-              </a>
-              .
-            </p>
-          </li>
-          <li>
-            Add a <strong>new plugin / connector</strong> (often “New plugin” or “Create”).
-          </li>
-          <li>
-            Fill the form roughly like this:
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--color-muted)]">
+              Token (easiest)
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-semibold',
+                chatgptAuth === 'oauth'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
+                  : 'bg-[var(--color-surface-2)] text-[var(--color-muted)]',
+              )}
+              onClick={() => setChatgptAuth('oauth')}
+            >
+              OAuth (same idea as Grok)
+            </button>
+          </div>
+
+          {chatgptAuth === 'token' ? (
+            <ol className="list-decimal space-y-3 pl-5 text-sm">
               <li>
-                <strong>Name:</strong> Projects Manager
+                <span className="font-medium">Copy the token</span> in the yellow box above.
               </li>
               <li>
-                <strong>Description:</strong> Manage my project boards
+                Open this link and turn <strong>Developer mode</strong> ON:
+                <a
+                  className="mt-1 block break-all font-medium text-[var(--color-primary)] underline"
+                  href={CHATGPT_DEV_MODE}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Enable Developer mode in ChatGPT
+                </a>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  Needs ChatGPT Plus/Pro. Official help:{' '}
+                  <a
+                    className="underline"
+                    href="https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Developer mode &amp; MCP apps
+                  </a>
+                  .
+                </p>
               </li>
               <li>
-                <strong>Connection:</strong> Server URL (not Tunnel)
+                Open this link to add a <strong>new custom plugin</strong>:
+                <a
+                  className="mt-1 block break-all font-medium text-[var(--color-primary)] underline"
+                  href={CHATGPT_NEW_PLUGIN}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Create custom plugin / connector
+                </a>
               </li>
               <li>
-                <strong>Server URL:</strong>{' '}
+                On the form ChatGPT shows:
+                <ul className="mt-2 list-disc space-y-1.5 pl-5 text-xs text-[var(--color-muted)]">
+                  <li>
+                    <strong>Name:</strong> Projects Manager
+                  </li>
+                  <li>
+                    <strong>Description:</strong> Manage my project boards
+                  </li>
+                  <li>
+                    <strong>Connection:</strong> Server URL (not Tunnel)
+                  </li>
+                  <li>
+                    <strong>Server URL</strong> (click to copy):{' '}
+                    <button
+                      type="button"
+                      className="break-all font-mono text-[var(--color-text)] underline"
+                      onClick={() => void copy('Server URL', remoteMcpUrl)}
+                    >
+                      {remoteMcpUrl}
+                    </button>
+                  </li>
+                  <li>
+                    <strong>Authentication:</strong> Access token / API key →{' '}
+                    <strong>Bearer</strong>
+                  </li>
+                </ul>
+              </li>
+              <li>
+                Check the risk box → <strong>Create</strong>.
+              </li>
+              <li>
+                When ChatGPT asks for the token, paste your <code className="text-[11px]">pmcli_…</code>{' '}
+                secret. Done.
+              </li>
+              <li>
+                In a chat try: <em>“List my Projects Manager projects.”</em>
+              </li>
+            </ol>
+          ) : (
+            <ol className="list-decimal space-y-3 pl-5 text-sm">
+              <li>
+                This path matches <strong>Grok</strong>: you sign in and click{' '}
+                <strong>Allow</strong> (no long token paste if ChatGPT completes OAuth).
+              </li>
+              <li>
+                <a
+                  className="font-medium text-[var(--color-primary)] underline"
+                  href={CHATGPT_DEV_MODE}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Enable Developer mode
+                </a>
+                , then{' '}
+                <a
+                  className="font-medium text-[var(--color-primary)] underline"
+                  href={CHATGPT_NEW_PLUGIN}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  create a new plugin
+                </a>
+                .
+              </li>
+              <li>
+                <strong>Server URL</strong> (click to copy):{' '}
                 <button
                   type="button"
-                  className="break-all font-mono text-[var(--color-text)] underline"
+                  className="break-all font-mono text-xs underline"
                   onClick={() => void copy('Server URL', remoteMcpUrl)}
                 >
                   {remoteMcpUrl}
-                </button>{' '}
-                (click to copy)
+                </button>
               </li>
               <li>
-                <strong>Authentication:</strong> Access token / API key →{' '}
-                <strong>Bearer</strong> (not OAuth unless you prefer)
+                <strong>Authentication:</strong> choose <strong>OAuth</strong>.
               </li>
-            </ul>
-          </li>
-          <li>
-            Check the box that you understand custom servers can be risky → <strong>Create</strong>.
-          </li>
-          <li>
-            When ChatGPT asks for the token, paste the <strong>pmcli_…</strong> secret you copied.
-            If it asks for an extra header named <code className="text-[11px]">apikey</code>, use
-            your project anon key from the app host (optional; only if Create fails).
-          </li>
-          <li>
-            Start a chat and try: <em>“List my Projects Manager projects.”</em>
-          </li>
-        </ol>
+              <li>
+                If ChatGPT fills Advanced OAuth automatically, continue. If not, use the same fields
+                as Grok:
+                <Button
+                  className="mt-2"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void copy('OAuth fields', oauthFieldsText)}
+                >
+                  Copy OAuth fields (same as Grok)
+                </Button>
+              </li>
+              <li>
+                Create → when the browser opens Projects Manager, sign in → <strong>Allow</strong>.
+              </li>
+            </ol>
+          )}
+        </div>
       ) : null}
 
-      {/* —— Grok steps —— */}
+      {/* —— Grok —— */}
       {guide === 'grok' && remoteMcpUrl ? (
         <ol className="list-decimal space-y-3 rounded-xl border border-[var(--color-border)] p-4 pl-8 text-sm">
-          <li>
-            You created a Grok token (saved in case you need it). For <strong>Grok web</strong>,
-            OAuth is usually easier — you sign in with Projects Manager in the browser.
-          </li>
           <li>
             Open{' '}
             <a
               className="font-medium text-[var(--color-primary)] underline"
-              href="https://grok.com/connectors"
+              href={GROK_CONNECTORS}
               target="_blank"
               rel="noreferrer"
             >
@@ -261,7 +375,7 @@ export function CliAccessSection() {
             Click <strong>New Connector</strong> → <strong>Custom</strong>.
           </li>
           <li>
-            Paste this as the MCP server URL (click to copy):
+            Paste the MCP server URL (click to copy):
             <button
               type="button"
               className="mt-1 block w-full break-all rounded-md bg-[var(--color-surface-2)] px-2 py-1.5 text-left font-mono text-xs"
@@ -271,7 +385,7 @@ export function CliAccessSection() {
             </button>
           </li>
           <li>
-            When Grok asks for <strong>OAuth credentials</strong>, use these (or click Copy all):
+            When Grok asks for <strong>OAuth</strong> credentials, fill them (or copy all):
             <div className="mt-2 space-y-1 rounded-md bg-[var(--color-surface-2)] p-2 font-mono text-[11px]">
               <p>Client ID: projects-manager-mcp</p>
               <p>Client Secret: (leave empty)</p>
@@ -284,42 +398,34 @@ export function CliAccessSection() {
               className="mt-2"
               size="sm"
               variant="secondary"
-              onClick={() =>
-                void copy(
-                  'Grok OAuth fields',
-                  [
-                    `MCP server URL: ${remoteMcpUrl}`,
-                    `Client ID: projects-manager-mcp`,
-                    `Client Secret: (empty)`,
-                    `Authorization Endpoint: ${authorizeUrl}`,
-                    `Token Endpoint: ${tokenEndpoint}`,
-                    `Scopes: mcp`,
-                    `Token Auth Method: none (PKCE only)`,
-                  ].join('\n'),
-                )
-              }
+              onClick={() => void copy('Grok OAuth fields', oauthFieldsText)}
             >
-              Copy all Grok OAuth fields
+              Copy all OAuth fields
             </Button>
           </li>
           <li>
-            Click <strong>Save &amp; Connect</strong>. A Projects Manager page opens — sign in if
-            needed → click <strong>Allow</strong>.
+            <strong>Save &amp; Connect</strong> → browser opens Projects Manager → sign in if needed
+            → <strong>Allow</strong>.
           </li>
           <li>
-            Back in Grok, try: <em>“List my Projects Manager projects.”</em>
+            Back in Grok: <em>“List my Projects Manager projects.”</em>
           </li>
+          {revealedToken ? (
+            <li className="text-xs text-[var(--color-muted)]">
+              You also created a backup key above. OAuth usually creates its own key named “Grok
+              connector …”. You can revoke either under Your keys.
+            </li>
+          ) : null}
         </ol>
       ) : null}
 
       {!guide ? (
         <p className="text-xs text-[var(--color-muted)]">
-          Press a yellow-highlighted button above to start. You only need one of ChatGPT or Grok —
-          or both.
+          Tip: <strong>ChatGPT</strong> = plugin + token (or OAuth). <strong>Grok</strong> =
+          connector + OAuth. Press a button above to show steps.
         </p>
       ) : null}
 
-      {/* —— Token list —— */}
       <div>
         <button
           type="button"
@@ -336,9 +442,7 @@ export function CliAccessSection() {
             {tokensQuery.isLoading ? (
               <p className="text-xs text-[var(--color-muted)]">Loading…</p>
             ) : (tokensQuery.data ?? []).length === 0 ? (
-              <p className="text-xs text-[var(--color-muted)]">
-                No tokens yet. Use a create button above.
-              </p>
+              <p className="text-xs text-[var(--color-muted)]">No keys yet.</p>
             ) : (
               <ul className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)]">
                 {(tokensQuery.data ?? []).map((t) => (
@@ -385,38 +489,21 @@ export function CliAccessSection() {
         ) : null}
       </div>
 
-      {/* —— Advanced (collapsed) —— */}
       <div className="border-t border-[var(--color-border)] pt-3">
         <button
           type="button"
-          className={cn(
-            'flex w-full items-center justify-between text-left text-sm font-semibold',
-          )}
+          className="flex w-full items-center justify-between text-left text-sm font-semibold"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          Advanced (Grok CLI on your computer, technical fields)
+          Advanced (Grok CLI on a computer)
           <span className="text-xs font-normal text-[var(--color-muted)]">
             {showAdvanced ? 'Hide' : 'Show'}
           </span>
         </button>
         {showAdvanced ? (
-          <div className="mt-3 space-y-3 text-xs text-[var(--color-muted)]">
+          <div className="mt-3 space-y-2 text-xs text-[var(--color-muted)]">
             <p>
-              <strong className="text-[var(--color-text)]">MCP server URL</strong> (same for all
-              remote clients):
-            </p>
-            {remoteMcpUrl ? (
-              <button
-                type="button"
-                className="block w-full break-all rounded-md bg-[var(--color-surface-2)] px-2 py-1.5 text-left font-mono text-[11px] text-[var(--color-text)]"
-                onClick={() => void copy('MCP URL', remoteMcpUrl)}
-              >
-                {remoteMcpUrl}
-              </button>
-            ) : null}
-            <p>
-              <strong className="text-[var(--color-text)]">Grok CLI</strong> (Node.js 18+ on your
-              PC). Create a token above first, then run:
+              For developers using Grok CLI on a laptop. Create any key above, then:
             </p>
             <pre className="overflow-x-auto rounded-md bg-[var(--color-surface-2)] p-2 font-mono text-[10px] text-[var(--color-text)]">
               {`grok mcp add projects-manager \\
@@ -425,17 +512,6 @@ export function CliAccessSection() {
   -e "PROJECTS_MANAGER_ANON_KEY=${anonKey || 'your-anon-key'}" \\
   -- npx -y projects-manager-mcp@latest`}
             </pre>
-            <p>
-              Full written guide:{' '}
-              <button
-                type="button"
-                className="underline"
-                onClick={() => openHelp(HelpSlugs.cliMcp)}
-              >
-                open Help → Connect ChatGPT or Grok
-              </button>
-              .
-            </p>
           </div>
         ) : null}
       </div>
