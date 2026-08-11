@@ -176,7 +176,7 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Profile, keyboard shortcuts, Grok CLI access, theme, and GitHub.
+          Profile, keyboard, ChatGPT/Grok connectors, theme, and GitHub.
         </p>
       </div>
 
