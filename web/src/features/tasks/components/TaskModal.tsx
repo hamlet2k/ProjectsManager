@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Textarea } from '@/components/ui/Input'
@@ -87,9 +87,22 @@ export function TaskModal({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [createGithubIssue, setCreateGithubIssue] = useState(false)
+  /**
+   * Only re-hydrate the form when the modal opens or the edited task identity changes.
+   * Do NOT depend on `initial` / `tags` / `selectedTagIds` object identity — board polling
+   * and realtime refresh those every few seconds and would wipe in-progress edits (esp. mobile).
+   */
+  const formSessionKey = open ? (initial?.id ?? 'new') : null
+  const lastFormSessionKey = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || formSessionKey == null) {
+      lastFormSessionKey.current = null
+      return
+    }
+    if (lastFormSessionKey.current === formSessionKey) return
+    lastFormSessionKey.current = formSessionKey
+
     setName(initial?.name ?? '')
     setDescription(initial?.description ?? '')
     setEndDate(initial?.end_date ? initial.end_date.slice(0, 10) : '')
@@ -106,7 +119,9 @@ export function TaskModal({
       )
       setCreateGithubIssue(getProjectPref(scopeId, 'create-gh-on-add', 'false') === 'true')
     }
-  }, [open, initial, selectedTagIds, tags, scopeId])
+    // Intentionally omit initial/tags/selectedTagIds from deps — snapshot at open only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formSessionKey gates re-init
+  }, [open, formSessionKey])
 
   const resetFormForAnother = () => {
     setName('')

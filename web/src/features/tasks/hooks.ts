@@ -23,43 +23,56 @@ import {
 import { syncTaskDependencyOnGitHub } from '@/features/github/api'
 import type { Task } from '@/lib/supabase/types'
 
-export function useScopeTasks(scopeId: string | undefined) {
+export function useScopeTasks(
+  scopeId: string | undefined,
+  opts?: {
+    /**
+     * When true (e.g. task edit modal open), stop background polling so mobile
+     * focus churn / 12s refetch does not thrash the board while typing.
+     * Realtime still delivers collaborator updates.
+     */
+    pausePolling?: boolean
+  },
+) {
   const qc = useQueryClient()
+  const pausePolling = Boolean(opts?.pausePolling)
 
   // Shared projects: refetch periodically + on focus so collaborators see updates
   // even if Realtime is slow/unavailable. Realtime invalidates sooner when it works.
   const pollMs = 12_000
+  const refetchInterval = pausePolling ? false : pollMs
+  const refetchOnWindowFocus = !pausePolling
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTasks(scopeId!),
-    refetchInterval: pollMs,
-    refetchOnWindowFocus: true,
+    refetchInterval,
+    refetchOnWindowFocus,
   })
 
   const tagsQuery = useQuery({
     queryKey: ['tags', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTags(scopeId!),
-    refetchInterval: pollMs,
-    refetchOnWindowFocus: true,
+    refetchInterval,
+    refetchOnWindowFocus,
   })
 
   const taskTagsQuery = useQuery({
     queryKey: ['task-tags', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTaskTags(scopeId!),
-    refetchInterval: pollMs,
-    refetchOnWindowFocus: true,
+    refetchInterval,
+    refetchOnWindowFocus,
   })
 
   const depsQuery = useQuery({
     queryKey: ['task-deps', scopeId],
     enabled: Boolean(scopeId),
     queryFn: () => fetchTaskDependencies(scopeId!),
-    refetchInterval: pollMs,
-    refetchOnWindowFocus: true,
+    refetchInterval,
+    refetchOnWindowFocus,
   })
 
   useEffect(() => {

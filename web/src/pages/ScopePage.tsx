@@ -69,9 +69,15 @@ export function ScopePage() {
   const confirm = useConfirm()
   const qc = useQueryClient()
 
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [editProjectOpen, setEditProjectOpen] = useState(false)
+
   const { data: scope, isLoading: scopeLoading, error: scopeError } = useScope(scopeId)
   const { data: shares = [] } = useScopeShares(scopeId)
-  const { tasksQuery, tagsQuery, taskTagsQuery, depsQuery } = useScopeTasks(scopeId)
+  const { tasksQuery, tagsQuery, taskTagsQuery, depsQuery } = useScopeTasks(scopeId, {
+    // Avoid 12s poll / focus refetch wiping the task edit form on mobile
+    pausePolling: taskModalOpen,
+  })
   const addDep = useAddTaskDependency(scopeId!)
   const removeDep = useRemoveTaskDependency(scopeId!)
   const updateScope = useUpdateScope()
@@ -85,9 +91,6 @@ export function ScopePage() {
   const reorderTasks = useReorderTasks(scopeId!)
   const createTag = useCreateTag(scopeId!)
   const deleteTagMut = useDeleteTag(scopeId!)
-
-  const [taskModalOpen, setTaskModalOpen] = useState(false)
-  const [editProjectOpen, setEditProjectOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [githubOpen, setGithubOpen] = useState(false)
   const [ghDraft, setGhDraft] = useState<{
